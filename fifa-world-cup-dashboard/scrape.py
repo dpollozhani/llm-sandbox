@@ -105,22 +105,66 @@ def parse_events(payload):
         }
 
 
+def load_existing():
+    """Return {id: match} from the current data file, if any."""
+    try:
+        with open(OUT_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return {m["id"]: m for m in data.get("matches", []) if m.get("id")}
+    except (FileNotFoundError, ValueError, KeyError):
+        return {}
+
+
+def merge(existing, scraped):
+    """Incrementally fold scraped matches into the existing ones.
+
+    Guarantees the dataset can only grow or refine, never shrink:
+    - a previously known match is never dropped (so a transient empty/failed
+      API response can't blank the file);
+    - a finished result is never downgraded back to a non-finished one.
+    """
+    result = dict(existing)
+    for mid, m in scraped.items():
+        old = result.get(mid)
+        if old is None or m["completed"] or not old.get("completed"):
+            result[mid] = m
+    return result
+
+
 def main():
-    matches = {}
+    scraped = {}
     errors = 0
+    days = 0
     for d in daterange(START, END):
+        days += 1
         try:
             payload = fetch_day(d)
             for m in parse_events(payload):
                 if m["id"]:
-                    matches[m["id"]] = m
+                    scraped[m["id"]] = m
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
             errors += 1
             print(f"  ! {d}: {e}", file=sys.stderr)
         time.sleep(0.3)  # be polite
 
-    ordered = sorted(matches.values(), key=lambda m: (m.get("date") or "", m.get("id")))
-    finished = [m for m in ordered if m["completed"] and m["homeScore"] is not None and m["awayScore"] is not None]
+    existing = load_existing()
+    merged = merge(existing, scraped)
+
+    # Nothing anywhere (first run that fetched nothing): fail loudly, keep file as-is.
+    if not merged:
+        print("No data from scrape and no existing file; leaving things untouched.", file=sys.stderr)
+        sys.exit(1)
+
+    ordered = sorted(merged.values(), key=lambda m: (m.get("date") or "", m.get("id")))
+    finished = [m for m in ordered if m["completed"]
+                and m["homeScore"] is not None and m["awayScore"] is not None]
+
+    # Skip rewriting when the match data is unchanged, so we don't churn commits
+    # (and the "updated" timestamp stays meaningful: when data actually changed).
+    if merged == existing:
+        print(f"No changes (merged total {len(ordered)}, {len(finished)} finished, "
+              f"{errors} day(s) errored). Data file left untouched.")
+        return
 
     out = {
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -137,10 +181,8 @@ def main():
         json.dump(out, f, ensure_ascii=False, indent=2)
         f.write("\n")
 
-    print(f"Wrote {OUT_FILE}: {len(ordered)} matches ({len(finished)} finished), {errors} day(s) errored.")
-    # Don't fail CI just because some days errored, but do fail if nothing at all came back.
-    if not ordered and errors:
-        sys.exit(1)
+    print(f"Updated {OUT_FILE}: scraped {len(scraped)} across {days} day(s), "
+          f"merged total {len(ordered)} ({len(finished)} finished), {errors} day(s) errored.")
 
 
 if __name__ == "__main__":
