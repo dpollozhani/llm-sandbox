@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-18T22:55:29Z",
+  "updated": "2026-06-18T23:52:54Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -329,10 +329,10 @@
       "away": "Qatar",
       "homeAbbr": "CAN",
       "awayAbbr": "QAT",
-      "homeScore": 3,
+      "homeScore": 5,
       "awayScore": 0,
       "completed": false,
-      "status": "Halftime"
+      "status": "Second Half"
     },
     {
       "id": "760441",
