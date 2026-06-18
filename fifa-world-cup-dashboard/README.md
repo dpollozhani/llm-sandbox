@@ -1,8 +1,8 @@
 # FIFA World Cup Dashboard ⚽
 
-A single-file, mobile-first dashboard that shows the **accumulated results of the
-current FIFA World Cup**, and updates **on demand** (a Refresh button pulls live
-scores). Built to open on your phone.
+A mobile-first dashboard showing the **accumulated results of the FIFA World Cup**:
+goals-per-game distribution, distinct-scoreline frequency, summary stats, and a
+results list. Built to open on your phone.
 
 It shows:
 
@@ -11,42 +11,63 @@ It shows:
 - **Distinct results** — frequency of each scoreline (order-independent, so 2–1 also counts 1–2).
 - **Finished matches** — recent results list.
 
-There is no build step and no chart library: it's one self-contained `index.html`
-with hand-drawn SVG charts. The only network call is the data fetch, which happens
-in **your browser** (so it works on your phone regardless of where the file is hosted).
+The page is a single self-contained `index.html` with hand-drawn SVG charts (no
+chart library).
 
-## Data source
+## How the data works
 
-Data comes from [TheSportsDB](https://www.thesportsdb.com/). Defaults:
+Live football APIs can't be called straight from a static page (CORS), and
+fifa.com is bot-protected, so instead a small **scraper runs server-side** and
+stores results in a flat file that the page reads from the same origin:
 
-| Setting    | Default | Meaning                          |
-| ---------- | ------- | -------------------------------- |
-| League ID  | `4429`  | FIFA World Cup                   |
-| Season     | `2026`  | 2026 tournament                  |
-| API key    | `3`     | Free public test key            |
+```
+GitHub Action (every ~15 min, or on demand)
+  → scrape.py  (pulls results from ESPN's public JSON feed)
+  → commits data/matches.json   ← flat file in this repo
+  → deploys to GitHub Pages
+        → your phone reads data/matches.json (same origin, no CORS)
+```
 
-Open the **Data settings** panel in the app to change these. Values are saved on
-your device. The app tries the full-season endpoint first and falls back to the
-league's most recent matches (which works on the free tier). If a season shows no
-data, double-check the season string format under settings, or
-[grab your own API key](https://www.thesportsdb.com/api.php).
+- **Source:** ESPN's public scoreboard JSON (`site.api.espn.com`, no API key).
+  It carries the official World Cup results and is stable to parse. The source is
+  isolated in `scrape.py` — swap it there without touching the dashboard.
+- **Freshness:** the `Update World Cup data` workflow runs every ~15 minutes.
+  The phone's **↻ Refresh** button re-reads the flat file so you always see the
+  latest committed data.
+- **Refresh right now:** repo → **Actions → Update World Cup data → Run workflow**.
 
-## Put it on your phone (GitHub Pages)
+## Files
 
-1. Merge this folder to the repository's **default branch** (`main`).
-2. In GitHub, go to **Settings → Pages**.
-3. Under **Build and deployment → Source**, choose **GitHub Actions**.
-4. The included workflow (`.github/workflows/pages.yml`) deploys automatically.
-   When it finishes, your URL appears in **Settings → Pages** (usually
-   `https://<you>.github.io/<repo>/`).
-5. Open that URL on your phone and **Add to Home Screen** for an app-like icon.
+| Path                       | What it is                                              |
+| -------------------------- | ------------------------------------------------------ |
+| `index.html`               | The dashboard (reads `data/matches.json`).             |
+| `scrape.py`                | Scraper → writes `data/matches.json`. Stdlib only.     |
+| `data/matches.json`        | Flat data file, updated by the Action.                 |
+| `../.github/workflows/scrape.yml` | Schedules the scrape + deploys Pages.           |
+| `../.github/workflows/pages.yml`  | Deploys Pages on code changes.                  |
 
-## Run it locally
+## Setup / hosting
 
-Just open `index.html` in any browser, or serve the folder:
+1. Merge to the default branch (`main`) — scheduled workflows only run from there.
+2. Repo → **Settings → Pages → Source → GitHub Actions** (one-time).
+3. Repo → **Actions → Update World Cup data → Run workflow** to populate data immediately
+   (otherwise it fills on the next 15-min tick).
+4. Open the Pages URL on your phone → **Add to Home Screen**.
+
+### Configuration
+
+`scrape.py` reads optional env vars (set them in `scrape.yml` if needed):
+
+| Var         | Default      | Meaning                          |
+| ----------- | ------------ | -------------------------------- |
+| `WC_LEAGUE` | `fifa.world` | ESPN soccer league slug          |
+| `WC_START`  | `2026-06-11` | First tournament day (inclusive) |
+| `WC_END`    | `2026-07-19` | Last tournament day (inclusive)  |
+
+## Run locally
 
 ```bash
 cd fifa-world-cup-dashboard
-python3 -m http.server 8000
-# then visit http://localhost:8000
+python3 scrape.py            # writes data/matches.json
+python3 -m http.server 8000  # then open http://localhost:8000
 ```

@@ -1,0 +1,9 @@
+{
+  "updated": null,
+  "source": "ESPN (site.api.espn.com)",
+  "league": "fifa.world",
+  "window": { "start": "2026-06-11", "end": "2026-07-19" },
+  "totalMatches": 0,
+  "finishedMatches": 0,
+  "matches": []
+}
