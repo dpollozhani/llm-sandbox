@@ -5,6 +5,11 @@ goals-per-game distribution, distinct-scoreline frequency, summary stats, and a
 results list. Built to open on your phone. A selector switches between the
 **2026, 2022, and 2018** tournaments.
 
+Controls: pick a **tournament** (2026 / 2022 / 2018, or **All-time** combined),
+filter by **stage** (group / knockout), and toggle the charts between **count** and
+**percent** (relative frequency). The All-time view is always relative, since the
+tournaments have different numbers of matches.
+
 It shows:
 
 - **Summary cards** — games played, total goals, goals per game, highest-scoring match.
