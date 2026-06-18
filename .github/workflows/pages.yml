@@ -1,0 +1,36 @@
+name: Deploy World Cup Dashboard to GitHub Pages
+
+# Publishes the static dashboard in ./fifa-world-cup-dashboard to GitHub Pages.
+# Runs when the dashboard changes on the default branch, or manually.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fifa-world-cup-dashboard/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./fifa-world-cup-dashboard
+      - id: deployment
+        uses: actions/deploy-pages@v4
