@@ -51,6 +51,13 @@
       background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
       padding: 11px 14px; -webkit-appearance: none; appearance: none;
     }
+    select:disabled { opacity: .5; cursor: default; }
+    .controls { display: flex; gap: 14px; flex-wrap: wrap; margin: -4px 0 14px; }
+    .ctl {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--muted);
+    }
+    .ctl select { font-size: 14px; padding: 8px 12px; }
     .grow { flex: 1 1 auto; }
     .updated { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
 
@@ -109,10 +116,27 @@
         <option value="2026">2026</option>
         <option value="2022">2022</option>
         <option value="2018">2018</option>
+        <option value="all">All-time</option>
       </select>
       <button id="refresh">↻ Refresh</button>
       <span class="grow"></span>
       <span class="updated" id="updated">Loading…</span>
+    </div>
+
+    <div class="controls">
+      <label class="ctl">Stage
+        <select id="stage" aria-label="Stage">
+          <option value="all">All</option>
+          <option value="group">Group</option>
+          <option value="knockout">Knockout</option>
+        </select>
+      </label>
+      <label class="ctl">Frequency
+        <select id="freq" aria-label="Frequency">
+          <option value="abs">Count</option>
+          <option value="rel">Percent</option>
+        </select>
+      </label>
     </div>
 
     <div id="status" class="status info">Loading the latest results…</div>
@@ -126,13 +150,13 @@
 
     <section class="panel">
       <h2>Goals per game</h2>
-      <p class="sub">How many matches finished with each total number of goals.</p>
+      <p class="sub" id="sub-goals">How many matches finished with each total number of goals.</p>
       <svg id="chart-goals" class="chart" role="img" aria-label="Distribution of goals per game"></svg>
     </section>
 
     <section class="panel">
       <h2>Distinct results</h2>
-      <p class="sub">Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).</p>
+      <p class="sub" id="sub-scores">Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).</p>
       <svg id="chart-scores" class="chart" role="img" aria-label="Frequency of each scoreline"></svg>
     </section>
 
@@ -155,15 +179,32 @@
     const $ = (id) => document.getElementById(id);
 
     // Tournament editions -> data file. 2026 keeps its original filename.
+    // groupEnd = last day of the group stage; matches after it are knockout.
     const EDITIONS = {
-      "2026": { file: "matches.json", label: "2026", live: true },
-      "2022": { file: "2022.json", label: "2022", live: false },
-      "2018": { file: "2018.json", label: "2018", live: false },
+      "2026": { file: "matches.json", label: "2026", live: true, groupEnd: "2026-06-27" },
+      "2022": { file: "2022.json", label: "2022", live: false, groupEnd: "2022-12-02" },
+      "2018": { file: "2018.json", label: "2018", live: false, groupEnd: "2018-06-28" },
     };
-    const LS_KEY = "wc-dashboard-edition";
+    const ALL_KEYS = ["2018", "2022", "2026"];
+    const LS_EDITION = "wc-dashboard-edition";
+    const LS_STAGE = "wc-dashboard-stage";
+    const LS_FREQ = "wc-dashboard-freq";
+
     function currentEdition() {
       const v = $("edition").value;
-      return EDITIONS[v] ? v : "2026";
+      return (v === "all" || EDITIONS[v]) ? v : "2026";
+    }
+    function currentStage() { return $("stage").value; }       // all | group | knockout
+    function isAll() { return currentEdition() === "all"; }
+    // Relative is forced in the All-time view (tournaments have different match counts).
+    function relativeMode() { return isAll() ? true : $("freq").value === "rel"; }
+
+    // Group/knockout by date — World Cup phases never overlap in dates.
+    function stageOf(match, edKey) {
+      const ed = EDITIONS[edKey];
+      const day = (match.date || "").slice(0, 10);
+      if (!ed || !day) return "";
+      return day <= ed.groupEnd ? "group" : "knockout";
     }
 
     function setStatus(msg, type) {
@@ -174,13 +215,12 @@
     }
 
     // ---------- normalize ----------
-    function normalize(payload) {
+    // Keep finished matches, tagging each with its edition + stage.
+    function normalize(payload, edKey) {
       const all = (payload && payload.matches) || [];
-      const finished = all.filter(m =>
-        m.completed && Number.isFinite(m.homeScore) && Number.isFinite(m.awayScore));
-      // newest first
-      finished.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-      return finished;
+      return all
+        .filter(m => m.completed && Number.isFinite(m.homeScore) && Number.isFinite(m.awayScore))
+        .map(m => ({ ...m, edition: edKey, stage: stageOf(m, edKey) }));
     }
 
     // ---------- stats ----------
@@ -239,48 +279,60 @@
       svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
       svg.style.height = "";
 
+      // In relative mode the bar label shows a percentage of the total.
+      const total = opts.total || 0;
+      const fmt = (v) => (opts.relative && total)
+        ? (100 * v / total).toFixed(1) + "%"
+        : String(v);
+
       const parts = [`<line class="tick" x1="${left}" y1="${top+plotH}" x2="${W-left}" y2="${top+plotH}"/>`];
       let x = left + gap;
       for (const e of entries) {
         const h = max ? Math.max(2, (e.value / max) * plotH) : 2;
         const y = top + plotH - h;
         parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}"/>`);
-        parts.push(`<text class="bar-label" x="${(x+barW/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle">${e.value}</text>`);
+        parts.push(`<text class="bar-label" x="${(x+barW/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle">${esc(fmt(e.value))}</text>`);
         parts.push(`<text class="axis-label" x="${(x+barW/2).toFixed(1)}" y="${(top+plotH+18).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>`);
         x += barW + gap;
       }
       svg.innerHTML = parts.join("");
     }
 
-    function renderGoalsChart(hist) {
+    function renderGoalsChart(hist, total, relative) {
       if (!hist.size) return renderBarChart("chart-goals", []);
       const maxGoals = Math.max(...hist.keys());
       const entries = [];
       for (let g = 0; g <= maxGoals; g++) entries.push({ label: String(g), value: hist.get(g) || 0 });
-      renderBarChart("chart-goals", entries, { color: "#4cc9f0" });
+      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative });
+      $("sub-goals").textContent = relative
+        ? "Share of matches by total goals scored."
+        : "How many matches finished with each total number of goals.";
     }
 
-    function renderScoresChart(freq) {
+    function renderScoresChart(freq, total, relative) {
       const entries = [...freq.entries()]
         .map(([label, value]) => ({ label, value }))
         .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
         .slice(0, 12);
-      renderBarChart("chart-scores", entries, { color: "#f7b801" });
+      renderBarChart("chart-scores", entries, { color: "#f7b801", total, relative });
+      $("sub-scores").textContent = relative
+        ? "Share of matches by scoreline (order-independent, e.g. 2–1 counts a 1–2 too)."
+        : "Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).";
     }
 
-    function renderMatches(matches) {
+    function renderMatches(matches, withYear) {
       const ul = $("matches");
       ul.innerHTML = "";
       if (!matches.length) {
-        ul.innerHTML = `<li class="empty" style="grid-column:1/-1">No finished matches yet.</li>`;
+        ul.innerHTML = `<li class="empty" style="grid-column:1/-1">No matches for this filter.</li>`;
         return;
       }
       const frag = document.createDocumentFragment();
-      for (const m of matches.slice(0, 64)) {
+      for (const m of matches.slice(0, 80)) {
         const li = document.createElement("li");
         li.innerHTML =
           `<span class="home">${esc(m.home)}</span>` +
-          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date))}</span></span>` +
+          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}</span></span>` +
           `<span class="away">${esc(m.away)}</span>`;
         frag.appendChild(li);
       }
@@ -293,17 +345,26 @@
     function esc(s) {
       return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
     }
-    function fmtDate(d) {
+    function fmtDate(d, withYear) {
       if (!d) return "";
       const dt = new Date(d);
       if (isNaN(dt)) return d;
-      return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const opts = { month: "short", day: "numeric" };
+      if (withYear) opts.year = "numeric";
+      return dt.toLocaleDateString(undefined, opts);
     }
     function fmtUpdated(iso) {
       if (!iso) return "no data yet";
       const dt = new Date(iso);
       if (isNaN(dt)) return iso;
       return dt.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" });
+    }
+
+    async function fetchEdition(edKey) {
+      const res = await fetch("./data/" + EDITIONS[edKey].file + "?t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const payload = await res.json();
+      return { payload, matches: normalize(payload, edKey) };
     }
 
     // ---------- main ----------
@@ -317,37 +378,53 @@
       btn.textContent = "↻ Loading…";
       setStatus("Loading the latest results…", "info");
 
-      const key = currentEdition();
-      const ed = EDITIONS[key];
-      $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
+      const all = isAll();
+      const stage = currentStage();
+      const relative = relativeMode();
+
+      // The frequency control is locked to Percent in the All-time view.
+      $("freq").disabled = all;
+      if (all) $("freq").value = "rel";
 
       try {
-        const res = await fetch("./data/" + ed.file + "?t=" + Date.now(), { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const payload = await res.json();
-        const matches = normalize(payload);
+        let matches = [];
+        let updatedLine = "";
+        if (all) {
+          const results = await Promise.all(ALL_KEYS.map(fetchEdition));
+          results.forEach(r => { matches = matches.concat(r.matches); });
+          $("subtitle").textContent = "All-time · 2018–2026 · relative frequency";
+          updatedLine = "Combined 2018 · 2022 · 2026";
+        } else {
+          const key = currentEdition();
+          const ed = EDITIONS[key];
+          const r = await fetchEdition(key);
+          matches = r.matches;
+          $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
+          updatedLine = "Data: " + esc(fmtUpdated(r.payload.updated));
+        }
+
+        // Stage filter (group / knockout).
+        if (stage !== "all") matches = matches.filter(m => m.stage === stage);
+        // Newest first.
+        matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
         const stats = computeStats(matches);
-
         renderCards(stats);
-        renderGoalsChart(stats.goalsHist);
-        renderScoresChart(stats.scoreFreq);
-        renderMatches(matches);
+        renderGoalsChart(stats.goalsHist, stats.games, relative);
+        renderScoresChart(stats.scoreFreq, stats.games, relative);
+        renderMatches(matches, all);
 
-        $("updated").innerHTML =
-          "Data: " + esc(fmtUpdated(payload.updated)) + "<br>Checked: " +
+        $("updated").innerHTML = updatedLine + "<br>Checked: " +
           new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
         if (!matches.length) {
-          setStatus(ed.live
-            ? "No finished matches yet. The scraper runs every ~15 min — or trigger it now from the " +
-              "repo's <em>Actions → Update World Cup data → Run workflow</em>."
-            : "The " + ed.label + " data hasn't been scraped yet. Run the repo's " +
-              "<em>Actions → Update World Cup data → Run workflow</em> once to populate it.", "info");
+          const stageNote = stage === "all" ? "" : " (" + stage + " stage)";
+          setStatus("No finished matches for this selection" + stageNote + " yet.", "info");
         } else {
           $("status").classList.add("hidden");
         }
       } catch (err) {
-        setStatus("Couldn't load the data file: " + esc(err.message) + ". Try again shortly.", "err");
+        setStatus("Couldn't load the data: " + esc(err.message) + ". Try again shortly.", "err");
       } finally {
         btn.disabled = false;
         btn.textContent = prev;
@@ -355,13 +432,18 @@
       }
     }
 
-    // Restore the last-picked tournament, then wire events.
-    const saved = localStorage.getItem(LS_KEY);
-    if (saved && EDITIONS[saved]) $("edition").value = saved;
-    $("edition").addEventListener("change", () => {
-      try { localStorage.setItem(LS_KEY, currentEdition()); } catch (_) {}
-      load();
-    });
+    // Restore the last-used selections, then wire events.
+    const store = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+    const savedEd = localStorage.getItem(LS_EDITION);
+    if (savedEd && (savedEd === "all" || EDITIONS[savedEd])) $("edition").value = savedEd;
+    const savedStage = localStorage.getItem(LS_STAGE);
+    if (savedStage) $("stage").value = savedStage;
+    const savedFreq = localStorage.getItem(LS_FREQ);
+    if (savedFreq) $("freq").value = savedFreq;
+
+    $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
+    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); load(); });
+    $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); load(); });
     $("refresh").addEventListener("click", load);
     load();
   })();
