@@ -46,6 +46,11 @@
     }
     button:active { transform: scale(.97); }
     button[disabled] { opacity: .55; cursor: default; }
+    select {
+      font: inherit; font-weight: 700; cursor: pointer; color: var(--ink);
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+      padding: 11px 14px; -webkit-appearance: none; appearance: none;
+    }
     .grow { flex: 1 1 auto; }
     .updated { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
 
@@ -100,6 +105,11 @@
     </header>
 
     <div class="toolbar">
+      <select id="edition" aria-label="Tournament">
+        <option value="2026">2026</option>
+        <option value="2022">2022</option>
+        <option value="2018">2018</option>
+      </select>
       <button id="refresh">↻ Refresh</button>
       <span class="grow"></span>
       <span class="updated" id="updated">Loading…</span>
@@ -143,7 +153,18 @@
   (() => {
     "use strict";
     const $ = (id) => document.getElementById(id);
-    const DATA_URL = "./data/matches.json";
+
+    // Tournament editions -> data file. 2026 keeps its original filename.
+    const EDITIONS = {
+      "2026": { file: "matches.json", label: "2026", live: true },
+      "2022": { file: "2022.json", label: "2022", live: false },
+      "2018": { file: "2018.json", label: "2018", live: false },
+    };
+    const LS_KEY = "wc-dashboard-edition";
+    function currentEdition() {
+      const v = $("edition").value;
+      return EDITIONS[v] ? v : "2026";
+    }
 
     function setStatus(msg, type) {
       const el = $("status");
@@ -296,8 +317,12 @@
       btn.textContent = "↻ Loading…";
       setStatus("Loading the latest results…", "info");
 
+      const key = currentEdition();
+      const ed = EDITIONS[key];
+      $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
+
       try {
-        const res = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+        const res = await fetch("./data/" + ed.file + "?t=" + Date.now(), { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const payload = await res.json();
         const matches = normalize(payload);
@@ -313,8 +338,11 @@
           new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
         if (!matches.length) {
-          setStatus("No finished matches in the data file yet. The scraper runs every ~15 min — " +
-            "or trigger it now from the repo's <em>Actions → Update World Cup data → Run workflow</em>.", "info");
+          setStatus(ed.live
+            ? "No finished matches yet. The scraper runs every ~15 min — or trigger it now from the " +
+              "repo's <em>Actions → Update World Cup data → Run workflow</em>."
+            : "The " + ed.label + " data hasn't been scraped yet. Run the repo's " +
+              "<em>Actions → Update World Cup data → Run workflow</em> once to populate it.", "info");
         } else {
           $("status").classList.add("hidden");
         }
@@ -327,6 +355,13 @@
       }
     }
 
+    // Restore the last-picked tournament, then wire events.
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved && EDITIONS[saved]) $("edition").value = saved;
+    $("edition").addEventListener("change", () => {
+      try { localStorage.setItem(LS_KEY, currentEdition()); } catch (_) {}
+      load();
+    });
     $("refresh").addEventListener("click", load);
     load();
   })();

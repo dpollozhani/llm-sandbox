@@ -1,0 +1,10 @@
+{
+  "updated": null,
+  "source": "ESPN (site.api.espn.com)",
+  "edition": "2018",
+  "league": "fifa.world",
+  "window": { "start": "2018-06-14", "end": "2018-07-15" },
+  "totalMatches": 0,
+  "finishedMatches": 0,
+  "matches": []
+}

@@ -40,8 +40,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- fifa-world-cup-dashboard/data/matches.json; then
-            git add fifa-world-cup-dashboard/data/matches.json
+          git add fifa-world-cup-dashboard/data
+          if ! git diff --cached --quiet; then
             git commit -m "Update World Cup data [skip ci]"
             git push
           else

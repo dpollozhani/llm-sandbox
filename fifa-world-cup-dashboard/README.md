@@ -2,7 +2,8 @@
 
 A mobile-first dashboard showing the **accumulated results of the FIFA World Cup**:
 goals-per-game distribution, distinct-scoreline frequency, summary stats, and a
-results list. Built to open on your phone.
+results list. Built to open on your phone. A selector switches between the
+**2026, 2022, and 2018** tournaments.
 
 It shows:
 
@@ -22,27 +23,31 @@ stores results in a flat file that the page reads from the same origin:
 
 ```
 GitHub Action (every ~15 min, or on demand)
-  → scrape.py  (pulls results from ESPN's public JSON feed)
-  → commits data/matches.json   ← flat file in this repo
+  → scrape.py  (pulls results from ESPN's public JSON feed, one file per edition)
+  → commits data/<edition>.json   ← flat files in this repo
   → deploys to GitHub Pages
-        → your phone reads data/matches.json (same origin, no CORS)
+        → your phone reads data/<edition>.json (same origin, no CORS)
 ```
 
+- **Editions:** one flat file per tournament — `data/matches.json` (2026),
+  `data/2022.json`, `data/2018.json`. The dashboard's selector switches between them.
 - **Source:** ESPN's public scoreboard JSON (`site.api.espn.com`, no API key).
   It carries the official World Cup results and is stable to parse. The source is
   isolated in `scrape.py` — swap it there without touching the dashboard.
-- **Freshness:** the `Update World Cup data` workflow runs every ~15 minutes.
-  The phone's **↻ Refresh** button re-reads the flat file so you always see the
-  latest committed data.
+- **Freshness:** the `Update World Cup data` workflow runs every ~15 minutes. It
+  always refreshes the **current** edition (2026) and merges incrementally so a
+  file can never blank out; **finished** editions (2022, 2018) are scraped once and
+  then skipped (re-scrape with `WC_FORCE=1`).
 - **Refresh right now:** repo → **Actions → Update World Cup data → Run workflow**.
 
 ## Files
 
 | Path                       | What it is                                              |
 | -------------------------- | ------------------------------------------------------ |
-| `index.html`               | The dashboard (reads `data/matches.json`).             |
-| `scrape.py`                | Scraper → writes `data/matches.json`. Stdlib only.     |
-| `data/matches.json`        | Flat data file, updated by the Action.                 |
+| `index.html`               | The dashboard (reads `data/<edition>.json`).           |
+| `scrape.py`                | Scraper → writes one file per edition. Stdlib only.    |
+| `data/matches.json`        | 2026 results, refreshed by the Action.                 |
+| `data/2022.json`, `data/2018.json` | Past tournaments (scraped once).               |
 | `../.github/workflows/scrape.yml` | Schedules the scrape + deploys Pages.           |
 | `../.github/workflows/pages.yml`  | Deploys Pages on code changes.                  |
 
@@ -56,18 +61,14 @@ GitHub Action (every ~15 min, or on demand)
 
 ### Configuration
 
-`scrape.py` reads optional env vars (set them in `scrape.yml` if needed):
-
-| Var         | Default      | Meaning                          |
-| ----------- | ------------ | -------------------------------- |
-| `WC_LEAGUE` | `fifa.world` | ESPN soccer league slug          |
-| `WC_START`  | `2026-06-11` | First tournament day (inclusive) |
-| `WC_END`    | `2026-07-19` | Last tournament day (inclusive)  |
+Editions (league slug, date window, output file) are defined in the `EDITIONS`
+dict at the top of `scrape.py` — add a row there to track another tournament.
+Set `WC_FORCE=1` to re-scrape finished editions instead of skipping them.
 
 ## Run locally
 
 ```bash
 cd fifa-world-cup-dashboard
-python3 scrape.py            # writes data/matches.json
+python3 scrape.py            # writes data/matches.json (+ past editions if missing)
 python3 -m http.server 8000  # then open http://localhost:8000
 ```
