@@ -1,0 +1,10 @@
+{
+  "updated": null,
+  "source": "ESPN (site.api.espn.com)",
+  "edition": "2022",
+  "league": "fifa.world",
+  "window": { "start": "2022-11-20", "end": "2022-12-18" },
+  "totalMatches": 0,
+  "finishedMatches": 0,
+  "matches": []
+}
