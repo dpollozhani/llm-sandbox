@@ -1,0 +1,60 @@
+name: Update World Cup data
+
+# Scrapes the latest results into fifa-world-cup-dashboard/data/matches.json,
+# commits it, and deploys the dashboard to GitHub Pages.
+#
+# Runs on a schedule and on demand. NOTE: a commit made with GITHUB_TOKEN does
+# not trigger other workflows, so this job deploys Pages itself rather than
+# relying on pages.yml.
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min (GitHub may delay during peak load)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commit the data file
+  pages: write      # deploy Pages
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Scrape latest results
+        run: python fifa-world-cup-dashboard/scrape.py
+
+      - name: Commit data if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- fifa-world-cup-dashboard/data/matches.json; then
+            git add fifa-world-cup-dashboard/data/matches.json
+            git commit -m "Update World Cup data [skip ci]"
+            git push
+          else
+            echo "No data changes."
+          fi
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./fifa-world-cup-dashboard
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
