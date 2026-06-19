@@ -335,15 +335,24 @@
     }
 
     function renderScoresChart(freq, total, relative) {
-      const entries = [...freq.entries()]
+      const sorted = [...freq.entries()]
         .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
-        .slice(0, 12);
+        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+      // Keep the Pareto complete: bucket the long tail into "Other" so the
+      // bars cover every match and the cumulative line reaches 100%.
+      let entries = sorted;
+      const MAX_BARS = 12;
+      if (sorted.length > MAX_BARS) {
+        const head = sorted.slice(0, MAX_BARS - 1);
+        const otherSum = sorted.slice(MAX_BARS - 1).reduce((s, e) => s + e.value, 0);
+        entries = head.concat([{ label: "Other", value: otherSum }]);
+      }
       renderBarChart("chart-scores", entries, { color: "#f7b801", total, relative, cumulative: true });
+      const tail = sorted.length > MAX_BARS ? " Rarer scorelines are grouped as “Other”." : "";
       $("sub-scores").textContent = (relative
         ? "Share of matches by scoreline (order-independent, e.g. 2–1 counts a 1–2 too)."
         : "Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).") +
-        " Line = cumulative " + (relative ? "%." : "count.");
+        " Line = cumulative " + (relative ? "%." : "count.") + tail;
     }
 
     function renderMatches(matches, withYear) {
