@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-19T04:01:27Z",
+  "updated": "2026-06-19T20:03:11Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -353,10 +353,10 @@
       "away": "Australia",
       "homeAbbr": "USA",
       "awayAbbr": "AUS",
-      "homeScore": 0,
+      "homeScore": 2,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Halftime"
     },
     {
       "id": "760445",
