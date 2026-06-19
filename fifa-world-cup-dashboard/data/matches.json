@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-19T20:03:11Z",
+  "updated": "2026-06-19T21:33:54Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 32,
-  "finishedMatches": 28,
+  "finishedMatches": 29,
   "matches": [
     {
       "id": "760415",
@@ -355,8 +355,8 @@
       "awayAbbr": "AUS",
       "homeScore": 2,
       "awayScore": 0,
-      "completed": false,
-      "status": "Halftime"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760445",
