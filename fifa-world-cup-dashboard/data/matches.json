@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-18T23:52:54Z",
+  "updated": "2026-06-19T04:01:27Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 28,
-  "finishedMatches": 26,
+  "totalMatches": 32,
+  "finishedMatches": 28,
   "matches": [
     {
       "id": "760415",
@@ -329,10 +329,10 @@
       "away": "Qatar",
       "homeAbbr": "CAN",
       "awayAbbr": "QAT",
-      "homeScore": 5,
+      "homeScore": 6,
       "awayScore": 0,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760441",
@@ -341,6 +341,54 @@
       "away": "South Korea",
       "homeAbbr": "MEX",
       "awayAbbr": "KOR",
+      "homeScore": 1,
+      "awayScore": 0,
+      "completed": true,
+      "status": "Full Time"
+    },
+    {
+      "id": "760442",
+      "date": "2026-06-19T19:00Z",
+      "home": "United States",
+      "away": "Australia",
+      "homeAbbr": "USA",
+      "awayAbbr": "AUS",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760445",
+      "date": "2026-06-19T22:00Z",
+      "home": "Scotland",
+      "away": "Morocco",
+      "homeAbbr": "SCO",
+      "awayAbbr": "MAR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760444",
+      "date": "2026-06-20T00:30Z",
+      "home": "Brazil",
+      "away": "Haiti",
+      "homeAbbr": "BRA",
+      "awayAbbr": "HAI",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760443",
+      "date": "2026-06-20T03:00Z",
+      "home": "Türkiye",
+      "away": "Paraguay",
+      "homeAbbr": "TUR",
+      "awayAbbr": "PAR",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
