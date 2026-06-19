@@ -76,6 +76,12 @@
     .axis-label { fill: var(--muted); font-size: 11px; }
     .bar-label { fill: var(--ink); font-size: 11px; font-weight: 700; }
     .tick { stroke: var(--line); stroke-width: 1; }
+    .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
+    .cum-dot { fill: #ff5d8f; }
+    .cum-label {
+      fill: #ffd0de; font-size: 10px; font-weight: 700;
+      paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round;
+    }
 
     .matches { list-style: none; margin: 0; padding: 0; }
     .matches li {
@@ -287,13 +293,31 @@
 
       const parts = [`<line class="tick" x1="${left}" y1="${top+plotH}" x2="${W-left}" y2="${top+plotH}"/>`];
       let x = left + gap;
+      let cum = 0;
+      const cumPts = [];   // [cx, cy, cumValue] for the Pareto line
       for (const e of entries) {
         const h = max ? Math.max(2, (e.value / max) * plotH) : 2;
         const y = top + plotH - h;
+        const cx = x + barW / 2;
         parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}"/>`);
-        parts.push(`<text class="bar-label" x="${(x+barW/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle">${esc(fmt(e.value))}</text>`);
-        parts.push(`<text class="axis-label" x="${(x+barW/2).toFixed(1)}" y="${(top+plotH+18).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>`);
+        parts.push(`<text class="bar-label" x="${cx.toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle">${esc(fmt(e.value))}</text>`);
+        parts.push(`<text class="axis-label" x="${cx.toFixed(1)}" y="${(top+plotH+18).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>`);
+        if (opts.cumulative && total) {
+          cum += e.value;
+          cumPts.push([cx, top + plotH - (cum / total) * plotH, cum]);
+        }
         x += barW + gap;
+      }
+
+      // Pareto overlay: cumulative line + markers + labels (cum % or count).
+      if (opts.cumulative && total && cumPts.length) {
+        const line = cumPts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+        parts.push(`<polyline class="cum-line" points="${line}"/>`);
+        for (const [cx, cy, c] of cumPts) {
+          const lab = opts.relative ? Math.round(100 * c / total) + "%" : String(c);
+          parts.push(`<circle class="cum-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3"/>`);
+          parts.push(`<text class="cum-label" x="${cx.toFixed(1)}" y="${(cy-7).toFixed(1)}" text-anchor="middle">${esc(lab)}</text>`);
+        }
       }
       svg.innerHTML = parts.join("");
     }
@@ -303,10 +327,11 @@
       const maxGoals = Math.max(...hist.keys());
       const entries = [];
       for (let g = 0; g <= maxGoals; g++) entries.push({ label: String(g), value: hist.get(g) || 0 });
-      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative });
-      $("sub-goals").textContent = relative
+      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative, cumulative: true });
+      $("sub-goals").textContent = (relative
         ? "Share of matches by total goals scored."
-        : "How many matches finished with each total number of goals.";
+        : "How many matches finished with each total number of goals.") +
+        " Line = cumulative " + (relative ? "%." : "count.");
     }
 
     function renderScoresChart(freq, total, relative) {
@@ -314,10 +339,11 @@
         .map(([label, value]) => ({ label, value }))
         .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
         .slice(0, 12);
-      renderBarChart("chart-scores", entries, { color: "#f7b801", total, relative });
-      $("sub-scores").textContent = relative
+      renderBarChart("chart-scores", entries, { color: "#f7b801", total, relative, cumulative: true });
+      $("sub-scores").textContent = (relative
         ? "Share of matches by scoreline (order-independent, e.g. 2–1 counts a 1–2 too)."
-        : "Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).";
+        : "Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).") +
+        " Line = cumulative " + (relative ? "%." : "count.");
     }
 
     function renderMatches(matches, withYear) {
