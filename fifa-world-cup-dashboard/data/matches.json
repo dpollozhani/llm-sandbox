@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-20T07:12:15Z",
+  "updated": "2026-06-20T17:47:27Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -401,10 +401,10 @@
       "away": "Sweden",
       "homeAbbr": "NED",
       "awayAbbr": "SWE",
-      "homeScore": 0,
+      "homeScore": 2,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760448",
