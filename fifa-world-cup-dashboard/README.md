@@ -6,9 +6,12 @@ results list. Built to open on your phone. A selector switches between the
 **2026, 2022, and 2018** tournaments.
 
 Controls: pick a **tournament** (2026 / 2022 / 2018, or **All-time** combined),
-filter by **stage** (group / knockout), and toggle the charts between **count** and
-**percent** (relative frequency). The All-time view is always relative, since the
-tournaments have different numbers of matches.
+filter by **stage** (group / knockout), toggle the charts between **count** and
+**percent** (relative frequency), and use the **completion slider** to see the
+distribution at any point in the tournament (e.g. "50% of matches played"). The
+completion cutoff is applied per edition, so it's comparable across tournaments and
+works in All-time too. The All-time view is always relative, since the tournaments
+have different numbers of matches. Both charts also carry a cumulative **Pareto** line.
 
 It shows:
 

@@ -148,8 +148,8 @@
       </label>
     </div>
 
-    <div class="datectl">
-      <input id="asof" type="range" min="0" max="0" value="0" step="1" aria-label="As-of date" />
+    <div class="datectl" id="datectl">
+      <input id="asof" type="range" min="0" max="100" value="100" step="5" aria-label="Tournament completion percent" />
       <span class="asof-label" id="asof-label">As of —</span>
     </div>
 
@@ -413,7 +413,6 @@
     // ---------- main ----------
     let loading = false;
     let baseMatches = [];   // finished matches for the current edition selection (stage-agnostic)
-    let domainDays = [];    // sorted unique match days under the current stage filter
     let updatedLine = "";
     let viewIsAll = false;
 
@@ -421,42 +420,49 @@
       const st = currentStage();
       return st === "all" ? baseMatches : baseMatches.filter(m => m.stage === st);
     }
-
-    // Rebuild the as-of slider from the days available under the current stage filter.
-    function rebuildDateSlider() {
-      domainDays = [...new Set(stageList().map(m => (m.date || "").slice(0, 10)).filter(Boolean))].sort();
-      const slider = $("asof");
-      slider.min = "0";
-      slider.max = String(Math.max(0, domainDays.length - 1));
-      slider.value = slider.max;          // default = latest (includes everything)
-      slider.disabled = domainDays.length <= 1;
-      updateAsOfLabel();
-    }
-    function currentAsOfDay() {
-      if (!domainDays.length) return null;
-      const i = Math.min(domainDays.length - 1, Math.max(0, parseInt($("asof").value, 10) || 0));
-      return domainDays[i];
-    }
-    function updateAsOfLabel() {
-      const day = currentAsOfDay();
-      if (!day) { $("asof-label").textContent = "As of —"; return; }
-      const latest = (parseInt($("asof").value, 10) || 0) >= domainDays.length - 1;
-      $("asof-label").textContent = "As of " + fmtDate(day + "T00:00:00Z", true) + (latest ? " · latest" : "");
+    function currentPct() {
+      return Math.min(100, Math.max(0, parseInt($("asof").value, 10) || 0));
     }
 
-    // Apply stage + as-of filters and (re)draw everything. No network.
+    // Keep the first `pct`% of matches by completion, applied PER edition so the
+    // cutoff means the same thing in every tournament (and works in All-time).
+    function completionCut(list, pct) {
+      if (pct >= 100) return list.slice();
+      const byEd = {};
+      for (const m of list) (byEd[m.edition] = byEd[m.edition] || []).push(m);
+      let out = [];
+      for (const k in byEd) {
+        const arr = byEd[k].slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+        out = out.concat(arr.slice(0, Math.round(arr.length * pct / 100)));
+      }
+      return out;
+    }
+
+    function updateAsOfLabel(matches, pct) {
+      const tag = pct >= 100 ? " (full)" : "";
+      if (viewIsAll) {
+        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag;
+      } else if (matches.length) {
+        // matches is sorted newest-first, so matches[0] is the latest included.
+        $("asof-label").textContent = pct + "% · as of " + fmtDate(matches[0].date, true) + tag;
+      } else {
+        $("asof-label").textContent = pct + "% · no matches yet";
+      }
+    }
+
+    // Apply stage + completion filters and (re)draw everything. No network.
     function render() {
       const relative = relativeMode();
-      const asOf = currentAsOfDay();
-      let matches = stageList();
-      if (asOf) matches = matches.filter(m => (m.date || "").slice(0, 10) <= asOf);
-      matches = matches.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      const pct = currentPct();
+      let matches = completionCut(stageList(), pct);
+      matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
       const stats = computeStats(matches);
       renderCards(stats);
       renderGoalsChart(stats.goalsHist, stats.games, relative);
       renderScoresChart(stats.scoreFreq, stats.games, relative);
       renderMatches(matches, viewIsAll);
+      updateAsOfLabel(matches, pct);
 
       $("updated").innerHTML = updatedLine + "<br>Checked: " +
         new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -500,8 +506,7 @@
           updatedLine = "Data: " + esc(fmtUpdated(r.payload.updated));
         }
         baseMatches = matches;
-        rebuildDateSlider();   // resets as-of to latest
-        render();
+        render();   // slider keeps its % across edition/stage changes (good for comparison)
       } catch (err) {
         setStatus("Couldn't load the data: " + esc(err.message) + ". Try again shortly.", "err");
       } finally {
@@ -521,9 +526,9 @@
     if (savedFreq) $("freq").value = savedFreq;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
-    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); rebuildDateSlider(); render(); });
+    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
-    $("asof").addEventListener("input", () => { updateAsOfLabel(); render(); });
+    $("asof").addEventListener("input", render);
     $("refresh").addEventListener("click", load);
     load();
   })();
