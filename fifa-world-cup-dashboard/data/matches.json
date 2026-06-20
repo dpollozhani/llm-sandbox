@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-20T19:21:34Z",
+  "updated": "2026-06-20T20:49:33Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -414,9 +414,9 @@
       "homeAbbr": "GER",
       "awayAbbr": "CIV",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "completed": false,
-      "status": "Scheduled"
+      "status": "In Progress"
     },
     {
       "id": "760446",
