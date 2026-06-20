@@ -368,6 +368,7 @@
       ul.innerHTML = "";
       if (!matches.length) {
         ul.innerHTML = `<li class="empty" style="grid-column:1/-1">No matches for this filter.</li>`;
+        $("matches-sub").textContent = "0 matches.";
         return;
       }
       const frag = document.createDocumentFragment();
@@ -416,10 +417,6 @@
     let updatedLine = "";
     let viewIsAll = false;
 
-    function stageList() {
-      const st = currentStage();
-      return st === "all" ? baseMatches : baseMatches.filter(m => m.stage === st);
-    }
     function currentPct() {
       return Math.min(100, Math.max(0, parseInt($("asof").value, 10) || 0));
     }
@@ -438,23 +435,34 @@
       return out;
     }
 
-    function updateAsOfLabel(matches, pct) {
+    // `cut` = full-tournament completion set (defines the % and as-of date);
+    // `matches` = what's shown after the stage filter.
+    function updateAsOfLabel(cut, matches, pct) {
       const tag = pct >= 100 ? " (full)" : "";
       if (viewIsAll) {
         $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag;
-      } else if (matches.length) {
-        // matches is sorted newest-first, so matches[0] is the latest included.
-        $("asof-label").textContent = pct + "% · as of " + fmtDate(matches[0].date, true) + tag;
-      } else {
-        $("asof-label").textContent = pct + "% · no matches yet";
+        return;
       }
+      let s = pct + "%";
+      if (cut.length) {
+        const latest = cut.reduce((a, b) => ((a.date || "") > (b.date || "") ? a : b)).date;
+        s += " · as of " + fmtDate(latest, true);
+      }
+      s += tag;
+      const st = currentStage();
+      if (st !== "all") s += " · " + matches.length + " " + st;   // make the stage count explicit
+      $("asof-label").textContent = s;
     }
 
-    // Apply stage + completion filters and (re)draw everything. No network.
+    // Apply completion (vs the whole tournament) then the stage filter, and draw. No network.
     function render() {
       const relative = relativeMode();
       const pct = currentPct();
-      let matches = completionCut(stageList(), pct);
+      const st = currentStage();
+      // Completion is measured against the FULL tournament(s); the stage filter then
+      // selects within what's been played — so e.g. 25% + knockout is (correctly) empty.
+      const cut = completionCut(baseMatches, pct);
+      let matches = st === "all" ? cut.slice() : cut.filter(m => m.stage === st);
       matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
       const stats = computeStats(matches);
@@ -462,15 +470,15 @@
       renderGoalsChart(stats.goalsHist, stats.games, relative);
       renderScoresChart(stats.scoreFreq, stats.games, relative);
       renderMatches(matches, viewIsAll);
-      updateAsOfLabel(matches, pct);
+      updateAsOfLabel(cut, matches, pct);
 
       $("updated").innerHTML = updatedLine + "<br>Checked: " +
         new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
       if (!matches.length) {
-        const st = currentStage();
-        const stageNote = st === "all" ? "" : " (" + st + " stage)";
-        setStatus("No finished matches for this selection" + stageNote + " yet.", "info");
+        let why = st === "all" ? "" : " (" + st + " stage)";
+        if (pct < 100) why += " by " + pct + "% completion";
+        setStatus("No matches for this selection" + why + ".", "info");
       } else {
         $("status").classList.add("hidden");
       }
