@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-19T23:47:58Z",
+  "updated": "2026-06-20T03:25:01Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 32,
-  "finishedMatches": 29,
+  "totalMatches": 35,
+  "finishedMatches": 31,
   "matches": [
     {
       "id": "760415",
@@ -367,8 +367,8 @@
       "awayAbbr": "MAR",
       "homeScore": 0,
       "awayScore": 1,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760444",
@@ -377,10 +377,10 @@
       "away": "Haiti",
       "homeAbbr": "BRA",
       "awayAbbr": "HAI",
-      "homeScore": 0,
+      "homeScore": 3,
       "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760443",
@@ -389,6 +389,42 @@
       "away": "Paraguay",
       "homeAbbr": "TUR",
       "awayAbbr": "PAR",
+      "homeScore": 0,
+      "awayScore": 1,
+      "completed": false,
+      "status": "First Half"
+    },
+    {
+      "id": "760447",
+      "date": "2026-06-20T17:00Z",
+      "home": "Netherlands",
+      "away": "Sweden",
+      "homeAbbr": "NED",
+      "awayAbbr": "SWE",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760448",
+      "date": "2026-06-20T20:00Z",
+      "home": "Germany",
+      "away": "Ivory Coast",
+      "homeAbbr": "GER",
+      "awayAbbr": "CIV",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760446",
+      "date": "2026-06-21T00:00Z",
+      "home": "Ecuador",
+      "away": "Curaçao",
+      "homeAbbr": "ECU",
+      "awayAbbr": "CUW",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
