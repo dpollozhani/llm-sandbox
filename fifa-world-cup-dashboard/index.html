@@ -58,6 +58,9 @@
       font-size: 12px; color: var(--muted);
     }
     .ctl select { font-size: 14px; padding: 8px 12px; }
+    .datectl { display: flex; align-items: center; gap: 10px; margin: -4px 0 14px; }
+    .datectl input[type=range] { flex: 1; accent-color: var(--accent); height: 26px; min-width: 0; }
+    .asof-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
     .grow { flex: 1 1 auto; }
     .updated { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
 
@@ -143,6 +146,11 @@
           <option value="rel">Percent</option>
         </select>
       </label>
+    </div>
+
+    <div class="datectl" id="datectl">
+      <input id="asof" type="range" min="0" max="100" value="100" step="5" aria-label="Tournament completion percent" />
+      <span class="asof-label" id="asof-label">As of —</span>
     </div>
 
     <div id="status" class="status info">Loading the latest results…</div>
@@ -360,6 +368,7 @@
       ul.innerHTML = "";
       if (!matches.length) {
         ul.innerHTML = `<li class="empty" style="grid-column:1/-1">No matches for this filter.</li>`;
+        $("matches-sub").textContent = "0 matches.";
         return;
       }
       const frag = document.createDocumentFragment();
@@ -404,6 +413,77 @@
 
     // ---------- main ----------
     let loading = false;
+    let baseMatches = [];   // finished matches for the current edition selection (stage-agnostic)
+    let updatedLine = "";
+    let viewIsAll = false;
+
+    function currentPct() {
+      return Math.min(100, Math.max(0, parseInt($("asof").value, 10) || 0));
+    }
+
+    // Keep the first `pct`% of matches by completion, applied PER edition so the
+    // cutoff means the same thing in every tournament (and works in All-time).
+    function completionCut(list, pct) {
+      if (pct >= 100) return list.slice();
+      const byEd = {};
+      for (const m of list) (byEd[m.edition] = byEd[m.edition] || []).push(m);
+      let out = [];
+      for (const k in byEd) {
+        const arr = byEd[k].slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+        out = out.concat(arr.slice(0, Math.round(arr.length * pct / 100)));
+      }
+      return out;
+    }
+
+    // `cut` = full-tournament completion set (defines the % and as-of date);
+    // `matches` = what's shown after the stage filter.
+    function updateAsOfLabel(cut, matches, pct) {
+      const tag = pct >= 100 ? " (full)" : "";
+      if (viewIsAll) {
+        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag;
+        return;
+      }
+      let s = pct + "%";
+      if (cut.length) {
+        const latest = cut.reduce((a, b) => ((a.date || "") > (b.date || "") ? a : b)).date;
+        s += " · as of " + fmtDate(latest, true);
+      }
+      s += tag;
+      const st = currentStage();
+      if (st !== "all") s += " · " + matches.length + " " + st;   // make the stage count explicit
+      $("asof-label").textContent = s;
+    }
+
+    // Apply completion (vs the whole tournament) then the stage filter, and draw. No network.
+    function render() {
+      const relative = relativeMode();
+      const pct = currentPct();
+      const st = currentStage();
+      // Completion is measured against the FULL tournament(s); the stage filter then
+      // selects within what's been played — so e.g. 25% + knockout is (correctly) empty.
+      const cut = completionCut(baseMatches, pct);
+      let matches = st === "all" ? cut.slice() : cut.filter(m => m.stage === st);
+      matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+      const stats = computeStats(matches);
+      renderCards(stats);
+      renderGoalsChart(stats.goalsHist, stats.games, relative);
+      renderScoresChart(stats.scoreFreq, stats.games, relative);
+      renderMatches(matches, viewIsAll);
+      updateAsOfLabel(cut, matches, pct);
+
+      $("updated").innerHTML = updatedLine + "<br>Checked: " +
+        new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+      if (!matches.length) {
+        let why = st === "all" ? "" : " (" + st + " stage)";
+        if (pct < 100) why += " by " + pct + "% completion";
+        setStatus("No matches for this selection" + why + ".", "info");
+      } else {
+        $("status").classList.add("hidden");
+      }
+    }
+
     async function load() {
       if (loading) return;
       loading = true;
@@ -413,18 +493,14 @@
       btn.textContent = "↻ Loading…";
       setStatus("Loading the latest results…", "info");
 
-      const all = isAll();
-      const stage = currentStage();
-      const relative = relativeMode();
-
+      viewIsAll = isAll();
       // The frequency control is locked to Percent in the All-time view.
-      $("freq").disabled = all;
-      if (all) $("freq").value = "rel";
+      $("freq").disabled = viewIsAll;
+      if (viewIsAll) $("freq").value = "rel";
 
       try {
         let matches = [];
-        let updatedLine = "";
-        if (all) {
+        if (viewIsAll) {
           const results = await Promise.all(ALL_KEYS.map(fetchEdition));
           results.forEach(r => { matches = matches.concat(r.matches); });
           $("subtitle").textContent = "All-time · 2018–2026 · relative frequency";
@@ -437,27 +513,8 @@
           $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
           updatedLine = "Data: " + esc(fmtUpdated(r.payload.updated));
         }
-
-        // Stage filter (group / knockout).
-        if (stage !== "all") matches = matches.filter(m => m.stage === stage);
-        // Newest first.
-        matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-
-        const stats = computeStats(matches);
-        renderCards(stats);
-        renderGoalsChart(stats.goalsHist, stats.games, relative);
-        renderScoresChart(stats.scoreFreq, stats.games, relative);
-        renderMatches(matches, all);
-
-        $("updated").innerHTML = updatedLine + "<br>Checked: " +
-          new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-
-        if (!matches.length) {
-          const stageNote = stage === "all" ? "" : " (" + stage + " stage)";
-          setStatus("No finished matches for this selection" + stageNote + " yet.", "info");
-        } else {
-          $("status").classList.add("hidden");
-        }
+        baseMatches = matches;
+        render();   // slider keeps its % across edition/stage changes (good for comparison)
       } catch (err) {
         setStatus("Couldn't load the data: " + esc(err.message) + ". Try again shortly.", "err");
       } finally {
@@ -477,8 +534,9 @@
     if (savedFreq) $("freq").value = savedFreq;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
-    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); load(); });
-    $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); load(); });
+    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
+    $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
+    $("asof").addEventListener("input", render);
     $("refresh").addEventListener("click", load);
     load();
   })();
