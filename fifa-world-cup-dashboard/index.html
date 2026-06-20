@@ -58,6 +58,9 @@
       font-size: 12px; color: var(--muted);
     }
     .ctl select { font-size: 14px; padding: 8px 12px; }
+    .datectl { display: flex; align-items: center; gap: 10px; margin: -4px 0 14px; }
+    .datectl input[type=range] { flex: 1; accent-color: var(--accent); height: 26px; min-width: 0; }
+    .asof-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
     .grow { flex: 1 1 auto; }
     .updated { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
 
@@ -143,6 +146,11 @@
           <option value="rel">Percent</option>
         </select>
       </label>
+    </div>
+
+    <div class="datectl">
+      <input id="asof" type="range" min="0" max="0" value="0" step="1" aria-label="As-of date" />
+      <span class="asof-label" id="asof-label">As of —</span>
     </div>
 
     <div id="status" class="status info">Loading the latest results…</div>
@@ -404,6 +412,64 @@
 
     // ---------- main ----------
     let loading = false;
+    let baseMatches = [];   // finished matches for the current edition selection (stage-agnostic)
+    let domainDays = [];    // sorted unique match days under the current stage filter
+    let updatedLine = "";
+    let viewIsAll = false;
+
+    function stageList() {
+      const st = currentStage();
+      return st === "all" ? baseMatches : baseMatches.filter(m => m.stage === st);
+    }
+
+    // Rebuild the as-of slider from the days available under the current stage filter.
+    function rebuildDateSlider() {
+      domainDays = [...new Set(stageList().map(m => (m.date || "").slice(0, 10)).filter(Boolean))].sort();
+      const slider = $("asof");
+      slider.min = "0";
+      slider.max = String(Math.max(0, domainDays.length - 1));
+      slider.value = slider.max;          // default = latest (includes everything)
+      slider.disabled = domainDays.length <= 1;
+      updateAsOfLabel();
+    }
+    function currentAsOfDay() {
+      if (!domainDays.length) return null;
+      const i = Math.min(domainDays.length - 1, Math.max(0, parseInt($("asof").value, 10) || 0));
+      return domainDays[i];
+    }
+    function updateAsOfLabel() {
+      const day = currentAsOfDay();
+      if (!day) { $("asof-label").textContent = "As of —"; return; }
+      const latest = (parseInt($("asof").value, 10) || 0) >= domainDays.length - 1;
+      $("asof-label").textContent = "As of " + fmtDate(day + "T00:00:00Z", true) + (latest ? " · latest" : "");
+    }
+
+    // Apply stage + as-of filters and (re)draw everything. No network.
+    function render() {
+      const relative = relativeMode();
+      const asOf = currentAsOfDay();
+      let matches = stageList();
+      if (asOf) matches = matches.filter(m => (m.date || "").slice(0, 10) <= asOf);
+      matches = matches.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+      const stats = computeStats(matches);
+      renderCards(stats);
+      renderGoalsChart(stats.goalsHist, stats.games, relative);
+      renderScoresChart(stats.scoreFreq, stats.games, relative);
+      renderMatches(matches, viewIsAll);
+
+      $("updated").innerHTML = updatedLine + "<br>Checked: " +
+        new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+      if (!matches.length) {
+        const st = currentStage();
+        const stageNote = st === "all" ? "" : " (" + st + " stage)";
+        setStatus("No finished matches for this selection" + stageNote + " yet.", "info");
+      } else {
+        $("status").classList.add("hidden");
+      }
+    }
+
     async function load() {
       if (loading) return;
       loading = true;
@@ -413,18 +479,14 @@
       btn.textContent = "↻ Loading…";
       setStatus("Loading the latest results…", "info");
 
-      const all = isAll();
-      const stage = currentStage();
-      const relative = relativeMode();
-
+      viewIsAll = isAll();
       // The frequency control is locked to Percent in the All-time view.
-      $("freq").disabled = all;
-      if (all) $("freq").value = "rel";
+      $("freq").disabled = viewIsAll;
+      if (viewIsAll) $("freq").value = "rel";
 
       try {
         let matches = [];
-        let updatedLine = "";
-        if (all) {
+        if (viewIsAll) {
           const results = await Promise.all(ALL_KEYS.map(fetchEdition));
           results.forEach(r => { matches = matches.concat(r.matches); });
           $("subtitle").textContent = "All-time · 2018–2026 · relative frequency";
@@ -437,27 +499,9 @@
           $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
           updatedLine = "Data: " + esc(fmtUpdated(r.payload.updated));
         }
-
-        // Stage filter (group / knockout).
-        if (stage !== "all") matches = matches.filter(m => m.stage === stage);
-        // Newest first.
-        matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-
-        const stats = computeStats(matches);
-        renderCards(stats);
-        renderGoalsChart(stats.goalsHist, stats.games, relative);
-        renderScoresChart(stats.scoreFreq, stats.games, relative);
-        renderMatches(matches, all);
-
-        $("updated").innerHTML = updatedLine + "<br>Checked: " +
-          new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-
-        if (!matches.length) {
-          const stageNote = stage === "all" ? "" : " (" + stage + " stage)";
-          setStatus("No finished matches for this selection" + stageNote + " yet.", "info");
-        } else {
-          $("status").classList.add("hidden");
-        }
+        baseMatches = matches;
+        rebuildDateSlider();   // resets as-of to latest
+        render();
       } catch (err) {
         setStatus("Couldn't load the data: " + esc(err.message) + ". Try again shortly.", "err");
       } finally {
@@ -477,8 +521,9 @@
     if (savedFreq) $("freq").value = savedFreq;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
-    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); load(); });
-    $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); load(); });
+    $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); rebuildDateSlider(); render(); });
+    $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
+    $("asof").addEventListener("input", () => { updateAsOfLabel(); render(); });
     $("refresh").addEventListener("click", load);
     load();
   })();
