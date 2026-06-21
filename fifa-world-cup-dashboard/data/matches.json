@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-21T07:06:35Z",
+  "updated": "2026-06-21T17:03:29Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -449,10 +449,10 @@
       "away": "Saudi Arabia",
       "homeAbbr": "ESP",
       "awayAbbr": "KSA",
-      "homeScore": 0,
+      "homeScore": 3,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Halftime"
     },
     {
       "id": "760451",
