@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-21T21:53:21Z",
+  "updated": "2026-06-21T23:10:35Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -473,10 +473,10 @@
       "away": "Cape Verde",
       "homeAbbr": "URU",
       "awayAbbr": "CPV",
-      "homeScore": 0,
-      "awayScore": 0,
+      "homeScore": 2,
+      "awayScore": 1,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Halftime"
     },
     {
       "id": "760452",
