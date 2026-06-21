@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-21T17:03:29Z",
+  "updated": "2026-06-21T18:50:22Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 40,
-  "finishedMatches": 36,
+  "finishedMatches": 37,
   "matches": [
     {
       "id": "760415",
@@ -449,10 +449,10 @@
       "away": "Saudi Arabia",
       "homeAbbr": "ESP",
       "awayAbbr": "KSA",
-      "homeScore": 3,
+      "homeScore": 4,
       "awayScore": 0,
-      "completed": false,
-      "status": "Halftime"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760451",
