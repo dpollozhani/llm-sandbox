@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-21T02:05:43Z",
+  "updated": "2026-06-21T07:06:35Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 40,
-  "finishedMatches": 35,
+  "finishedMatches": 36,
   "matches": [
     {
       "id": "760415",
@@ -438,9 +438,9 @@
       "homeAbbr": "TUN",
       "awayAbbr": "JPN",
       "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "awayScore": 4,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760453",
