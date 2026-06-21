@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-20T22:04:18Z",
+  "updated": "2026-06-21T02:05:43Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 35,
-  "finishedMatches": 34,
+  "totalMatches": 40,
+  "finishedMatches": 35,
   "matches": [
     {
       "id": "760415",
@@ -425,6 +425,66 @@
       "away": "Curaçao",
       "homeAbbr": "ECU",
       "awayAbbr": "CUW",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": true,
+      "status": "Full Time"
+    },
+    {
+      "id": "760449",
+      "date": "2026-06-21T04:00Z",
+      "home": "Tunisia",
+      "away": "Japan",
+      "homeAbbr": "TUN",
+      "awayAbbr": "JPN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760453",
+      "date": "2026-06-21T16:00Z",
+      "home": "Spain",
+      "away": "Saudi Arabia",
+      "homeAbbr": "ESP",
+      "awayAbbr": "KSA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760451",
+      "date": "2026-06-21T19:00Z",
+      "home": "Belgium",
+      "away": "Iran",
+      "homeAbbr": "BEL",
+      "awayAbbr": "IRN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760450",
+      "date": "2026-06-21T22:00Z",
+      "home": "Uruguay",
+      "away": "Cape Verde",
+      "homeAbbr": "URU",
+      "awayAbbr": "CPV",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760452",
+      "date": "2026-06-22T01:00Z",
+      "home": "New Zealand",
+      "away": "Egypt",
+      "homeAbbr": "NZL",
+      "awayAbbr": "EGY",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
