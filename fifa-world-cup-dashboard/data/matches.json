@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-21T23:10:35Z",
+  "updated": "2026-06-22T01:41:11Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 40,
-  "finishedMatches": 38,
+  "totalMatches": 44,
+  "finishedMatches": 39,
   "matches": [
     {
       "id": "760415",
@@ -474,9 +474,9 @@
       "homeAbbr": "URU",
       "awayAbbr": "CPV",
       "homeScore": 2,
-      "awayScore": 1,
-      "completed": false,
-      "status": "Halftime"
+      "awayScore": 2,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760452",
@@ -485,6 +485,54 @@
       "away": "Egypt",
       "homeAbbr": "NZL",
       "awayAbbr": "EGY",
+      "homeScore": 1,
+      "awayScore": 0,
+      "completed": false,
+      "status": "In Progress"
+    },
+    {
+      "id": "760456",
+      "date": "2026-06-22T17:00Z",
+      "home": "Argentina",
+      "away": "Austria",
+      "homeAbbr": "ARG",
+      "awayAbbr": "AUT",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760457",
+      "date": "2026-06-22T21:00Z",
+      "home": "France",
+      "away": "Iraq",
+      "homeAbbr": "FRA",
+      "awayAbbr": "IRQ",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760454",
+      "date": "2026-06-23T00:00Z",
+      "home": "Norway",
+      "away": "Senegal",
+      "homeAbbr": "NOR",
+      "awayAbbr": "SEN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760455",
+      "date": "2026-06-23T03:00Z",
+      "home": "Jordan",
+      "away": "Algeria",
+      "homeAbbr": "JOR",
+      "awayAbbr": "ALG",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
