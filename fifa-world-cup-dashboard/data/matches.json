@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23T02:55:20Z",
+  "updated": "2026-06-23T06:49:37Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 48,
-  "finishedMatches": 43,
+  "finishedMatches": 44,
   "matches": [
     {
       "id": "760415",
@@ -533,10 +533,10 @@
       "away": "Algeria",
       "homeAbbr": "JOR",
       "awayAbbr": "ALG",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 1,
+      "awayScore": 2,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760461",
