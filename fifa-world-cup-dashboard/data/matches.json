@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-22T22:26:47Z",
+  "updated": "2026-06-23T02:55:20Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 44,
-  "finishedMatches": 41,
+  "totalMatches": 48,
+  "finishedMatches": 43,
   "matches": [
     {
       "id": "760415",
@@ -509,10 +509,10 @@
       "away": "Iraq",
       "homeAbbr": "FRA",
       "awayAbbr": "IRQ",
-      "homeScore": 1,
+      "homeScore": 3,
       "awayScore": 0,
-      "completed": false,
-      "status": "Delayed"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760454",
@@ -521,10 +521,10 @@
       "away": "Senegal",
       "homeAbbr": "NOR",
       "awayAbbr": "SEN",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 3,
+      "awayScore": 2,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760455",
@@ -533,6 +533,54 @@
       "away": "Algeria",
       "homeAbbr": "JOR",
       "awayAbbr": "ALG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760461",
+      "date": "2026-06-23T17:00Z",
+      "home": "Portugal",
+      "away": "Uzbekistan",
+      "homeAbbr": "POR",
+      "awayAbbr": "UZB",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760458",
+      "date": "2026-06-23T20:00Z",
+      "home": "England",
+      "away": "Ghana",
+      "homeAbbr": "ENG",
+      "awayAbbr": "GHA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760460",
+      "date": "2026-06-23T23:00Z",
+      "home": "Panama",
+      "away": "Croatia",
+      "homeAbbr": "PAN",
+      "awayAbbr": "CRO",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760459",
+      "date": "2026-06-24T02:00Z",
+      "home": "Colombia",
+      "away": "Congo DR",
+      "homeAbbr": "COL",
+      "awayAbbr": "COD",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
