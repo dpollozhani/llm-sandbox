@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23T06:49:37Z",
+  "updated": "2026-06-23T18:16:21Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -545,10 +545,10 @@
       "away": "Uzbekistan",
       "homeAbbr": "POR",
       "awayAbbr": "UZB",
-      "homeScore": 0,
+      "homeScore": 3,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760458",
