@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23T22:04:31Z",
+  "updated": "2026-06-23T23:21:12Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -572,7 +572,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760459",
