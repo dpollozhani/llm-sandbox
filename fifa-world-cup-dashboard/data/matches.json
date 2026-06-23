@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23T18:16:21Z",
+  "updated": "2026-06-23T20:31:41Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 48,
-  "finishedMatches": 44,
+  "finishedMatches": 45,
   "matches": [
     {
       "id": "760415",
@@ -545,10 +545,10 @@
       "away": "Uzbekistan",
       "homeAbbr": "POR",
       "awayAbbr": "UZB",
-      "homeScore": 3,
+      "homeScore": 5,
       "awayScore": 0,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760458",
@@ -560,7 +560,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "In Progress"
     },
     {
       "id": "760460",
