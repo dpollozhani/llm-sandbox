@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23T23:21:12Z",
+  "updated": "2026-06-24T01:24:56Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 48,
-  "finishedMatches": 46,
+  "totalMatches": 54,
+  "finishedMatches": 47,
   "matches": [
     {
       "id": "760415",
@@ -570,9 +570,9 @@
       "homeAbbr": "PAN",
       "awayAbbr": "CRO",
       "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "awayScore": 1,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760459",
@@ -581,6 +581,78 @@
       "away": "Congo DR",
       "homeAbbr": "COL",
       "awayAbbr": "COD",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760462",
+      "date": "2026-06-24T19:00Z",
+      "home": "Bosnia-Herzegovina",
+      "away": "Qatar",
+      "homeAbbr": "BIH",
+      "awayAbbr": "QAT",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760463",
+      "date": "2026-06-24T19:00Z",
+      "home": "Switzerland",
+      "away": "Canada",
+      "homeAbbr": "SUI",
+      "awayAbbr": "CAN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760464",
+      "date": "2026-06-24T22:00Z",
+      "home": "Morocco",
+      "away": "Haiti",
+      "homeAbbr": "MAR",
+      "awayAbbr": "HAI",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760465",
+      "date": "2026-06-24T22:00Z",
+      "home": "Scotland",
+      "away": "Brazil",
+      "homeAbbr": "SCO",
+      "awayAbbr": "BRA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760466",
+      "date": "2026-06-25T01:00Z",
+      "home": "South Africa",
+      "away": "South Korea",
+      "homeAbbr": "RSA",
+      "awayAbbr": "KOR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760467",
+      "date": "2026-06-25T01:00Z",
+      "home": "Czechia",
+      "away": "Mexico",
+      "homeAbbr": "CZE",
+      "awayAbbr": "MEX",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
