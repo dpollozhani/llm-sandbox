@@ -13,6 +13,12 @@ completion cutoff is applied per edition, so it's comparable across tournaments 
 works in All-time too. The All-time view is always relative, since the tournaments
 have different numbers of matches. Both charts also carry a cumulative **Pareto** line.
 
+In the **All-time** view a **Display** toggle switches between **Aggregate** (the
+combined bar charts) and **Compare** — two heatmaps (goals-per-game and scorelines)
+with one row per tournament, each cell shaded by that tournament's share of matches,
+so you can compare 2018 / 2022 / 2026 side by side. The heatmaps respect the stage
+and completion filters too.
+
 It shows:
 
 - **Summary cards** — games played, total goals, goals per game, highest-scoring match.

@@ -79,6 +79,22 @@
     .axis-label { fill: var(--muted); font-size: 11px; }
     .bar-label { fill: var(--ink); font-size: 11px; font-weight: 700; }
     .tick { stroke: var(--line); stroke-width: 1; }
+    /* Local toggle that sits with the distribution visuals */
+    .viewbar { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; margin: 0 0 12px; flex-wrap: wrap; }
+    .viewbar-title { font-size: 13px; color: var(--muted); font-weight: 700; }
+    .viewbar-ctls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+    /* Comparison heatmap */
+    .heat { display: grid; gap: 4px; overflow-x: auto; }
+    .heat .hcell {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+      padding: 7px 4px; text-align: center; border-radius: 7px; min-width: 34px;
+      font-variant-numeric: tabular-nums;
+    }
+    .heat .hv { font-size: 12px; font-weight: 800; }
+    .heat .hc { font-size: 9px; font-weight: 600; opacity: .75; }
+    .heat .hhead { color: var(--muted); font-weight: 700; font-size: 11px; background: transparent; padding-bottom: 2px; }
+    .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-items: flex-start; justify-content: center; padding-left: 0; }
     .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
     .cum-dot { fill: #ff5d8f; }
     .cum-label {
@@ -140,12 +156,6 @@
           <option value="knockout">Knockout</option>
         </select>
       </label>
-      <label class="ctl">Frequency
-        <select id="freq" aria-label="Frequency">
-          <option value="abs">Count</option>
-          <option value="rel">Percent</option>
-        </select>
-      </label>
     </div>
 
     <div class="datectl" id="datectl">
@@ -162,16 +172,46 @@
       <div class="card"><div class="k">Highest scoring</div><div class="v" id="stat-high">–</div></div>
     </section>
 
-    <section class="panel">
+    <div class="viewbar" id="viewbar">
+      <span class="viewbar-title">Distributions</span>
+      <span class="viewbar-ctls">
+        <label class="ctl">Frequency
+          <select id="freq" aria-label="Frequency">
+            <option value="abs">Count</option>
+            <option value="rel">Percent</option>
+          </select>
+        </label>
+        <label class="ctl hidden" id="viewctl-display">Display
+          <select id="view" aria-label="Display">
+            <option value="aggregate">Aggregate</option>
+            <option value="compare">Compare</option>
+          </select>
+        </label>
+      </span>
+    </div>
+
+    <section class="panel" id="panel-goals">
       <h2>Goals per game</h2>
       <p class="sub" id="sub-goals">How many matches finished with each total number of goals.</p>
       <svg id="chart-goals" class="chart" role="img" aria-label="Distribution of goals per game"></svg>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="panel-scores">
       <h2>Distinct results</h2>
       <p class="sub" id="sub-scores">Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).</p>
       <svg id="chart-scores" class="chart" role="img" aria-label="Frequency of each scoreline"></svg>
+    </section>
+
+    <section class="panel hidden" id="panel-heat-goals">
+      <h2>Goals per game — by tournament</h2>
+      <p class="sub" id="sub-heat-goals">Share of each tournament's matches; small Σ = cumulative %. Darker = more common.</p>
+      <div class="heat" id="heat-goals"></div>
+    </section>
+
+    <section class="panel hidden" id="panel-heat-scores">
+      <h2>Distinct results — by tournament</h2>
+      <p class="sub" id="sub-heat-scores">Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common.</p>
+      <div class="heat" id="heat-scores"></div>
     </section>
 
     <section class="panel">
@@ -203,6 +243,7 @@
     const LS_EDITION = "wc-dashboard-edition";
     const LS_STAGE = "wc-dashboard-stage";
     const LS_FREQ = "wc-dashboard-freq";
+    const LS_VIEW = "wc-dashboard-view";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -212,6 +253,8 @@
     function isAll() { return currentEdition() === "all"; }
     // Relative is forced in the All-time view (tournaments have different match counts).
     function relativeMode() { return isAll() ? true : $("freq").value === "rel"; }
+    // Compare mode (per-tournament heatmaps) only exists in the All-time view.
+    function compareMode() { return isAll() && $("view").value === "compare"; }
 
     // Group/knockout by date — World Cup phases never overlap in dates.
     function stageOf(match, edKey) {
@@ -363,6 +406,85 @@
         " Line = cumulative " + (relative ? "%." : "count.") + tail;
     }
 
+    // ---------- comparison heatmaps (All-time / Compare) ----------
+    function scorelineKey(m) {
+      return Math.max(m.homeScore, m.awayScore) + "–" + Math.min(m.homeScore, m.awayScore);
+    }
+
+    // rows: [{label, cells:[{frac}]}]; colLabels: string[]; rgb: "r,g,b".
+    // Each cell shows the per-bin % (big) and the left-to-right cumulative % (small).
+    function buildHeatTable(containerId, colLabels, rows, rgb) {
+      const el = $(containerId);
+      if (!rows.length || !colLabels.length) {
+        el.style.gridTemplateColumns = "";
+        el.innerHTML = `<div class="hcell hhead">No data for this filter.</div>`;
+        return;
+      }
+      const maxFrac = Math.max(...rows.flatMap(r => r.cells.map(c => c.frac)), 0) || 1;
+      el.style.gridTemplateColumns = `5ch repeat(${colLabels.length}, minmax(34px, 1fr))`;
+      const parts = [`<div class="hcell hhead"></div>`];
+      for (const c of colLabels) parts.push(`<div class="hcell hhead">${esc(c)}</div>`);
+      for (const r of rows) {
+        parts.push(`<div class="hcell hrow">${esc(r.label)}</div>`);
+        let cum = 0;
+        for (const cell of r.cells) {
+          cum += cell.frac;
+          const intensity = cell.frac / maxFrac;                 // 0..1 within this matrix
+          const alpha = cell.frac > 0 ? (0.12 + 0.88 * intensity).toFixed(3) : "0.04";
+          const ink = intensity > 0.55 ? "#06122a" : "var(--ink)";
+          const big = cell.frac > 0 ? Math.round(cell.frac * 100) + "%" : "·";
+          parts.push(`<div class="hcell" style="background:rgba(${rgb},${alpha});color:${ink}">` +
+            `<span class="hv">${big}</span><span class="hc">Σ${Math.round(cum * 100)}%</span></div>`);
+        }
+      }
+      el.innerHTML = parts.join("");
+    }
+
+    function renderHeatmaps(matches) {
+      const eds = ALL_KEYS.filter(k => matches.some(m => m.edition === k));
+      const byEd = {};
+      eds.forEach(k => { byEd[k] = matches.filter(m => m.edition === k); });
+      const rowLabel = k => EDITIONS[k].label;
+
+      // Match counts live in the captions, not the matrix (keeps rows uncluttered).
+      const counts = eds.map(k => EDITIONS[k].label + ": " + byEd[k].length).join(" · ");
+      const cntNote = counts ? " Matches — " + counts + "." : "";
+      $("sub-heat-goals").textContent =
+        "Share of each tournament's matches; small Σ = cumulative %. Darker = more common." + cntNote;
+      $("sub-heat-scores").textContent =
+        "Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common." + cntNote;
+
+      // Goals per game: columns 0..maxGoals across the filtered set.
+      const maxGoals = Math.max(0, ...matches.map(m => m.homeScore + m.awayScore));
+      const goalCols = [];
+      for (let g = 0; g <= maxGoals; g++) goalCols.push(g);
+      const goalRows = eds.map(k => {
+        const list = byEd[k], n = list.length;
+        const cells = goalCols.map(g => {
+          const c = list.filter(m => m.homeScore + m.awayScore === g).length;
+          return { frac: n ? c / n : 0 };
+        });
+        return { label: rowLabel(k), n, cells };
+      });
+      buildHeatTable("heat-goals", goalCols.map(String), goalRows, "76,201,240");
+
+      // Scorelines: every distinct scoreline as a column, ordered by combined
+      // frequency (Pareto order) so each row's cumulative Σ reaches 100%.
+      const combined = new Map();
+      for (const m of matches) { const k = scorelineKey(m); combined.set(k, (combined.get(k) || 0) + 1); }
+      const allScores = [...combined.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(e => e[0]);
+      const scoreRows = eds.map(k => {
+        const list = byEd[k], n = list.length;
+        const cells = allScores.map(s => {
+          const c = list.filter(m => scorelineKey(m) === s).length;
+          return { frac: n ? c / n : 0 };
+        });
+        return { label: rowLabel(k), n, cells };
+      });
+      buildHeatTable("heat-scores", allScores, scoreRows, "247,184,1");
+    }
+
     function renderMatches(matches, withYear) {
       const ul = $("matches");
       ul.innerHTML = "";
@@ -467,8 +589,20 @@
 
       const stats = computeStats(matches);
       renderCards(stats);
-      renderGoalsChart(stats.goalsHist, stats.games, relative);
-      renderScoresChart(stats.scoreFreq, stats.games, relative);
+
+      // Aggregate (bars) vs Compare (per-tournament heatmaps); Compare only in All-time.
+      const compare = compareMode();
+      $("panel-goals").classList.toggle("hidden", compare);
+      $("panel-scores").classList.toggle("hidden", compare);
+      $("panel-heat-goals").classList.toggle("hidden", !compare);
+      $("panel-heat-scores").classList.toggle("hidden", !compare);
+      if (compare) {
+        renderHeatmaps(matches);
+      } else {
+        renderGoalsChart(stats.goalsHist, stats.games, relative);
+        renderScoresChart(stats.scoreFreq, stats.games, relative);
+      }
+
       renderMatches(matches, viewIsAll);
       updateAsOfLabel(cut, matches, pct);
 
@@ -497,6 +631,8 @@
       // The frequency control is locked to Percent in the All-time view.
       $("freq").disabled = viewIsAll;
       if (viewIsAll) $("freq").value = "rel";
+      // Aggregate/Compare toggle only applies to the All-time view.
+      $("viewctl-display").classList.toggle("hidden", !viewIsAll);
 
       try {
         let matches = [];
@@ -532,10 +668,13 @@
     if (savedStage) $("stage").value = savedStage;
     const savedFreq = localStorage.getItem(LS_FREQ);
     if (savedFreq) $("freq").value = savedFreq;
+    const savedView = localStorage.getItem(LS_VIEW);
+    if (savedView) $("view").value = savedView;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
+    $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("asof").addEventListener("input", render);
     $("refresh").addEventListener("click", load);
     load();
