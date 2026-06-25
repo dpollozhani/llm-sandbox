@@ -94,7 +94,7 @@
     .heat .hv { font-size: 12px; font-weight: 800; }
     .heat .hc { font-size: 9px; font-weight: 600; opacity: .75; }
     .heat .hhead { color: var(--muted); font-weight: 700; font-size: 11px; background: transparent; padding-bottom: 2px; }
-    .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-items: flex-start; justify-content: center; padding-right: 14px; }
+    .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-items: flex-start; justify-content: center; padding-left: 0; }
     .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
     .cum-dot { fill: #ff5d8f; }
     .cum-label {
@@ -421,7 +421,7 @@
         return;
       }
       const maxFrac = Math.max(...rows.flatMap(r => r.cells.map(c => c.frac)), 0) || 1;
-      el.style.gridTemplateColumns = `auto repeat(${colLabels.length}, minmax(34px, 1fr))`;
+      el.style.gridTemplateColumns = `4rem repeat(${colLabels.length}, minmax(34px, 1fr))`;
       const parts = [`<div class="hcell hhead"></div>`];
       for (const c of colLabels) parts.push(`<div class="hcell hhead">${esc(c)}</div>`);
       for (const r of rows) {
