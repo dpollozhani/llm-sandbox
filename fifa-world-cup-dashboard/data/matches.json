@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-25T00:21:33Z",
+  "updated": "2026-06-25T04:43:59Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 60,
-  "finishedMatches": 52,
+  "finishedMatches": 54,
   "matches": [
     {
       "id": "760415",
@@ -641,10 +641,10 @@
       "away": "South Korea",
       "homeAbbr": "RSA",
       "awayAbbr": "KOR",
-      "homeScore": 0,
+      "homeScore": 1,
       "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760467",
@@ -654,9 +654,9 @@
       "homeAbbr": "CZE",
       "awayAbbr": "MEX",
       "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "awayScore": 3,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760468",
