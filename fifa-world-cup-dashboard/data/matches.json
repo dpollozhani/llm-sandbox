@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-25T22:10:09Z",
+  "updated": "2026-06-25T23:44:39Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -692,7 +692,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760472",
@@ -702,9 +702,9 @@
       "homeAbbr": "TUN",
       "awayAbbr": "NED",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 2,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760469",
