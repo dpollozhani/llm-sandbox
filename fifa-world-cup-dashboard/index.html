@@ -204,13 +204,13 @@
 
     <section class="panel hidden" id="panel-heat-goals">
       <h2>Goals per game — by tournament</h2>
-      <p class="sub" id="sub-heat-goals">Share of each tournament's matches; small Σ = cumulative %. Darker = more common.</p>
+      <p class="sub" id="sub-heat-goals">Share of each tournament's matches; small Σ = cumulative %. Brighter = more common.</p>
       <div class="heat" id="heat-goals"></div>
     </section>
 
     <section class="panel hidden" id="panel-heat-scores">
       <h2>Distinct results — by tournament</h2>
-      <p class="sub" id="sub-heat-scores">Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common.</p>
+      <p class="sub" id="sub-heat-scores">Share by scoreline (order-independent); small Σ = cumulative %. Brighter = more common.</p>
       <div class="heat" id="heat-scores"></div>
     </section>
 
@@ -450,9 +450,9 @@
       const counts = eds.map(k => EDITIONS[k].label + ": " + byEd[k].length).join(" · ");
       const cntNote = counts ? " Matches — " + counts + "." : "";
       $("sub-heat-goals").textContent =
-        "Share of each tournament's matches; small Σ = cumulative %. Darker = more common." + cntNote;
+        "Share of each tournament's matches; small Σ = cumulative %. Brighter = more common." + cntNote;
       $("sub-heat-scores").textContent =
-        "Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common." + cntNote;
+        "Share by scoreline (order-independent); small Σ = cumulative %. Brighter = more common." + cntNote;
 
       // Goals per game: columns 0..maxGoals across the filtered set.
       const maxGoals = Math.max(0, ...matches.map(m => m.homeScore + m.awayScore));
