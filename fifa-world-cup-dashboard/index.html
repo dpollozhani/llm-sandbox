@@ -80,8 +80,9 @@
     .bar-label { fill: var(--ink); font-size: 11px; font-weight: 700; }
     .tick { stroke: var(--line); stroke-width: 1; }
     /* Local toggle that sits with the distribution visuals */
-    .viewbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+    .viewbar { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; margin: 0 0 12px; flex-wrap: wrap; }
     .viewbar-title { font-size: 13px; color: var(--muted); font-weight: 700; }
+    .viewbar-ctls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 
     /* Comparison heatmap */
     .heat { display: grid; gap: 4px; overflow-x: auto; }
@@ -155,12 +156,6 @@
           <option value="knockout">Knockout</option>
         </select>
       </label>
-      <label class="ctl">Frequency
-        <select id="freq" aria-label="Frequency">
-          <option value="abs">Count</option>
-          <option value="rel">Percent</option>
-        </select>
-      </label>
     </div>
 
     <div class="datectl" id="datectl">
@@ -177,14 +172,22 @@
       <div class="card"><div class="k">Highest scoring</div><div class="v" id="stat-high">–</div></div>
     </section>
 
-    <div class="viewbar hidden" id="viewbar">
+    <div class="viewbar" id="viewbar">
       <span class="viewbar-title">Distributions</span>
-      <label class="ctl">Display
-        <select id="view" aria-label="Display">
-          <option value="aggregate">Aggregate</option>
-          <option value="compare">Compare</option>
-        </select>
-      </label>
+      <span class="viewbar-ctls">
+        <label class="ctl">Frequency
+          <select id="freq" aria-label="Frequency">
+            <option value="abs">Count</option>
+            <option value="rel">Percent</option>
+          </select>
+        </label>
+        <label class="ctl hidden" id="viewctl-display">Display
+          <select id="view" aria-label="Display">
+            <option value="aggregate">Aggregate</option>
+            <option value="compare">Compare</option>
+          </select>
+        </label>
+      </span>
     </div>
 
     <section class="panel" id="panel-goals">
@@ -465,20 +468,21 @@
       });
       buildHeatTable("heat-goals", goalCols.map(String), goalRows, "76,201,240");
 
-      // Scorelines: columns = most common across the filtered set (top 9).
+      // Scorelines: every distinct scoreline as a column, ordered by combined
+      // frequency (Pareto order) so each row's cumulative Σ reaches 100%.
       const combined = new Map();
       for (const m of matches) { const k = scorelineKey(m); combined.set(k, (combined.get(k) || 0) + 1); }
-      const topScores = [...combined.entries()]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 9).map(e => e[0]);
+      const allScores = [...combined.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(e => e[0]);
       const scoreRows = eds.map(k => {
         const list = byEd[k], n = list.length;
-        const cells = topScores.map(s => {
+        const cells = allScores.map(s => {
           const c = list.filter(m => scorelineKey(m) === s).length;
           return { frac: n ? c / n : 0 };
         });
         return { label: rowLabel(k), n, cells };
       });
-      buildHeatTable("heat-scores", topScores, scoreRows, "247,184,1");
+      buildHeatTable("heat-scores", allScores, scoreRows, "247,184,1");
     }
 
     function renderMatches(matches, withYear) {
@@ -628,7 +632,7 @@
       $("freq").disabled = viewIsAll;
       if (viewIsAll) $("freq").value = "rel";
       // Aggregate/Compare toggle only applies to the All-time view.
-      $("viewbar").classList.toggle("hidden", !viewIsAll);
+      $("viewctl-display").classList.toggle("hidden", !viewIsAll);
 
       try {
         let matches = [];
