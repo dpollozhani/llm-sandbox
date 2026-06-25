@@ -79,15 +79,21 @@
     .axis-label { fill: var(--muted); font-size: 11px; }
     .bar-label { fill: var(--ink); font-size: 11px; font-weight: 700; }
     .tick { stroke: var(--line); stroke-width: 1; }
+    /* Local toggle that sits with the distribution visuals */
+    .viewbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+    .viewbar-title { font-size: 13px; color: var(--muted); font-weight: 700; }
+
     /* Comparison heatmap */
     .heat { display: grid; gap: 4px; overflow-x: auto; }
     .heat .hcell {
-      padding: 8px 4px; text-align: center; border-radius: 7px; font-size: 12px;
-      font-weight: 700; font-variant-numeric: tabular-nums; min-width: 30px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+      padding: 7px 4px; text-align: center; border-radius: 7px; min-width: 34px;
+      font-variant-numeric: tabular-nums;
     }
+    .heat .hv { font-size: 12px; font-weight: 800; }
+    .heat .hc { font-size: 9px; font-weight: 600; opacity: .75; }
     .heat .hhead { color: var(--muted); font-weight: 700; font-size: 11px; background: transparent; padding-bottom: 2px; }
-    .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-self: center; padding-right: 6px; }
-    .heat .hrow small { color: var(--muted); font-weight: 600; }
+    .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-items: flex-start; justify-content: center; padding-right: 6px; }
     .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
     .cum-dot { fill: #ff5d8f; }
     .cum-label {
@@ -155,12 +161,6 @@
           <option value="rel">Percent</option>
         </select>
       </label>
-      <label class="ctl hidden" id="viewctl">Display
-        <select id="view" aria-label="Display">
-          <option value="aggregate">Aggregate</option>
-          <option value="compare">Compare</option>
-        </select>
-      </label>
     </div>
 
     <div class="datectl" id="datectl">
@@ -177,6 +177,16 @@
       <div class="card"><div class="k">Highest scoring</div><div class="v" id="stat-high">–</div></div>
     </section>
 
+    <div class="viewbar hidden" id="viewbar">
+      <span class="viewbar-title">Distributions</span>
+      <label class="ctl">Display
+        <select id="view" aria-label="Display">
+          <option value="aggregate">Aggregate</option>
+          <option value="compare">Compare</option>
+        </select>
+      </label>
+    </div>
+
     <section class="panel" id="panel-goals">
       <h2>Goals per game</h2>
       <p class="sub" id="sub-goals">How many matches finished with each total number of goals.</p>
@@ -191,13 +201,13 @@
 
     <section class="panel hidden" id="panel-heat-goals">
       <h2>Goals per game — by tournament</h2>
-      <p class="sub">Each cell is the share of that tournament's matches. Darker = more common.</p>
+      <p class="sub" id="sub-heat-goals">Share of each tournament's matches; small Σ = cumulative %. Darker = more common.</p>
       <div class="heat" id="heat-goals"></div>
     </section>
 
     <section class="panel hidden" id="panel-heat-scores">
       <h2>Distinct results — by tournament</h2>
-      <p class="sub">Share of each tournament's matches by scoreline (order-independent). Darker = more common.</p>
+      <p class="sub" id="sub-heat-scores">Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common.</p>
       <div class="heat" id="heat-scores"></div>
     </section>
 
@@ -398,7 +408,8 @@
       return Math.max(m.homeScore, m.awayScore) + "–" + Math.min(m.homeScore, m.awayScore);
     }
 
-    // rows: [{label, n, cells:[{frac}]}]; colLabels: string[]; rgb: "r,g,b"
+    // rows: [{label, cells:[{frac}]}]; colLabels: string[]; rgb: "r,g,b".
+    // Each cell shows the per-bin % (big) and the left-to-right cumulative % (small).
     function buildHeatTable(containerId, colLabels, rows, rgb) {
       const el = $(containerId);
       if (!rows.length || !colLabels.length) {
@@ -407,17 +418,20 @@
         return;
       }
       const maxFrac = Math.max(...rows.flatMap(r => r.cells.map(c => c.frac)), 0) || 1;
-      el.style.gridTemplateColumns = `auto repeat(${colLabels.length}, minmax(30px, 1fr))`;
+      el.style.gridTemplateColumns = `auto repeat(${colLabels.length}, minmax(34px, 1fr))`;
       const parts = [`<div class="hcell hhead"></div>`];
       for (const c of colLabels) parts.push(`<div class="hcell hhead">${esc(c)}</div>`);
       for (const r of rows) {
-        parts.push(`<div class="hcell hrow">${esc(r.label)} <small>${r.n}</small></div>`);
+        parts.push(`<div class="hcell hrow">${esc(r.label)}</div>`);
+        let cum = 0;
         for (const cell of r.cells) {
+          cum += cell.frac;
           const intensity = cell.frac / maxFrac;                 // 0..1 within this matrix
           const alpha = cell.frac > 0 ? (0.12 + 0.88 * intensity).toFixed(3) : "0.04";
           const ink = intensity > 0.55 ? "#06122a" : "var(--ink)";
-          const txt = cell.frac > 0 ? Math.round(cell.frac * 100) + "%" : "·";
-          parts.push(`<div class="hcell" style="background:rgba(${rgb},${alpha});color:${ink}">${txt}</div>`);
+          const big = cell.frac > 0 ? Math.round(cell.frac * 100) + "%" : "·";
+          parts.push(`<div class="hcell" style="background:rgba(${rgb},${alpha});color:${ink}">` +
+            `<span class="hv">${big}</span><span class="hc">Σ${Math.round(cum * 100)}%</span></div>`);
         }
       }
       el.innerHTML = parts.join("");
@@ -428,6 +442,14 @@
       const byEd = {};
       eds.forEach(k => { byEd[k] = matches.filter(m => m.edition === k); });
       const rowLabel = k => EDITIONS[k].label;
+
+      // Match counts live in the captions, not the matrix (keeps rows uncluttered).
+      const counts = eds.map(k => EDITIONS[k].label + ": " + byEd[k].length).join(" · ");
+      const cntNote = counts ? " Matches — " + counts + "." : "";
+      $("sub-heat-goals").textContent =
+        "Share of each tournament's matches; small Σ = cumulative %. Darker = more common." + cntNote;
+      $("sub-heat-scores").textContent =
+        "Share by scoreline (order-independent); small Σ = cumulative %. Darker = more common." + cntNote;
 
       // Goals per game: columns 0..maxGoals across the filtered set.
       const maxGoals = Math.max(0, ...matches.map(m => m.homeScore + m.awayScore));
@@ -606,7 +628,7 @@
       $("freq").disabled = viewIsAll;
       if (viewIsAll) $("freq").value = "rel";
       // Aggregate/Compare toggle only applies to the All-time view.
-      $("viewctl").classList.toggle("hidden", !viewIsAll);
+      $("viewbar").classList.toggle("hidden", !viewIsAll);
 
       try {
         let matches = [];
