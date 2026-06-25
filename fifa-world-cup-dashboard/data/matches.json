@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-24T23:02:10Z",
+  "updated": "2026-06-25T00:21:33Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 54,
-  "finishedMatches": 50,
+  "totalMatches": 60,
+  "finishedMatches": 52,
   "matches": [
     {
       "id": "760415",
@@ -617,10 +617,10 @@
       "away": "Haiti",
       "homeAbbr": "MAR",
       "awayAbbr": "HAI",
-      "homeScore": 2,
+      "homeScore": 4,
       "awayScore": 2,
-      "completed": false,
-      "status": "Halftime"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760465",
@@ -630,9 +630,9 @@
       "homeAbbr": "SCO",
       "awayAbbr": "BRA",
       "homeScore": 0,
-      "awayScore": 2,
-      "completed": false,
-      "status": "Halftime"
+      "awayScore": 3,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760466",
@@ -653,6 +653,78 @@
       "away": "Mexico",
       "homeAbbr": "CZE",
       "awayAbbr": "MEX",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760468",
+      "date": "2026-06-25T20:00Z",
+      "home": "Ecuador",
+      "away": "Germany",
+      "homeAbbr": "ECU",
+      "awayAbbr": "GER",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760473",
+      "date": "2026-06-25T20:00Z",
+      "home": "Curaçao",
+      "away": "Ivory Coast",
+      "homeAbbr": "CUW",
+      "awayAbbr": "CIV",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760471",
+      "date": "2026-06-25T23:00Z",
+      "home": "Japan",
+      "away": "Sweden",
+      "homeAbbr": "JPN",
+      "awayAbbr": "SWE",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760472",
+      "date": "2026-06-25T23:00Z",
+      "home": "Tunisia",
+      "away": "Netherlands",
+      "homeAbbr": "TUN",
+      "awayAbbr": "NED",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760469",
+      "date": "2026-06-26T02:00Z",
+      "home": "Paraguay",
+      "away": "Australia",
+      "homeAbbr": "PAR",
+      "awayAbbr": "AUS",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760470",
+      "date": "2026-06-26T02:00Z",
+      "home": "Türkiye",
+      "away": "United States",
+      "homeAbbr": "TUR",
+      "awayAbbr": "USA",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
