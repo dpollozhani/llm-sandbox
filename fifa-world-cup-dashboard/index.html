@@ -421,7 +421,7 @@
         return;
       }
       const maxFrac = Math.max(...rows.flatMap(r => r.cells.map(c => c.frac)), 0) || 1;
-      el.style.gridTemplateColumns = `4rem repeat(${colLabels.length}, minmax(34px, 1fr))`;
+      el.style.gridTemplateColumns = `3rem repeat(${colLabels.length}, minmax(34px, 1fr))`;
       const parts = [`<div class="hcell hhead"></div>`];
       for (const c of colLabels) parts.push(`<div class="hcell hhead">${esc(c)}</div>`);
       for (const r of rows) {
