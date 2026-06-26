@@ -118,6 +118,7 @@
     .agg-fit { stroke-width: 2.5; stroke-opacity: .95; }
     .avg-dot { stroke: #0b1020; stroke-width: 2.5; }
     .whisker { stroke-width: 2; stroke-opacity: .5; }
+    #rankview-ctl { margin: 0 0 10px; }
     .rank-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
     .rank-legend span { display: inline-flex; align-items: center; gap: 6px; }
     .rank-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
@@ -244,9 +245,15 @@
     <section class="panel" id="panel-rank-goals">
       <h2>Ranking gap vs goals — by tournament</h2>
       <p class="sub" id="sub-rank-goals">Each point is one match: the ranking gap between the teams (x) versus goals scored (y), coloured by tournament.</p>
+      <label class="ctl hidden" id="rankview-ctl">View
+        <select id="rankview" aria-label="Ranking-gap view">
+          <option value="match">Per match</option>
+          <option value="tournament">Per tournament</option>
+        </select>
+      </label>
       <div class="rank-legend" id="legend-rank-goals"></div>
       <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
-      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. Ringed dots are each tournament's average; the whiskers show ±1 SD — note how wide the gap (horizontal) spread is, which is why one “average gap” is a noisy summary. The <b>purple</b> line fits just those tournament averages and looks steep; the <b>dashed white</b> line fits every individual match and is nearly flat. That gap between the two lines is the catch: the aggregate trend (2026 standing out) largely dissolves once you look game-by-game. Points are jittered slightly so overlapping scores stay visible.</p>
+      <p class="note" id="note-rank-goals">Tests whether bigger ranking gaps mean more goals. Switch the view to compare two lenses: <b>Per tournament</b> shows three averages that trend upward (2026 stands out) — but the wide ±1 SD whiskers warn how much each average hides. <b>Per match</b> plots every game, and its trend line is nearly flat (r ≈ 0.08). The relationship that looks real across tournament averages mostly vanishes game-by-game. Match dots are jittered slightly so overlapping scores stay visible.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -286,6 +293,7 @@
     const LS_STAGE = "wc-dashboard-stage";
     const LS_FREQ = "wc-dashboard-freq";
     const LS_VIEW = "wc-dashboard-view";
+    const LS_RANKVIEW = "wc-dashboard-rankview";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -694,16 +702,14 @@
       return d ? sxy / d : 0;
     }
 
-    function buildScatterLegend(containerId, stats, multi) {
+    function buildScatterLegend(containerId, stats, mode, multi) {
       const el = $(containerId);
       const rows = stats.map(s =>
         `<span><i style="background:${ED_COLORS[s.ed] || "#98a2c8"}"></i>` +
         `${esc(EDITIONS[s.ed].label)} · ${s.avg.toFixed(2)} gpg · r ${s.r.toFixed(2)}</span>`
       );
-      if (multi) {
-        rows.push(`<span><i style="background:#e8ecf8"></i>Per-match fit</span>`);
-        rows.push(`<span><i style="background:#b794f6"></i>Per-tournament fit</span>`);
-      }
+      if (mode === "tournament" && multi) rows.push(`<span><i style="background:#b794f6"></i>Trend through averages</span>`);
+      else if (multi) rows.push(`<span><i style="background:#e8ecf8"></i>Trend across all matches</span>`);
       el.innerHTML = rows.join("");
     }
 
@@ -729,21 +735,30 @@
           key: String(m.id || (m.date + m.home + m.away)) });
       }
       const eds = ALL_KEYS.filter(k => points.some(p => p.ed === k));
+      const multi = eds.length > 1;
       const stats = eds.map(k => {
         const pts = points.filter(p => p.ed === k);
         const avg = pts.reduce((s, p) => s + p.y, 0) / pts.length;
         return { ed: k, n: pts.length, avg, r: pearson(pts.map(p => p.x), pts.map(p => p.y)) };
       });
-      buildScatterLegend("legend-rank-goals", stats, eds.length > 1);
-      let rStr = "";
-      if (points.length >= 3) rStr = " · overall r = " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2);
-      $("sub-rank-goals").textContent = points.length
-        ? "Each point is one match: ranking gap (x) vs goals scored (y), coloured by tournament (" + points.length + " matches" + rStr + ")."
-        : "Ranking gap versus goals scored, one point per match.";
-      renderRankScatter("chart-rank-goals", points, eds);
+      // The Per-match / Per-tournament toggle only applies in the All-time view.
+      $("rankview-ctl").classList.toggle("hidden", !multi);
+      const mode = multi ? $("rankview").value : "match";
+
+      buildScatterLegend("legend-rank-goals", stats, mode, multi);
+      if (mode === "tournament") {
+        $("sub-rank-goals").textContent =
+          "One point per tournament: average ranking gap (x) vs goals per game (y), with ±1 SD whiskers. The whiskers (especially the wide horizontal one) show how much each average hides.";
+      } else {
+        let rStr = points.length >= 3 ? " · r = " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2) : "";
+        $("sub-rank-goals").textContent = points.length
+          ? "One point per match: ranking gap (x) vs goals scored (y), coloured by tournament (" + points.length + " matches" + rStr + ")."
+          : "Ranking gap versus goals scored, one point per match.";
+      }
+      renderRankScatter("chart-rank-goals", points, eds, mode);
     }
 
-    function renderRankScatter(svgId, points, eds) {
+    function renderRankScatter(svgId, points, eds, mode) {
       const svg = $(svgId);
       svg.innerHTML = "";
       if (!points.length) {
@@ -754,44 +769,7 @@
       }
       const W = 700, left = 44, right = 22, top = 18, plotH = 232, bottom = 48;
       const H = top + plotH + bottom;
-      const xMax = Math.max(...points.map(p => p.x)) * 1.06 + 2;       // gaps start at 0
-      const yMax = Math.max(...points.map(p => p.y)) + 1;             // goals start at 0
-      const xOf = v => left + (v / (xMax || 1)) * (W - left - right);
-      const yOf = v => top + plotH - (v / (yMax || 1)) * plotH;
-      const clampY = y => Math.min(yMax, Math.max(0, y));
-
-      const parts = [];
-      parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
-      parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
-      // y gridlines at each integer goal count
-      for (let g = 0; g <= yMax - 1; g++) {
-        const y = yOf(g);
-        parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
-        parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${g}</text>`);
-      }
-      // x ticks (4)
-      for (let t = 0; t <= 3; t++) {
-        const v = (xMax * t) / 3;
-        parts.push(`<text class="axis-label" x="${xOf(v).toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
-      }
-      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Ranking gap →</text>`);
-      parts.push(`<text class="axis-title" x="12" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">Goals (match total)</text>`);
-
-      // jittered, semi-transparent dots so overlapping integer goal counts stay legible
-      for (const p of points) {
-        const jx = (hash01(p.key + "x") - 0.5) * (xMax * 0.018 + 0.6);
-        const jy = (hash01(p.key + "y") - 0.5) * 0.5;
-        const cx = xOf(Math.max(0, p.x + jx));
-        const cy = yOf(Math.max(0, p.y + jy));
-        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.5"/>`);
-      }
-
-      const multi = eds.length > 1;
-      const fitLine = (fit, color, cls) => {
-        const y1 = clampY(fit.b), y2 = clampY(fit.slope * xMax + fit.b);
-        return `<line class="${cls}" x1="${xOf(0).toFixed(1)}" y1="${yOf(y1).toFixed(1)}" ` +
-          `x2="${xOf(xMax).toFixed(1)}" y2="${yOf(y2).toFixed(1)}"${color ? ` stroke="${color}"` : ""}/>`;
-      };
+      const tournamentMode = mode === "tournament";
 
       // Per-tournament mean and ±1 SD of gap (x) and goals (y).
       const meanStats = eds.map(k => {
@@ -803,29 +781,79 @@
         return { k, x: mx, y: my, sx, sy };
       });
 
-      // Two contrasting fits, drawn under the markers:
-      //  • per-match fit over every game (dashed white) — the honest game-level slope
-      //  • per-tournament fit through the 3 averages (purple) — what the aggregates imply
-      const matchFit = lsqFit(points);
-      if (matchFit) parts.push(fitLine(matchFit, null, "trend-line"));
-      if (multi) {
-        const aggFit = lsqFit(meanStats.map(m => ({ x: m.x, y: m.y })));
-        if (aggFit) parts.push(fitLine(aggFit, "#b794f6", "agg-fit"));
+      // Domains: match mode spans every game (goals start at 0); tournament mode
+      // zooms to the averages + whiskers so the three points are well separated.
+      let xMin = 0, xMax, yMin = 0, yMax, yStep;
+      if (tournamentMode) {
+        const xs = meanStats.flatMap(m => [m.x - m.sx, m.x + m.sx]);
+        const ys = meanStats.flatMap(m => [m.y - m.sy, m.y + m.sy]);
+        let xlo = Math.min(...xs), xhi = Math.max(...xs), ylo = Math.min(...ys), yhi = Math.max(...ys);
+        const xp = (xhi - xlo) * 0.18 || 4, yp = (yhi - ylo) * 0.22 || 0.4;
+        xMin = Math.max(0, xlo - xp); xMax = xhi + xp;
+        yMin = Math.max(0, ylo - yp); yMax = yhi + yp;
+      } else {
+        xMax = Math.max(...points.map(p => p.x)) * 1.06 + 2;
+        yMax = Math.max(...points.map(p => p.y)) + 1;
       }
+      const xOf = v => left + ((v - xMin) / ((xMax - xMin) || 1)) * (W - left - right);
+      const yOf = v => top + plotH - ((v - yMin) / ((yMax - yMin) || 1)) * plotH;
+      const clampY = y => Math.min(yMax, Math.max(yMin, y));
 
-      // Tournament averages with ±1 SD whiskers. The wide gap (x) whisker is the
-      // point: a single "average gap" hides enormous match-to-match spread.
-      for (const m of meanStats) {
-        const color = ED_COLORS[m.k] || "#98a2c8";
-        const cx = xOf(m.x), cy = yOf(m.y);
-        const xL = xOf(Math.max(0, m.x - m.sx)), xR = xOf(Math.min(xMax, m.x + m.sx));
-        const yHi = yOf(clampY(m.y + m.sy)), yLo = yOf(clampY(m.y - m.sy));
-        const wh = (x1, y1, x2, y2) => parts.push(`<line class="whisker" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}"/>`);
-        wh(xL, cy, xR, cy);                 // gap whisker
-        wh(xL, cy - 4, xL, cy + 4); wh(xR, cy - 4, xR, cy + 4);
-        wh(cx, yHi, cx, yLo);               // goals whisker
-        wh(cx - 4, yHi, cx + 4, yHi); wh(cx - 4, yLo, cx + 4, yLo);
-        parts.push(`<circle class="avg-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="${color}"/>`);
+      const parts = [];
+      parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
+      parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
+      // y gridlines: integer goals in match mode, 3 even ticks in tournament mode
+      if (tournamentMode) {
+        for (let t = 0; t <= 2; t++) {
+          const v = yMin + (yMax - yMin) * t / 2, y = yOf(v);
+          parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
+          parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v.toFixed(1)}</text>`);
+        }
+      } else {
+        for (let g = 0; g <= yMax - 1; g++) {
+          const y = yOf(g);
+          parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
+          parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${g}</text>`);
+        }
+      }
+      // x ticks (4)
+      for (let t = 0; t <= 3; t++) {
+        const v = xMin + (xMax - xMin) * t / 3;
+        parts.push(`<text class="axis-label" x="${xOf(v).toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
+      }
+      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Ranking gap →</text>`);
+      parts.push(`<text class="axis-title" x="12" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">${tournamentMode ? "Goals / game" : "Goals (match total)"}</text>`);
+
+      const fitLine = (fit, color, cls) => {
+        const y1 = clampY(fit.slope * xMin + fit.b), y2 = clampY(fit.slope * xMax + fit.b);
+        return `<line class="${cls}" x1="${xOf(xMin).toFixed(1)}" y1="${yOf(y1).toFixed(1)}" ` +
+          `x2="${xOf(xMax).toFixed(1)}" y2="${yOf(y2).toFixed(1)}"${color ? ` stroke="${color}"` : ""}/>`;
+      };
+
+      if (tournamentMode) {
+        // Just the three averages, with ±1 SD whiskers and a single trend through them.
+        const aggFit = eds.length > 1 ? lsqFit(meanStats.map(m => ({ x: m.x, y: m.y }))) : null;
+        if (aggFit) parts.push(fitLine(aggFit, "#b794f6", "agg-fit"));
+        for (const m of meanStats) {
+          const color = ED_COLORS[m.k] || "#98a2c8";
+          const cx = xOf(m.x), cy = yOf(m.y);
+          const xL = xOf(Math.max(xMin, m.x - m.sx)), xR = xOf(Math.min(xMax, m.x + m.sx));
+          const yHi = yOf(clampY(m.y + m.sy)), yLo = yOf(clampY(m.y - m.sy));
+          const wh = (x1, y1, x2, y2) => parts.push(`<line class="whisker" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}"/>`);
+          wh(xL, cy, xR, cy); wh(xL, cy - 4, xL, cy + 4); wh(xR, cy - 4, xR, cy + 4);
+          wh(cx, yHi, cx, yLo); wh(cx - 4, yHi, cx + 4, yHi); wh(cx - 4, yLo, cx + 4, yLo);
+          parts.push(`<circle class="avg-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7" fill="${color}"/>`);
+          parts.push(`<text class="pt-label" x="${cx.toFixed(1)}" y="${(cy - 13).toFixed(1)}" text-anchor="middle">${esc(EDITIONS[m.k].label)}</text>`);
+        }
+      } else {
+        // Jittered, semi-transparent match dots + a single fit across all matches.
+        for (const p of points) {
+          const jx = (hash01(p.key + "x") - 0.5) * (xMax * 0.018 + 0.6);
+          const jy = (hash01(p.key + "y") - 0.5) * 0.5;
+          parts.push(`<circle cx="${xOf(Math.max(0, p.x + jx)).toFixed(1)}" cy="${yOf(Math.max(0, p.y + jy)).toFixed(1)}" r="3.6" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.5"/>`);
+        }
+        const matchFit = lsqFit(points);
+        if (matchFit) parts.push(fitLine(matchFit, null, "trend-line"));
       }
 
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -1039,11 +1067,14 @@
     if (savedFreq) $("freq").value = savedFreq;
     const savedView = localStorage.getItem(LS_VIEW);
     if (savedView) $("view").value = savedView;
+    const savedRankView = localStorage.getItem(LS_RANKVIEW);
+    if (savedRankView) $("rankview").value = savedRankView;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
+    $("rankview").addEventListener("change", () => { store(LS_RANKVIEW, $("rankview").value); render(); });
     $("asof").addEventListener("input", render);
     $("refresh").addEventListener("click", load);
     load();
