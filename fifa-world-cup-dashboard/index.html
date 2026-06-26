@@ -114,7 +114,9 @@
     .pt-sub { fill: var(--muted); font-size: 10px; font-weight: 600;
       paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
     .axis-title { fill: var(--muted); font-size: 11px; font-weight: 700; }
-    .trend-line { stroke: #e8ecf8; stroke-width: 2; stroke-dasharray: 6 5; stroke-opacity: .65; }
+    .trend-line { stroke: #e8ecf8; stroke-width: 2.5; stroke-dasharray: 6 5; stroke-opacity: .75; }
+    .ed-fit { stroke-width: 2.5; stroke-opacity: .95; }
+    .avg-dot { stroke: #0b1020; stroke-width: 2.5; }
     .rank-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
     .rank-legend span { display: inline-flex; align-items: center; gap: 6px; }
     .rank-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
@@ -243,7 +245,7 @@
       <p class="sub" id="sub-rank-goals">Each point is one match: the ranking gap between the teams (x) versus goals scored (y), coloured by tournament.</p>
       <div class="rank-legend" id="legend-rank-goals"></div>
       <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
-      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. The dashed line is the least-squares trend; a near-flat line and small r mean little relationship. Points are jittered slightly so overlapping scores stay visible.</p>
+      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. Each tournament gets its own coloured fit line and a ringed dot at its average (gap, goals); the dashed white line is the overall fit across all matches. Near-flat lines and small r mean little relationship. Points are jittered slightly so overlapping scores stay visible.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -691,11 +693,26 @@
       return d ? sxy / d : 0;
     }
 
-    function buildScatterLegend(containerId, eds) {
+    function buildScatterLegend(containerId, stats, multi) {
       const el = $(containerId);
-      el.innerHTML = eds.map(k =>
-        `<span><i style="background:${ED_COLORS[k] || "#98a2c8"}"></i>${esc(EDITIONS[k].label)}</span>`
-      ).join("");
+      const rows = stats.map(s =>
+        `<span><i style="background:${ED_COLORS[s.ed] || "#98a2c8"}"></i>` +
+        `${esc(EDITIONS[s.ed].label)} · ${s.avg.toFixed(2)} gpg · r ${s.r.toFixed(2)}</span>`
+      );
+      if (multi) rows.push(`<span><i style="background:#e8ecf8"></i>Overall fit</span>`);
+      el.innerHTML = rows.join("");
+    }
+
+    // Least-squares fit over [{x,y}]; null if degenerate.
+    function lsqFit(pts) {
+      const n = pts.length;
+      if (n < 2) return null;
+      const mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
+      let sxy = 0, sxx = 0;
+      for (const p of pts) { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; }
+      if (sxx <= 0) return null;
+      const slope = sxy / sxx;
+      return { slope, b: my - slope * mx, mx, my };
     }
 
     // Panel 2 — one point per match: ranking gap (x) vs goals scored (y), by tournament.
@@ -708,19 +725,21 @@
           key: String(m.id || (m.date + m.home + m.away)) });
       }
       const eds = ALL_KEYS.filter(k => points.some(p => p.ed === k));
-      buildScatterLegend("legend-rank-goals", eds);
+      const stats = eds.map(k => {
+        const pts = points.filter(p => p.ed === k);
+        const avg = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        return { ed: k, n: pts.length, avg, r: pearson(pts.map(p => p.x), pts.map(p => p.y)) };
+      });
+      buildScatterLegend("legend-rank-goals", stats, eds.length > 1);
       let rStr = "";
-      if (points.length >= 3) {
-        const r = pearson(points.map(p => p.x), points.map(p => p.y));
-        rStr = " · correlation r = " + r.toFixed(2);
-      }
+      if (points.length >= 3) rStr = " · overall r = " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2);
       $("sub-rank-goals").textContent = points.length
         ? "Each point is one match: ranking gap (x) vs goals scored (y), coloured by tournament (" + points.length + " matches" + rStr + ")."
         : "Ranking gap versus goals scored, one point per match.";
-      renderRankScatter("chart-rank-goals", points);
+      renderRankScatter("chart-rank-goals", points, eds);
     }
 
-    function renderRankScatter(svgId, points) {
+    function renderRankScatter(svgId, points, eds) {
       const svg = $(svgId);
       svg.innerHTML = "";
       if (!points.length) {
@@ -735,6 +754,7 @@
       const yMax = Math.max(...points.map(p => p.y)) + 1;             // goals start at 0
       const xOf = v => left + (v / (xMax || 1)) * (W - left - right);
       const yOf = v => top + plotH - (v / (yMax || 1)) * plotH;
+      const clampY = y => Math.min(yMax, Math.max(0, y));
 
       const parts = [];
       parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
@@ -759,22 +779,31 @@
         const jy = (hash01(p.key + "y") - 0.5) * 0.5;
         const cx = xOf(Math.max(0, p.x + jx));
         const cy = yOf(Math.max(0, p.y + jy));
-        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.62"/>`);
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.5"/>`);
       }
 
-      // least-squares trend line (on the true values) to read the relationship
-      if (points.length >= 3) {
-        const n = points.length;
-        const mx = points.reduce((s, p) => s + p.x, 0) / n;
-        const my = points.reduce((s, p) => s + p.y, 0) / n;
-        let sxy = 0, sxx = 0;
-        for (const p of points) { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; }
-        if (sxx > 0) {
-          const slope = sxy / sxx, b = my - slope * mx;
-          const x1 = 0, x2 = xMax;
-          const clamp = y => Math.min(yMax, Math.max(0, y));
-          parts.push(`<line class="trend-line" x1="${xOf(x1).toFixed(1)}" y1="${yOf(clamp(b)).toFixed(1)}" x2="${xOf(x2).toFixed(1)}" y2="${yOf(clamp(slope * x2 + b)).toFixed(1)}"/>`);
-        }
+      const multi = eds.length > 1;
+      const fitLine = (fit, color, cls) => {
+        const y1 = clampY(fit.b), y2 = clampY(fit.slope * xMax + fit.b);
+        return `<line class="${cls}" x1="${xOf(0).toFixed(1)}" y1="${yOf(y1).toFixed(1)}" ` +
+          `x2="${xOf(xMax).toFixed(1)}" y2="${yOf(y2).toFixed(1)}"${color ? ` stroke="${color}"` : ""}/>`;
+      };
+
+      // Per-tournament fit lines + average markers (the side-by-side comparison).
+      for (const k of eds) {
+        const pts = points.filter(p => p.ed === k);
+        const color = ED_COLORS[k] || "#98a2c8";
+        const fit = lsqFit(pts);
+        if (fit) parts.push(fitLine(fit, color, "ed-fit"));
+        const avgGap = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const avgGoals = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        parts.push(`<circle class="avg-dot" cx="${xOf(avgGap).toFixed(1)}" cy="${yOf(avgGoals).toFixed(1)}" r="6.5" fill="${color}"/>`);
+      }
+
+      // Overall aggregate fit (dashed white) — only meaningful when >1 tournament.
+      if (multi) {
+        const fit = lsqFit(points);
+        if (fit) parts.push(fitLine(fit, null, "trend-line"));
       }
 
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
