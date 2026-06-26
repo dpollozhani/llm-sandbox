@@ -115,8 +115,9 @@
       paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
     .axis-title { fill: var(--muted); font-size: 11px; font-weight: 700; }
     .trend-line { stroke: #e8ecf8; stroke-width: 2.5; stroke-dasharray: 6 5; stroke-opacity: .75; }
-    .ed-fit { stroke-width: 2.5; stroke-opacity: .95; }
+    .agg-fit { stroke-width: 2.5; stroke-opacity: .95; }
     .avg-dot { stroke: #0b1020; stroke-width: 2.5; }
+    .whisker { stroke-width: 2; stroke-opacity: .5; }
     .rank-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
     .rank-legend span { display: inline-flex; align-items: center; gap: 6px; }
     .rank-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
@@ -245,7 +246,7 @@
       <p class="sub" id="sub-rank-goals">Each point is one match: the ranking gap between the teams (x) versus goals scored (y), coloured by tournament.</p>
       <div class="rank-legend" id="legend-rank-goals"></div>
       <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
-      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. Each tournament gets its own coloured fit line and a ringed dot at its average (gap, goals); the dashed white line is the overall fit across all matches. Near-flat lines and small r mean little relationship. Points are jittered slightly so overlapping scores stay visible.</p>
+      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. Ringed dots are each tournament's average; the whiskers show ±1 SD — note how wide the gap (horizontal) spread is, which is why one “average gap” is a noisy summary. The <b>purple</b> line fits just those tournament averages and looks steep; the <b>dashed white</b> line fits every individual match and is nearly flat. That gap between the two lines is the catch: the aggregate trend (2026 standing out) largely dissolves once you look game-by-game. Points are jittered slightly so overlapping scores stay visible.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -699,7 +700,10 @@
         `<span><i style="background:${ED_COLORS[s.ed] || "#98a2c8"}"></i>` +
         `${esc(EDITIONS[s.ed].label)} · ${s.avg.toFixed(2)} gpg · r ${s.r.toFixed(2)}</span>`
       );
-      if (multi) rows.push(`<span><i style="background:#e8ecf8"></i>Overall fit</span>`);
+      if (multi) {
+        rows.push(`<span><i style="background:#e8ecf8"></i>Per-match fit</span>`);
+        rows.push(`<span><i style="background:#b794f6"></i>Per-tournament fit</span>`);
+      }
       el.innerHTML = rows.join("");
     }
 
@@ -789,21 +793,39 @@
           `x2="${xOf(xMax).toFixed(1)}" y2="${yOf(y2).toFixed(1)}"${color ? ` stroke="${color}"` : ""}/>`;
       };
 
-      // Per-tournament fit lines + average markers (the side-by-side comparison).
-      for (const k of eds) {
+      // Per-tournament mean and ±1 SD of gap (x) and goals (y).
+      const meanStats = eds.map(k => {
         const pts = points.filter(p => p.ed === k);
-        const color = ED_COLORS[k] || "#98a2c8";
-        const fit = lsqFit(pts);
-        if (fit) parts.push(fitLine(fit, color, "ed-fit"));
-        const avgGap = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const avgGoals = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-        parts.push(`<circle class="avg-dot" cx="${xOf(avgGap).toFixed(1)}" cy="${yOf(avgGoals).toFixed(1)}" r="6.5" fill="${color}"/>`);
+        const n = pts.length;
+        const mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
+        const sx = Math.sqrt(pts.reduce((s, p) => s + (p.x - mx) ** 2, 0) / n);
+        const sy = Math.sqrt(pts.reduce((s, p) => s + (p.y - my) ** 2, 0) / n);
+        return { k, x: mx, y: my, sx, sy };
+      });
+
+      // Two contrasting fits, drawn under the markers:
+      //  • per-match fit over every game (dashed white) — the honest game-level slope
+      //  • per-tournament fit through the 3 averages (purple) — what the aggregates imply
+      const matchFit = lsqFit(points);
+      if (matchFit) parts.push(fitLine(matchFit, null, "trend-line"));
+      if (multi) {
+        const aggFit = lsqFit(meanStats.map(m => ({ x: m.x, y: m.y })));
+        if (aggFit) parts.push(fitLine(aggFit, "#b794f6", "agg-fit"));
       }
 
-      // Overall aggregate fit (dashed white) — only meaningful when >1 tournament.
-      if (multi) {
-        const fit = lsqFit(points);
-        if (fit) parts.push(fitLine(fit, null, "trend-line"));
+      // Tournament averages with ±1 SD whiskers. The wide gap (x) whisker is the
+      // point: a single "average gap" hides enormous match-to-match spread.
+      for (const m of meanStats) {
+        const color = ED_COLORS[m.k] || "#98a2c8";
+        const cx = xOf(m.x), cy = yOf(m.y);
+        const xL = xOf(Math.max(0, m.x - m.sx)), xR = xOf(Math.min(xMax, m.x + m.sx));
+        const yHi = yOf(clampY(m.y + m.sy)), yLo = yOf(clampY(m.y - m.sy));
+        const wh = (x1, y1, x2, y2) => parts.push(`<line class="whisker" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}"/>`);
+        wh(xL, cy, xR, cy);                 // gap whisker
+        wh(xL, cy - 4, xL, cy + 4); wh(xR, cy - 4, xR, cy + 4);
+        wh(cx, yHi, cx, yLo);               // goals whisker
+        wh(cx - 4, yHi, cx + 4, yHi); wh(cx - 4, yLo, cx + 4, yLo);
+        parts.push(`<circle class="avg-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="${color}"/>`);
       }
 
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
