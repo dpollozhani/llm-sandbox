@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-26T06:08:26Z",
+  "updated": "2026-06-26T20:51:44Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -737,10 +737,10 @@
       "away": "Iraq",
       "homeAbbr": "SEN",
       "awayAbbr": "IRQ",
-      "homeScore": 0,
+      "homeScore": 5,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760475",
@@ -749,10 +749,10 @@
       "away": "France",
       "homeAbbr": "NOR",
       "awayAbbr": "FRA",
-      "homeScore": 0,
-      "awayScore": 0,
+      "homeScore": 1,
+      "awayScore": 3,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760478",
