@@ -102,6 +102,19 @@
       paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round;
     }
 
+    .note { font-size: 12px; color: var(--muted); margin: 12px 0 0; line-height: 1.5; }
+    /* Ranking visuals */
+    .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+    .ref-line { stroke: #ff5d8f; stroke-width: 1.5; stroke-dasharray: 5 4; stroke-opacity: .8; }
+    .ref-label { fill: #ff9bb6; font-size: 11px; font-weight: 700; }
+    .foot-label { fill: var(--muted); font-size: 10px; }
+    .pt { stroke: var(--panel); stroke-width: 2; }
+    .pt-label { fill: var(--ink); font-size: 12px; font-weight: 800;
+      paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+    .pt-sub { fill: var(--muted); font-size: 10px; font-weight: 600;
+      paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+    .axis-title { fill: var(--muted); font-size: 11px; font-weight: 700; }
+
     .matches { list-style: none; margin: 0; padding: 0; }
     .matches li {
       display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
@@ -212,6 +225,27 @@
       <h2>Distinct results — by tournament</h2>
       <p class="sub" id="sub-heat-scores">Share by scoreline (order-independent); small Σ = cumulative %. Brighter = more common.</p>
       <div class="heat" id="heat-scores"></div>
+    </section>
+
+    <section class="panel" id="panel-rank-outcome">
+      <h2>Does ranking predict the result?</h2>
+      <p class="sub" id="sub-rank-outcome">Matches grouped by the FIFA-ranking gap between the two teams; bars show how often the higher-ranked team won.</p>
+      <svg id="chart-rank-outcome" class="chart" role="img" aria-label="Higher-ranked team win rate by ranking gap"></svg>
+      <p class="note" id="note-rank-outcome">Rankings are the pre-tournament FIFA ranking for each edition. The reference line marks 50% (a coin-flip). “+x” under each bar is the favourite’s average goal margin.</p>
+    </section>
+
+    <section class="panel" id="panel-rank-goals">
+      <h2>Ranking gap vs goals — by tournament</h2>
+      <p class="sub" id="sub-rank-goals">Each point is one tournament: average ranking gap between opponents (x) versus goals per game (y).</p>
+      <svg id="chart-rank-goals" class="chart" role="img" aria-label="Average ranking gap versus goals per game, per tournament"></svg>
+      <p class="note" id="note-rank-goals">Tests whether more lopsided tournaments (bigger ranking gaps) tend to be higher-scoring. Most useful in the All-time view, where all three tournaments appear together.</p>
+    </section>
+
+    <section class="panel" id="panel-rank-upsets">
+      <h2>Upsets — by tournament</h2>
+      <p class="sub" id="sub-rank-upsets">Share of matches won by the lower-ranked team (the underdog), per tournament.</p>
+      <svg id="chart-rank-upsets" class="chart" role="img" aria-label="Upset rate per tournament"></svg>
+      <p class="note" id="note-rank-upsets">Draws and favourite wins are excluded from the bar but counted in the totals shown beneath each tournament.</p>
     </section>
 
     <section class="panel">
@@ -507,6 +541,247 @@
         (matches.length === 1 ? "match" : "matches") + " · most recent first.";
     }
 
+    // ---------- ranking visuals ----------
+    let RANKINGS = null;   // { edition: { teamName: rank } }, frozen pre-tournament ranks
+
+    async function ensureRankings() {
+      if (RANKINGS) return RANKINGS;
+      try {
+        const res = await fetch("./data/rankings.json?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        RANKINGS = (data && data.editions) || {};
+      } catch (_) {
+        RANKINGS = null;
+      }
+      return RANKINGS;
+    }
+
+    function rankOf(edKey, team) {
+      const ed = RANKINGS && RANKINGS[edKey];
+      const r = ed && ed[team];
+      return Number.isFinite(r) ? r : null;
+    }
+
+    // Ranking-derived facts for a match (favourite = lower rank number). null if a rank is missing.
+    function rankInfo(m) {
+      const hr = rankOf(m.edition, m.home), ar = rankOf(m.edition, m.away);
+      if (hr == null || ar == null) return null;
+      const draw = m.homeScore === m.awayScore;
+      const homeFav = hr < ar;                 // ranks are distinct, so no ties
+      const favScore = homeFav ? m.homeScore : m.awayScore;
+      const dogScore = homeFav ? m.awayScore : m.homeScore;
+      return {
+        gap: Math.abs(hr - ar),
+        draw,
+        favWin: !draw && favScore > dogScore,
+        upset:  !draw && favScore < dogScore,  // the underdog won
+        margin: favScore - dogScore,           // favourite's goal margin (can be negative)
+      };
+    }
+
+    // Generic bar renderer for the ranking panels: entry = {label, value, top, foot, n}.
+    function renderRankBars(svgId, entries, opts) {
+      opts = opts || {};
+      const svg = $(svgId);
+      svg.innerHTML = "";
+      const haveData = entries.some(e => e.n > 0);
+      if (!haveData) {
+        svg.removeAttribute("viewBox");
+        svg.style.height = "64px";
+        svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">${esc(opts.empty || "No ranking data for this filter.")}</text>`;
+        return;
+      }
+      const n = entries.length;
+      const W = 700, left = 24, right = 16, top = 18, plotH = 196, bottom = 56;
+      const H = top + plotH + bottom;
+      const slot = (W - left - right) / n;
+      const barW = Math.min(72, slot * 0.58);
+      const yMax = opts.yMax || (Math.max(...entries.map(e => e.value || 0), 1) * 1.18);
+      const yOf = v => top + plotH - (v / yMax) * plotH;
+      const color = opts.color || "#4cc9f0";
+
+      const parts = [`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`];
+      if (opts.ref != null) {
+        const ry = yOf(opts.ref);
+        parts.push(`<line class="ref-line" x1="${left}" y1="${ry.toFixed(1)}" x2="${W - right}" y2="${ry.toFixed(1)}"/>`);
+        if (opts.refLabel) parts.push(`<text class="ref-label" x="${W - right}" y="${(ry - 5).toFixed(1)}" text-anchor="end">${esc(opts.refLabel)}</text>`);
+      }
+      entries.forEach((e, i) => {
+        const cx = left + slot * i + slot / 2;
+        if (e.n > 0) {
+          const h = Math.max(2, (e.value / yMax) * plotH);
+          const y = top + plotH - h;
+          const x = cx - barW / 2;
+          parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}"/>`);
+          if (e.top) parts.push(`<text class="bar-label" x="${cx.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${esc(e.top)}</text>`);
+        } else {
+          parts.push(`<text class="axis-label" x="${cx.toFixed(1)}" y="${(top + plotH - 6).toFixed(1)}" text-anchor="middle">—</text>`);
+        }
+        parts.push(`<text class="axis-label" x="${cx.toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>`);
+        if (e.foot) parts.push(`<text class="foot-label" x="${cx.toFixed(1)}" y="${(top + plotH + 34).toFixed(1)}" text-anchor="middle">${esc(e.foot)}</text>`);
+      });
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      svg.style.height = "";
+      svg.innerHTML = parts.join("");
+    }
+
+    // Panel 1 — favourite win rate by ranking gap (does ranking predict the result?).
+    const GAP_BINS = [
+      { label: "0–9", lo: 0, hi: 9 },
+      { label: "10–19", lo: 10, hi: 19 },
+      { label: "20–34", lo: 20, hi: 34 },
+      { label: "35+", lo: 35, hi: Infinity },
+    ];
+    function renderRankOutcome(matches) {
+      const infos = matches.map(rankInfo).filter(Boolean);
+      const entries = GAP_BINS.map(b => {
+        const sub = infos.filter(i => i.gap >= b.lo && i.gap <= b.hi);
+        const n = sub.length;
+        const favWins = sub.filter(i => i.favWin).length;
+        const draws = sub.filter(i => i.draw).length;
+        const avgMargin = n ? sub.reduce((s, i) => s + i.margin, 0) / n : 0;
+        const winPct = n ? 100 * favWins / n : 0;
+        const m = avgMargin >= 0 ? "+" + avgMargin.toFixed(1) : avgMargin.toFixed(1);
+        return {
+          label: b.label, value: winPct, n,
+          top: n ? Math.round(winPct) + "%" : "",
+          foot: n ? "n=" + n + " · " + m + (draws ? " · " + draws + "d" : "") : "",
+        };
+      });
+      const total = infos.length;
+      $("sub-rank-outcome").textContent = total
+        ? "Matches grouped by FIFA-ranking gap; bars show how often the higher-ranked team won (" + total + " ranked matches). Bigger gap → taller bar would confirm the hypothesis."
+        : "Matches grouped by the FIFA-ranking gap between the two teams.";
+      renderRankBars("chart-rank-outcome", entries, {
+        color: "#5ad19b", yMax: 100, ref: 50, refLabel: "50% coin-flip",
+        empty: "No ranking data for this filter.",
+      });
+    }
+
+    // Group filtered matches by edition, in chronological edition order.
+    function matchesByEdition(matches) {
+      return ALL_KEYS.filter(k => matches.some(m => m.edition === k))
+        .map(k => ({ key: k, label: EDITIONS[k].label, list: matches.filter(m => m.edition === k) }));
+    }
+
+    // Panel 2 — avg ranking gap vs goals/game, one point per tournament.
+    function renderRankGoals(matches) {
+      const groups = matchesByEdition(matches);
+      const points = groups.map(g => {
+        const infos = g.list.map(rankInfo).filter(Boolean);
+        if (!infos.length) return null;
+        const avgGap = infos.reduce((s, i) => s + i.gap, 0) / infos.length;
+        const goals = g.list.reduce((s, m) => s + m.homeScore + m.awayScore, 0);
+        const gpg = g.list.length ? goals / g.list.length : 0;
+        return { label: g.label, x: avgGap, y: gpg, n: infos.length };
+      }).filter(Boolean);
+      $("sub-rank-goals").textContent = points.length
+        ? "Each point is one tournament: average ranking gap between opponents (x) versus goals per game (y)."
+        : "Average ranking gap versus goals per game, per tournament.";
+      renderRankScatter("chart-rank-goals", points);
+    }
+
+    function renderRankScatter(svgId, points) {
+      const svg = $(svgId);
+      svg.innerHTML = "";
+      if (!points.length) {
+        svg.removeAttribute("viewBox");
+        svg.style.height = "64px";
+        svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No ranking data for this filter.</text>`;
+        return;
+      }
+      const W = 700, left = 52, right = 22, top = 22, plotH = 226, bottom = 50;
+      const H = top + plotH + bottom;
+      const xs = points.map(p => p.x), ys = points.map(p => p.y);
+      let xMin = Math.min(...xs), xMax = Math.max(...xs);
+      let yMin = Math.min(...ys), yMax = Math.max(...ys);
+      const xPad = (xMax - xMin) * 0.3 || 6;
+      const yPad = (yMax - yMin) * 0.3 || 0.6;
+      xMin = Math.max(0, xMin - xPad); xMax += xPad;
+      yMin = Math.max(0, yMin - yPad); yMax += yPad;
+      const xOf = v => left + ((v - xMin) / (xMax - xMin || 1)) * (W - left - right);
+      const yOf = v => top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
+
+      const parts = [];
+      // axes
+      parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
+      parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
+      // y gridlines + ticks (3)
+      for (let t = 0; t <= 2; t++) {
+        const v = yMin + (yMax - yMin) * t / 2;
+        const y = yOf(v);
+        parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
+        parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v.toFixed(1)}</text>`);
+      }
+      // x ticks (3)
+      for (let t = 0; t <= 2; t++) {
+        const v = xMin + (xMax - xMin) * t / 2;
+        const x = xOf(v);
+        parts.push(`<text class="axis-label" x="${x.toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
+      }
+      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Average ranking gap →</text>`);
+      parts.push(`<text class="axis-title" x="${12}" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">Goals / game</text>`);
+      // points — year sits above the dot, coordinates below, so neighbouring
+      // points (close in y) never stack their text on the same side.
+      for (const p of points) {
+        const cx = xOf(p.x), cy = yOf(p.y);
+        let lx = cx, anchor = "middle";
+        if (cx < left + 30) { lx = left + 4; anchor = "start"; }
+        else if (cx > W - right - 30) { lx = W - right - 4; anchor = "end"; }
+        const yTop = Math.max(top + 12, cy - 13);
+        const yBot = Math.min(top + plotH - 4, cy + 22);
+        parts.push(`<circle class="pt" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="#f7b801"/>`);
+        parts.push(`<text class="pt-label" x="${lx.toFixed(1)}" y="${yTop.toFixed(1)}" text-anchor="${anchor}">${esc(p.label)}</text>`);
+        parts.push(`<text class="pt-sub" x="${lx.toFixed(1)}" y="${yBot.toFixed(1)}" text-anchor="${anchor}">gap ${Math.round(p.x)} · ${p.y.toFixed(2)} gpg</text>`);
+      }
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      svg.style.height = "";
+      svg.innerHTML = parts.join("");
+    }
+
+    // Panel 3 — upset rate per tournament (lower-ranked team wins).
+    function renderUpsets(matches) {
+      const groups = matchesByEdition(matches);
+      const entries = groups.map(g => {
+        const infos = g.list.map(rankInfo).filter(Boolean);
+        const n = infos.length;
+        const upsets = infos.filter(i => i.upset).length;
+        const draws = infos.filter(i => i.draw).length;
+        const favWins = infos.filter(i => i.favWin).length;
+        const pct = n ? 100 * upsets / n : 0;
+        return {
+          label: g.label, value: pct, n,
+          top: n ? Math.round(pct) + "%" : "",
+          foot: n ? upsets + "/" + n + (draws ? " · " + draws + "d" : "") : "",
+        };
+      });
+      const totalUp = groups.reduce((s, g) => s + g.list.map(rankInfo).filter(i => i && i.upset).length, 0);
+      $("sub-rank-upsets").textContent = entries.some(e => e.n > 0)
+        ? "Share of matches won by the lower-ranked team, per tournament (" + totalUp + " upsets in this view)."
+        : "Share of matches won by the lower-ranked team, per tournament.";
+      renderRankBars("chart-rank-upsets", entries, {
+        color: "#ff7a7a", empty: "No ranking data for this filter.",
+      });
+    }
+
+    function renderRankings(matches) {
+      if (!RANKINGS) {
+        for (const id of ["chart-rank-outcome", "chart-rank-goals", "chart-rank-upsets"]) {
+          const svg = $(id);
+          svg.removeAttribute("viewBox");
+          svg.style.height = "64px";
+          svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">Rankings unavailable.</text>`;
+        }
+        return;
+      }
+      renderRankOutcome(matches);
+      renderRankGoals(matches);
+      renderUpsets(matches);
+    }
+
     // ---------- utils ----------
     function esc(s) {
       return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
@@ -603,6 +878,7 @@
         renderScoresChart(stats.scoreFreq, stats.games, relative);
       }
 
+      renderRankings(matches);
       renderMatches(matches, viewIsAll);
       updateAsOfLabel(cut, matches, pct);
 
@@ -635,6 +911,7 @@
       $("viewctl-display").classList.toggle("hidden", !viewIsAll);
 
       try {
+        await ensureRankings();   // frozen pre-tournament ranks, fetched once and cached
         let matches = [];
         if (viewIsAll) {
           const results = await Promise.all(ALL_KEYS.map(fetchEdition));
