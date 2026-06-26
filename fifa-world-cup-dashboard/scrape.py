@@ -331,65 +331,92 @@ def _edition_teams(cfg):
     return teams
 
 
-def scrape_rankings():
-    """Build data/rankings.json: pre-tournament rank+points per ESPN team, per edition.
+def _fetch_edition_ranks(key, cfg, teams, date_map, whereig_cache):
+    """Return (ranks dict, source label, ref, missing list) for one edition."""
+    start = datetime.strptime(cfg["start"], "%Y-%m-%d").date()
+    on_before = sorted(d for d in date_map if d <= cfg["start"])
+    chosen = on_before[-1] if on_before else None
+    fresh = chosen and (start - datetime.strptime(chosen, "%Y-%m-%d").date()).days <= PRE_TOURNAMENT_WINDOW_DAYS
+    ranks, missing = {}, []
+    if fresh:
+        table = fifa_ranking(date_map[chosen])
+        by_name = {_canon(v["name"]): v for v in table.values()}
+        for name, abbr in teams.items():
+            v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_canon(name))
+            (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
+             if v else missing.append(f"{name}/{abbr}"))
+        return ranks, "FIFA " + chosen, chosen, missing
+    # No pre-tournament FIFA release — use the current whereig table (cached).
+    if whereig_cache.get("table") is None:
+        whereig_cache["table"] = whereig_ranking()
+    for name in teams:
+        v = whereig_cache["table"].get(_canon(name))
+        (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
+         if v else missing.append(name))
+    return ranks, "whereig (current)", "current", missing
 
-    2018/2022 use FIFA's exact pre-tournament release (matched by country code);
-    editions with no FIFA release close to kickoff (e.g. 2026) use the current
-    whereig table (matched by canonical country name).
+
+def scrape_rankings():
+    """Maintain data/rankings.json: pre-tournament rank+points per ESPN team.
+
+    Incremental + safe:
+    - Finished editions already stored are NEVER re-fetched (no point, and a flaky
+      fetch must not clobber good data) — only the current edition is refreshed.
+    - A fetch that returns little/nothing never overwrites stored data.
+    - 2018/2022 use FIFA's exact pre-tournament release (matched by country code);
+      editions with no FIFA release near kickoff (2026) use the current whereig table.
     """
     try:
-        date_map = fifa_date_map()
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
-        print("[rankings] could not load FIFA date map:", e, file=sys.stderr)
-        date_map = {}
+        with open(RANK_FILE, encoding="utf-8") as f:
+            prev = json.load(f)
+    except (FileNotFoundError, ValueError):
+        prev = {}
+    editions = dict(prev.get("editions") or {})
+    meta = dict(prev.get("meta") or {})
+    today = datetime.now(timezone.utc).date()
 
-    whereig = None  # lazy-loaded once if needed
-    out = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "source": "FIFA (inside.fifa.com) + whereig.com", "editions": {}, "meta": {}}
+    date_map = {}
+    whereig_cache = {"table": None}
+    changed = False
 
     for key, cfg in EDITIONS.items():
         teams = _edition_teams(cfg)
         if not teams:
             continue
-        start = datetime.strptime(cfg["start"], "%Y-%m-%d").date()
-        on_before = sorted(d for d in date_map if d <= cfg["start"])
-        chosen = on_before[-1] if on_before else None
-        fresh = chosen and (start - datetime.strptime(chosen, "%Y-%m-%d").date()).days <= PRE_TOURNAMENT_WINDOW_DAYS
+        finished = datetime.strptime(cfg["end"], "%Y-%m-%d").date() < today
+        if finished and editions.get(key):
+            print(f"[rankings] {key}: already stored ({len(editions[key])} teams), skipping.")
+            continue
 
-        ranks, missing, src, tag = {}, [], None, None
-        if fresh:
-            # FIFA release close to kickoff — match by country code (name fallback).
+        if not date_map:
             try:
-                table = fifa_ranking(date_map[chosen])
-                by_name = {_canon(v["name"]): v for v in table.values()}
-                for name, abbr in teams.items():
-                    v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_canon(name))
-                    (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
-                     if v else missing.append(f"{name}/{abbr}"))
-                src, tag = "FIFA " + chosen, chosen
+                date_map = fifa_date_map()
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
-                print(f"[rankings] {key}: FIFA fetch failed ({e})", file=sys.stderr)
-                continue
-        else:
-            # No pre-tournament FIFA release — use the current whereig table.
-            if whereig is None:
-                try:
-                    whereig = whereig_ranking()
-                except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
-                    print(f"[rankings] whereig fetch failed ({e})", file=sys.stderr)
-                    whereig = {}
-            for name in teams:
-                v = whereig.get(_canon(name))
-                (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
-                 if v else missing.append(name))
-            src, tag = "whereig (current)", "current"
+                print("[rankings] FIFA date map failed:", e, file=sys.stderr)
+        try:
+            ranks, src, ref, missing = _fetch_edition_ranks(key, cfg, teams, date_map, whereig_cache)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+            print(f"[rankings] {key}: fetch failed ({e}); keeping stored data.", file=sys.stderr)
+            continue
 
-        out["editions"][key] = ranks
-        out["meta"][key] = {"source": src, "ref": tag, "matched": len(ranks), "teams": len(teams)}
+        # Guard: don't overwrite good stored data with a sparse/empty fetch.
+        stored = len(editions.get(key, {}))
+        if len(ranks) < max(1, int(0.8 * len(teams))) or len(ranks) < stored:
+            print(f"[rankings] {key}: only matched {len(ranks)}/{len(teams)} "
+                  f"(stored {stored}); keeping stored data.", file=sys.stderr)
+            continue
+
+        editions[key] = ranks
+        meta[key] = {"source": src, "ref": ref, "matched": len(ranks), "teams": len(teams)}
+        changed = True
         print(f"[rankings] {key}: {src} -> matched {len(ranks)}/{len(teams)}"
               + (f"; UNMATCHED: {', '.join(missing)}" if missing else ""))
 
+    if not changed and prev:
+        print("[rankings] no changes; rankings.json left untouched.")
+        return
+    out = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "source": "FIFA (inside.fifa.com) + whereig.com", "editions": editions, "meta": meta}
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(RANK_FILE, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
