@@ -237,14 +237,13 @@
 
     <section class="panel" id="panel-rank-outcome">
       <h2>Does ranking predict the result?</h2>
-      <p class="sub" id="sub-rank-outcome">Matches grouped by the FIFA-ranking gap between the two teams; bars show how often the higher-ranked team won.</p>
+      <p class="sub" id="sub-rank-outcome">Higher-ranked team’s win rate, by ranking gap.</p>
       <svg id="chart-rank-outcome" class="chart" role="img" aria-label="Higher-ranked team win rate by ranking gap"></svg>
-      <p class="note" id="note-rank-outcome">Rankings are the pre-tournament FIFA ranking for each edition. The reference line marks 50% (a coin-flip). “+x” under each bar is the favourite’s average goal margin.</p>
     </section>
 
     <section class="panel" id="panel-rank-goals">
-      <h2>Ranking gap vs goals — by tournament</h2>
-      <p class="sub" id="sub-rank-goals">Each point is one match: the ranking gap between the teams (x) versus goals scored (y), coloured by tournament.</p>
+      <h2>Ranking gap vs goals</h2>
+      <p class="sub" id="sub-rank-goals">Ranking gap vs goals scored, coloured by tournament.</p>
       <label class="ctl hidden" id="rankview-ctl">View
         <select id="rankview" aria-label="Ranking-gap view">
           <option value="match">Per match</option>
@@ -253,14 +252,12 @@
       </label>
       <div class="rank-legend" id="legend-rank-goals"></div>
       <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
-      <p class="note" id="note-rank-goals">Tests whether bigger ranking gaps mean more goals. Switch the view to compare two lenses: <b>Per tournament</b> shows three averages that trend upward (2026 stands out) — but the wide ±1 SD whiskers warn how much each average hides. <b>Per match</b> plots every game, and its trend line is nearly flat (r ≈ 0.08). The relationship that looks real across tournament averages mostly vanishes game-by-game. Match dots are jittered slightly so overlapping scores stay visible.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
       <h2>Upsets — by tournament</h2>
-      <p class="sub" id="sub-rank-upsets">Share of matches won by the lower-ranked team (the underdog), per tournament.</p>
+      <p class="sub" id="sub-rank-upsets">Share of matches won by the lower-ranked team.</p>
       <svg id="chart-rank-upsets" class="chart" role="img" aria-label="Upset rate per tournament"></svg>
-      <p class="note" id="note-rank-upsets">Draws and favourite wins are excluded from the bar but counted in the totals shown beneath each tournament.</p>
     </section>
 
     <section class="panel">
@@ -663,13 +660,13 @@
         return {
           label: b.label, value: winPct, n,
           top: n ? Math.round(winPct) + "%" : "",
-          foot: n ? "n=" + n + " · " + m + (draws ? " · " + draws + "d" : "") : "",
+          foot: n ? n + " games · margin " + m : "",
         };
       });
       const total = infos.length;
       $("sub-rank-outcome").textContent = total
-        ? "Matches grouped by FIFA-ranking gap; bars show how often the higher-ranked team won (" + total + " ranked matches). Bigger gap → taller bar would confirm the hypothesis."
-        : "Matches grouped by the FIFA-ranking gap between the two teams.";
+        ? "Higher-ranked team’s win rate, by ranking gap · " + total + " matches."
+        : "Higher-ranked team’s win rate, by ranking gap.";
       renderRankBars("chart-rank-outcome", entries, {
         color: "#5ad19b", yMax: 100, ref: 50, refLabel: "50% coin-flip",
         empty: "No ranking data for this filter.",
@@ -747,13 +744,12 @@
 
       buildScatterLegend("legend-rank-goals", stats, mode, multi);
       if (mode === "tournament") {
-        $("sub-rank-goals").textContent =
-          "One point per tournament: average ranking gap (x) vs goals per game (y), with ±1 SD whiskers. The whiskers (especially the wide horizontal one) show how much each average hides.";
+        $("sub-rank-goals").textContent = "Per tournament: average gap vs goals/game, ±1 SD whiskers.";
       } else {
-        let rStr = points.length >= 3 ? " · r = " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2) : "";
+        let rStr = points.length >= 3 ? " · r " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2) : "";
         $("sub-rank-goals").textContent = points.length
-          ? "One point per match: ranking gap (x) vs goals scored (y), coloured by tournament (" + points.length + " matches" + rStr + ")."
-          : "Ranking gap versus goals scored, one point per match.";
+          ? "Per match: gap vs goals · " + points.length + " matches" + rStr + "."
+          : "Ranking gap vs goals scored, one point per match.";
       }
       renderRankScatter("chart-rank-goals", points, eds, mode);
     }
@@ -875,13 +871,13 @@
         return {
           label: g.label, value: pct, n,
           top: n ? Math.round(pct) + "%" : "",
-          foot: n ? upsets + "/" + n + (draws ? " · " + draws + "d" : "") : "",
+          foot: n ? upsets + " of " + n : "",
         };
       });
       const totalUp = groups.reduce((s, g) => s + g.list.map(rankInfo).filter(i => i && i.upset).length, 0);
       $("sub-rank-upsets").textContent = entries.some(e => e.n > 0)
-        ? "Share of matches won by the lower-ranked team, per tournament (" + totalUp + " upsets in this view)."
-        : "Share of matches won by the lower-ranked team, per tournament.";
+        ? "Share won by the lower-ranked team · " + totalUp + " upsets."
+        : "Share of matches won by the lower-ranked team.";
       renderRankBars("chart-rank-upsets", entries, {
         color: "#ff7a7a", empty: "No ranking data for this filter.",
       });
