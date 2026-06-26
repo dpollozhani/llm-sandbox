@@ -11,4 +11,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python fifa-world-cup-dashboard/rankings_probe.py
+      - name: Build rankings and show coverage
+        run: |
+          cd fifa-world-cup-dashboard
+          python -c "import scrape; scrape.scrape_rankings()"
+          echo "----------- data/rankings.json -----------"
+          cat data/rankings.json

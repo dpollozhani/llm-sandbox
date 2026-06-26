@@ -64,6 +64,28 @@ ABBR_TO_FIFA = {
     "TUR": "TUR",  # Türkiye (same code; listed for clarity)
 }
 
+# Current ranking (HTML table) used when FIFA has no pre-tournament release yet.
+WHEREIG_URL = "https://www.whereig.com/football/fifa-world-rankings.html"
+# If the best FIFA release is more than this many days before kickoff, it isn't a
+# real pre-tournament ranking — fall back to the current (whereig) table instead.
+PRE_TOURNAMENT_WINDOW_DAYS = 75
+
+# Country-name variants -> canonical (normalized) name, so whereig/FIFA names line
+# up with the ESPN team names regardless of spelling.
+NAME_CANON = {
+    "korea republic": "south korea",
+    "cote d ivoire": "ivory coast",
+    "turkey": "turkiye",
+    "dr congo": "congo dr", "democratic republic of the congo": "congo dr",
+    "congo democratic republic": "congo dr",
+    "bosnia and herzegovina": "bosnia herzegovina",
+    "cabo verde": "cape verde",
+    "usa": "united states", "united states of america": "united states",
+    "czech republic": "czechia",
+    "ir iran": "iran",
+    "china pr": "china",
+}
+
 
 def daterange(start_s, end_s):
     start = datetime.strptime(start_s, "%Y-%m-%d").date()
@@ -220,6 +242,40 @@ def _norm(s):
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", s)).strip()
 
 
+def _canon(name):
+    """Normalized + alias-collapsed country name, for cross-source matching."""
+    n = _norm(name)
+    return NAME_CANON.get(n, n)
+
+
+def whereig_ranking():
+    """canonical-name -> {rank, points} from the whereig current-ranking table."""
+    with urllib.request.urlopen(urllib.request.Request(WHEREIG_URL, headers=RANK_HEADERS), timeout=60) as r:
+        page = r.read().decode("utf-8", "ignore")
+    tables = re.findall(r"<table[^>]*>(.*?)</table>", page, re.S | re.I)
+    if not tables:
+        return {}
+    best = max(tables, key=lambda t: len(re.findall(r"<tr", t, re.I)))
+    out = {}
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", best, re.S | re.I):
+        cells = [re.sub(r"\s+", " ", unicodedata.normalize("NFKD", re.sub(r"<[^>]+>", " ", c))).strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S | re.I)]
+        if len(cells) < 3:
+            continue
+        m = re.match(r"\d+", cells[0])
+        if not m:
+            continue                      # skip header / non-data rows
+        rank = int(m.group())
+        country = cells[1]
+        try:
+            points = round(float(re.sub(r"[^0-9.]", "", cells[2])))
+        except ValueError:
+            points = None
+        if country:
+            out[_canon(country)] = {"rank": rank, "points": points}
+    return out
+
+
 def fifa_fetch(url):
     with urllib.request.urlopen(urllib.request.Request(url, headers=RANK_HEADERS), timeout=60) as r:
         return r.read().decode("utf-8", "ignore")
@@ -261,53 +317,77 @@ def fifa_ranking(date_id):
     return out
 
 
+def _edition_teams(cfg):
+    """{espn_name: abbr} for an edition, from its committed matches file."""
+    try:
+        with open(os.path.join(DATA_DIR, cfg["file"]), encoding="utf-8") as f:
+            matches = json.load(f).get("matches", [])
+    except (FileNotFoundError, ValueError):
+        return {}
+    teams = {}
+    for mm in matches:
+        teams[mm["home"]] = mm.get("homeAbbr", "")
+        teams[mm["away"]] = mm.get("awayAbbr", "")
+    return teams
+
+
 def scrape_rankings():
-    """Build data/rankings.json: pre-tournament rank+points per ESPN team, per edition."""
+    """Build data/rankings.json: pre-tournament rank+points per ESPN team, per edition.
+
+    2018/2022 use FIFA's exact pre-tournament release (matched by country code);
+    editions with no FIFA release close to kickoff (e.g. 2026) use the current
+    whereig table (matched by canonical country name).
+    """
     try:
         date_map = fifa_date_map()
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
         print("[rankings] could not load FIFA date map:", e, file=sys.stderr)
-        return
-    if not date_map:
-        print("[rankings] no FIFA dates found; leaving rankings.json untouched.", file=sys.stderr)
-        return
+        date_map = {}
 
+    whereig = None  # lazy-loaded once if needed
     out = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "source": "FIFA (inside.fifa.com)", "editions": {}, "meta": {}}
+           "source": "FIFA (inside.fifa.com) + whereig.com", "editions": {}, "meta": {}}
+
     for key, cfg in EDITIONS.items():
-        # Pre-tournament = latest release on/before kickoff (else earliest available).
-        on_before = sorted(d for d in date_map if d <= cfg["start"])
-        chosen = on_before[-1] if on_before else sorted(date_map)[0]
-        try:
-            table = fifa_ranking(date_map[chosen])
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
-            print(f"[rankings] {key}: fetch failed ({e})", file=sys.stderr)
+        teams = _edition_teams(cfg)
+        if not teams:
             continue
+        start = datetime.strptime(cfg["start"], "%Y-%m-%d").date()
+        on_before = sorted(d for d in date_map if d <= cfg["start"])
+        chosen = on_before[-1] if on_before else None
+        fresh = chosen and (start - datetime.strptime(chosen, "%Y-%m-%d").date()).days <= PRE_TOURNAMENT_WINDOW_DAYS
 
-        by_name = {_norm(v["name"]): v for v in table.values()}
-        # Teams for this edition come from its matches file.
-        path = os.path.join(DATA_DIR, cfg["file"])
-        try:
-            with open(path, encoding="utf-8") as f:
-                matches = json.load(f).get("matches", [])
-        except (FileNotFoundError, ValueError):
-            matches = []
-        teams = {}
-        for mm in matches:
-            teams[mm["home"]] = mm.get("homeAbbr", "")
-            teams[mm["away"]] = mm.get("awayAbbr", "")
+        ranks, missing, src, tag = {}, [], None, None
+        if fresh:
+            # FIFA release close to kickoff — match by country code (name fallback).
+            try:
+                table = fifa_ranking(date_map[chosen])
+                by_name = {_canon(v["name"]): v for v in table.values()}
+                for name, abbr in teams.items():
+                    v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_canon(name))
+                    (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
+                     if v else missing.append(f"{name}/{abbr}"))
+                src, tag = "FIFA " + chosen, chosen
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+                print(f"[rankings] {key}: FIFA fetch failed ({e})", file=sys.stderr)
+                continue
+        else:
+            # No pre-tournament FIFA release — use the current whereig table.
+            if whereig is None:
+                try:
+                    whereig = whereig_ranking()
+                except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+                    print(f"[rankings] whereig fetch failed ({e})", file=sys.stderr)
+                    whereig = {}
+            for name in teams:
+                v = whereig.get(_canon(name))
+                (ranks.__setitem__(name, {"rank": v["rank"], "points": v["points"]})
+                 if v else missing.append(name))
+            src, tag = "whereig (current)", "current"
 
-        ranks, missing = {}, []
-        for name, abbr in teams.items():
-            v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_norm(name))
-            if v:
-                ranks[name] = {"rank": v["rank"], "points": v["points"]}
-            else:
-                missing.append(f"{name}/{abbr}")
         out["editions"][key] = ranks
-        out["meta"][key] = {"dateId": date_map[chosen], "date": chosen, "matched": len(ranks),
-                            "teams": len(teams)}
-        print(f"[rankings] {key}: release {chosen} -> matched {len(ranks)}/{len(teams)}"
+        out["meta"][key] = {"source": src, "ref": tag, "matched": len(ranks), "teams": len(teams)}
+        print(f"[rankings] {key}: {src} -> matched {len(ranks)}/{len(teams)}"
               + (f"; UNMATCHED: {', '.join(missing)}" if missing else ""))
 
     os.makedirs(DATA_DIR, exist_ok=True)
