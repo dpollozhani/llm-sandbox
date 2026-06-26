@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-26T01:54:16Z",
+  "updated": "2026-06-26T06:08:26Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 66,
-  "finishedMatches": 58,
+  "finishedMatches": 60,
   "matches": [
     {
       "id": "760415",
@@ -715,8 +715,8 @@
       "awayAbbr": "AUS",
       "homeScore": 0,
       "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760470",
@@ -725,10 +725,10 @@
       "away": "United States",
       "homeAbbr": "TUR",
       "awayAbbr": "USA",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 3,
+      "awayScore": 2,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760474",
