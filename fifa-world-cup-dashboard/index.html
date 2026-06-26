@@ -618,15 +618,19 @@
       if (opts.ref != null) {
         const ry = yOf(opts.ref);
         parts.push(`<line class="ref-line" x1="${left}" y1="${ry.toFixed(1)}" x2="${W - right}" y2="${ry.toFixed(1)}"/>`);
-        if (opts.refLabel) parts.push(`<text class="ref-label" x="${W - right}" y="${(ry - 5).toFixed(1)}" text-anchor="end">${esc(opts.refLabel)}</text>`);
+        if (opts.refLabel) parts.push(`<text class="ref-label" x="${left}" y="${(ry - 5).toFixed(1)}" text-anchor="start">${esc(opts.refLabel)}</text>`);
       }
       entries.forEach((e, i) => {
         const cx = left + slot * i + slot / 2;
+        if (opts.separatorBefore === i) {
+          const sx = left + slot * i;
+          parts.push(`<line x1="${sx.toFixed(1)}" y1="${top}" x2="${sx.toFixed(1)}" y2="${(top + plotH).toFixed(1)}" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 4"/>`);
+        }
         if (e.n > 0) {
           const h = Math.max(2, (e.value / yMax) * plotH);
           const y = top + plotH - h;
           const x = cx - barW / 2;
-          parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}"/>`);
+          parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${e.color || color}"/>`);
           if (e.top) parts.push(`<text class="bar-label" x="${cx.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${esc(e.top)}</text>`);
         } else {
           parts.push(`<text class="axis-label" x="${cx.toFixed(1)}" y="${(top + plotH - 6).toFixed(1)}" text-anchor="middle">—</text>`);
@@ -664,12 +668,22 @@
         };
       });
       const total = infos.length;
+      // Aggregate "All" bar — overall win rate of the higher-ranked side.
+      const allWins = infos.filter(i => i.favWin).length;
+      const allMargin = total ? infos.reduce((s, i) => s + i.margin, 0) / total : 0;
+      const allM = allMargin >= 0 ? "+" + allMargin.toFixed(1) : allMargin.toFixed(1);
+      const allPct = total ? 100 * allWins / total : 0;
+      entries.push({
+        label: "All", value: allPct, n: total, color: "#8ea2d6",
+        top: total ? Math.round(allPct) + "%" : "",
+        foot: total ? total + " games · margin " + allM : "",
+      });
       $("sub-rank-outcome").textContent = total
         ? "Higher-ranked team’s win rate, by ranking gap · " + total + " matches."
         : "Higher-ranked team’s win rate, by ranking gap.";
       renderRankBars("chart-rank-outcome", entries, {
         color: "#5ad19b", yMax: 100, ref: 50, refLabel: "50% coin-flip",
-        empty: "No ranking data for this filter.",
+        separatorBefore: entries.length - 1, empty: "No ranking data for this filter.",
       });
     }
 
