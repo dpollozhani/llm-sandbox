@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""TEMPORARY probe: find FIFA ranking dateIds, then pull one release to learn
-the entry shape. inside.fifa.com returns clean JSON."""
+"""TEMPORARY probe: extract the dateId<->date map from __NEXT_DATA__ and find
+the releases for the 2018/2022/2026 World Cups."""
 
 import json, re, urllib.request
 
 HDRS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "*/*"}
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept": "*/*"}
 
 
 def fetch(url):
@@ -14,26 +13,36 @@ def fetch(url):
         return r.read().decode("utf-8", "ignore")
 
 
-# 1) Pull the ranking landing page and look for dateIds embedded in __NEXT_DATA__.
 page = fetch("https://inside.fifa.com/fifa-world-ranking/men")
-print("page bytes:", len(page))
-ids = sorted(set(re.findall(r'id\d{3,6}', page)))
-print("dateId-looking tokens found:", ids[:40])
+m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+print("found __NEXT_DATA__:", bool(m))
+data = json.loads(m.group(1))
 
-# 2) If we found any, call the API with the first and dump the dates list + a sample.
-if ids:
-    did = ids[-1]
-    url = "https://inside.fifa.com/api/ranking-overview?locale=en&dateId=" + did
-    print("\nGET", url)
-    data = json.loads(fetch(url))
-    print("top keys:", list(data.keys()))
-    dates = data.get("dates") or []
-    print("dates count:", len(dates))
-    for d in dates:
-        s = json.dumps(d)
-        if re.search(r'2018-0[67]|2022-1[01]|2026-0[67]', s):
-            print("  MATCH:", s[:200])
-    rk = data.get("rankings") or []
-    print("rankings count:", len(rk))
-    if rk:
-        print("entry sample:", json.dumps(rk[0])[:500])
+# Collect every dict that carries an id-token AND an ISO date.
+seen = set()
+hits = []
+def walk(o):
+    if isinstance(o, dict):
+        blob = json.dumps(o, ensure_ascii=False)
+        if re.search(r'\bid\d{3,6}\b', blob) and re.search(r'20\d\d-\d\d-\d\d', blob) and len(blob) < 400:
+            key = blob
+            if key not in seen:
+                seen.add(key); hits.append(o)
+        for v in o.values():
+            walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            walk(v)
+walk(data)
+print("date-ish dicts:", len(hits))
+
+want = re.compile(r'2018-0[5-7]|2022-(09|10|11)|2026-0[5-7]')
+print("\n== entries near WC releases ==")
+for h in hits:
+    s = json.dumps(h, ensure_ascii=False)
+    if want.search(s):
+        print(s[:240])
+
+print("\n== sample of all date-ish dicts (first 8) ==")
+for h in hits[:8]:
+    print(json.dumps(h, ensure_ascii=False)[:200])
