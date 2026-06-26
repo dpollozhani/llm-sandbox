@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""TEMPORARY probe: dump Wikipedia tables that mention FIFA ranking, plus our
-ESPN team names, so we can design the real rankings parser + alias map.
+"""TEMPORARY probe: inspect FIFA's hidden ranking API so we can build the real
+parser. Dumps top-level keys, the list of available ranking dates (to find the
+June 2026 release), and a few sample ranking entries with their field names.
 Runs in CI (workflow_dispatch). Safe to delete afterwards."""
 
-import json, re, html, os, urllib.request
+import json, urllib.request
 
-PAGES = {"2018": "2018_FIFA_World_Cup", "2022": "2022_FIFA_World_Cup", "2026": "2026_FIFA_World_Cup"}
-HDRS = {"User-Agent": "wc-dashboard-probe/1.0 (github actions)"}
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+HDRS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+}
 
 
 def fetch(url):
@@ -15,36 +18,32 @@ def fetch(url):
         return r.read().decode("utf-8", "ignore")
 
 
-def strip(s):
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", s))).strip()
+URL = "https://www.fifa.com/api/ranking-overview?locale=en"
+print("GET", URL)
+try:
+    raw = fetch(URL)
+    print("bytes:", len(raw))
+    data = json.loads(raw)
+    print("TOP-LEVEL KEYS:", list(data.keys()))
 
+    # Look for the available ranking-release dates (to find June/July 2026).
+    for k, v in data.items():
+        if isinstance(v, list) and v and isinstance(v[0], dict) and any(
+            "date" in (kk.lower()) or kk.lower() in ("id", "iso", "text") for kk in v[0]
+        ) and k != "rankings":
+            print(f"\nPOSSIBLE DATES FIELD '{k}' ({len(v)} entries); last 8:")
+            for d in v[-8:]:
+                print("  ", json.dumps(d)[:200])
 
-def cells(row):
-    return [strip(c) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S | re.I)]
-
-
-for ed, page in PAGES.items():
-    print("=" * 70)
-    print("EDITION", ed, "->", page)
-    f = "matches.json" if ed == "2026" else ed + ".json"
-    try:
-        d = json.load(open(os.path.join(DATA, f)))
-        names = sorted(set([m["home"] for m in d["matches"]] + [m["away"] for m in d["matches"]]))
-        print("ESPN teams (%d): %s" % (len(names), ", ".join(names)))
-    except Exception as e:
-        print("ESPN load err:", e)
-    try:
-        h = fetch("https://en.wikipedia.org/api/rest_v1/page/html/" + page)
-    except Exception as e:
-        print("wiki fetch err:", e)
-        continue
-    for ti, t in enumerate(re.findall(r"<table[^>]*>(.*?)</table>", h, re.S | re.I)):
-        if re.search(r"FIFA", t, re.I) and re.search(r"rank", t, re.I):
-            rows = re.findall(r"<tr[^>]*>(.*?)</tr>", t, re.S | re.I)
-            if len(rows) < 6:
-                continue
-            print("---- candidate table #%d (%d rows) ----" % (ti, len(rows)))
-            for r in rows[:7]:
-                c = cells(r)
-                if c:
-                    print(" | ".join(c)[:220])
+    rk = data.get("rankings") or []
+    print("\nrankings count:", len(rk))
+    if rk:
+        print("ENTRY KEYS:", list(rk[0].keys()))
+        ri = rk[0].get("rankingItem")
+        if isinstance(ri, dict):
+            print("rankingItem KEYS:", list(ri.keys()))
+        print("\nTOP 6 ENTRIES (trimmed):")
+        for e in rk[:6]:
+            print("  ", json.dumps(e)[:300])
+except Exception as ex:
+    print("ERROR:", repr(ex))
