@@ -19,8 +19,10 @@ Stdlib only — no pip install needed in CI.
 
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
@@ -47,6 +49,20 @@ HEADERS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+RANK_FILE = os.path.join(DATA_DIR, "rankings.json")
+
+# FIFA men's ranking (hidden JSON API on inside.fifa.com; www.fifa.com is blocked).
+RANK_PAGE = "https://inside.fifa.com/fifa-world-ranking/men"
+RANK_API = "https://inside.fifa.com/api/ranking-overview?locale=en&dateId={}"
+RANK_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Accept": "application/json, text/plain, */*",
+    "Referer": RANK_PAGE,
+}
+# ESPN abbreviation -> FIFA country code, only where they differ.
+ABBR_TO_FIFA = {
+    "TUR": "TUR",  # Türkiye (same code; listed for clarity)
+}
 
 
 def daterange(start_s, end_s):
@@ -195,8 +211,115 @@ def scrape_edition(key, cfg):
     return True
 
 
+# ---------------------------------------------------------------------------
+# FIFA rankings (pre-tournament rank + points per country, per edition)
+# ---------------------------------------------------------------------------
+
+def _norm(s):
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", s)).strip()
+
+
+def fifa_fetch(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=RANK_HEADERS), timeout=60) as r:
+        return r.read().decode("utf-8", "ignore")
+
+
+def fifa_date_map():
+    """date (YYYY-MM-DD) -> dateId, from the ranking page's __NEXT_DATA__."""
+    page = fifa_fetch(RANK_PAGE)
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return {}
+    data = json.loads(m.group(1))
+    out = {}
+    def walk(o):
+        if isinstance(o, dict):
+            i, iso = o.get("id"), (o.get("iso") or o.get("date"))
+            if isinstance(i, str) and re.fullmatch(r"id\d{3,6}", i) and isinstance(iso, str):
+                d = iso[:10]
+                if re.fullmatch(r"\d{4}-\d\d-\d\d", d):
+                    out[d] = i
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(data)
+    return out
+
+
+def fifa_ranking(date_id):
+    """countryCode -> {rank, points} for one release."""
+    data = json.loads(fifa_fetch(RANK_API.format(date_id)))
+    out = {}
+    for e in data.get("rankings") or []:
+        ri = e.get("rankingItem") or {}
+        cc, rank = ri.get("countryCode"), ri.get("rank")
+        if cc and rank:
+            out[cc] = {"rank": rank, "points": ri.get("totalPoints"), "name": ri.get("name")}
+    return out
+
+
+def scrape_rankings():
+    """Build data/rankings.json: pre-tournament rank+points per ESPN team, per edition."""
+    try:
+        date_map = fifa_date_map()
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+        print("[rankings] could not load FIFA date map:", e, file=sys.stderr)
+        return
+    if not date_map:
+        print("[rankings] no FIFA dates found; leaving rankings.json untouched.", file=sys.stderr)
+        return
+
+    out = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "source": "FIFA (inside.fifa.com)", "editions": {}, "meta": {}}
+    for key, cfg in EDITIONS.items():
+        # Pre-tournament = latest release on/before kickoff (else earliest available).
+        on_before = sorted(d for d in date_map if d <= cfg["start"])
+        chosen = on_before[-1] if on_before else sorted(date_map)[0]
+        try:
+            table = fifa_ranking(date_map[chosen])
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+            print(f"[rankings] {key}: fetch failed ({e})", file=sys.stderr)
+            continue
+
+        by_name = {_norm(v["name"]): v for v in table.values()}
+        # Teams for this edition come from its matches file.
+        path = os.path.join(DATA_DIR, cfg["file"])
+        try:
+            with open(path, encoding="utf-8") as f:
+                matches = json.load(f).get("matches", [])
+        except (FileNotFoundError, ValueError):
+            matches = []
+        teams = {}
+        for mm in matches:
+            teams[mm["home"]] = mm.get("homeAbbr", "")
+            teams[mm["away"]] = mm.get("awayAbbr", "")
+
+        ranks, missing = {}, []
+        for name, abbr in teams.items():
+            v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_norm(name))
+            if v:
+                ranks[name] = {"rank": v["rank"], "points": v["points"]}
+            else:
+                missing.append(f"{name}/{abbr}")
+        out["editions"][key] = ranks
+        out["meta"][key] = {"dateId": date_map[chosen], "date": chosen, "matched": len(ranks),
+                            "teams": len(teams)}
+        print(f"[rankings] {key}: release {chosen} -> matched {len(ranks)}/{len(teams)}"
+              + (f"; UNMATCHED: {', '.join(missing)}" if missing else ""))
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(RANK_FILE, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("[rankings] wrote", RANK_FILE)
+
+
 def main():
     results = [scrape_edition(k, cfg) for k, cfg in EDITIONS.items()]
+    scrape_rankings()
     # Fail the run only if a current edition produced nothing at all.
     if any(r is False for r in results):
         sys.exit(1)
