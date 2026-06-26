@@ -114,6 +114,10 @@
     .pt-sub { fill: var(--muted); font-size: 10px; font-weight: 600;
       paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
     .axis-title { fill: var(--muted); font-size: 11px; font-weight: 700; }
+    .trend-line { stroke: #e8ecf8; stroke-width: 2; stroke-dasharray: 6 5; stroke-opacity: .65; }
+    .rank-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+    .rank-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .rank-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 
     .matches { list-style: none; margin: 0; padding: 0; }
     .matches li {
@@ -236,9 +240,10 @@
 
     <section class="panel" id="panel-rank-goals">
       <h2>Ranking gap vs goals — by tournament</h2>
-      <p class="sub" id="sub-rank-goals">Each point is one tournament: average ranking gap between opponents (x) versus goals per game (y).</p>
-      <svg id="chart-rank-goals" class="chart" role="img" aria-label="Average ranking gap versus goals per game, per tournament"></svg>
-      <p class="note" id="note-rank-goals">Tests whether more lopsided tournaments (bigger ranking gaps) tend to be higher-scoring. Most useful in the All-time view, where all three tournaments appear together.</p>
+      <p class="sub" id="sub-rank-goals">Each point is one match: the ranking gap between the teams (x) versus goals scored (y), coloured by tournament.</p>
+      <div class="rank-legend" id="legend-rank-goals"></div>
+      <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
+      <p class="note" id="note-rank-goals">Tests whether more lopsided matchups (bigger ranking gaps) tend to be higher-scoring. The dashed line is the least-squares trend; a near-flat line and small r mean little relationship. Points are jittered slightly so overlapping scores stay visible.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -666,20 +671,52 @@
         .map(k => ({ key: k, label: EDITIONS[k].label, list: matches.filter(m => m.edition === k) }));
     }
 
-    // Panel 2 — avg ranking gap vs goals/game, one point per tournament.
+    // Per-tournament colours for the scatter.
+    const ED_COLORS = { "2018": "#4cc9f0", "2022": "#f7b801", "2026": "#ff5d8f" };
+
+    // Stable pseudo-random in [0,1) from a string — deterministic jitter so the
+    // cloud doesn't reshuffle on every re-render.
+    function hash01(str) {
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return ((h >>> 0) % 100000) / 100000;
+    }
+    function pearson(xs, ys) {
+      const n = xs.length;
+      if (n < 2) return 0;
+      const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+      let sxy = 0, sxx = 0, syy = 0;
+      for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+      const d = Math.sqrt(sxx * syy);
+      return d ? sxy / d : 0;
+    }
+
+    function buildScatterLegend(containerId, eds) {
+      const el = $(containerId);
+      el.innerHTML = eds.map(k =>
+        `<span><i style="background:${ED_COLORS[k] || "#98a2c8"}"></i>${esc(EDITIONS[k].label)}</span>`
+      ).join("");
+    }
+
+    // Panel 2 — one point per match: ranking gap (x) vs goals scored (y), by tournament.
     function renderRankGoals(matches) {
-      const groups = matchesByEdition(matches);
-      const points = groups.map(g => {
-        const infos = g.list.map(rankInfo).filter(Boolean);
-        if (!infos.length) return null;
-        const avgGap = infos.reduce((s, i) => s + i.gap, 0) / infos.length;
-        const goals = g.list.reduce((s, m) => s + m.homeScore + m.awayScore, 0);
-        const gpg = g.list.length ? goals / g.list.length : 0;
-        return { label: g.label, x: avgGap, y: gpg, n: infos.length };
-      }).filter(Boolean);
+      const points = [];
+      for (const m of matches) {
+        const info = rankInfo(m);
+        if (!info) continue;
+        points.push({ x: info.gap, y: m.homeScore + m.awayScore, ed: m.edition,
+          key: String(m.id || (m.date + m.home + m.away)) });
+      }
+      const eds = ALL_KEYS.filter(k => points.some(p => p.ed === k));
+      buildScatterLegend("legend-rank-goals", eds);
+      let rStr = "";
+      if (points.length >= 3) {
+        const r = pearson(points.map(p => p.x), points.map(p => p.y));
+        rStr = " · correlation r = " + r.toFixed(2);
+      }
       $("sub-rank-goals").textContent = points.length
-        ? "Each point is one tournament: average ranking gap between opponents (x) versus goals per game (y)."
-        : "Average ranking gap versus goals per game, per tournament.";
+        ? "Each point is one match: ranking gap (x) vs goals scored (y), coloured by tournament (" + points.length + " matches" + rStr + ")."
+        : "Ranking gap versus goals scored, one point per match.";
       renderRankScatter("chart-rank-goals", points);
     }
 
@@ -692,50 +729,54 @@
         svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No ranking data for this filter.</text>`;
         return;
       }
-      const W = 700, left = 52, right = 22, top = 22, plotH = 226, bottom = 50;
+      const W = 700, left = 44, right = 22, top = 18, plotH = 232, bottom = 48;
       const H = top + plotH + bottom;
-      const xs = points.map(p => p.x), ys = points.map(p => p.y);
-      let xMin = Math.min(...xs), xMax = Math.max(...xs);
-      let yMin = Math.min(...ys), yMax = Math.max(...ys);
-      const xPad = (xMax - xMin) * 0.3 || 6;
-      const yPad = (yMax - yMin) * 0.3 || 0.6;
-      xMin = Math.max(0, xMin - xPad); xMax += xPad;
-      yMin = Math.max(0, yMin - yPad); yMax += yPad;
-      const xOf = v => left + ((v - xMin) / (xMax - xMin || 1)) * (W - left - right);
-      const yOf = v => top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
+      const xMax = Math.max(...points.map(p => p.x)) * 1.06 + 2;       // gaps start at 0
+      const yMax = Math.max(...points.map(p => p.y)) + 1;             // goals start at 0
+      const xOf = v => left + (v / (xMax || 1)) * (W - left - right);
+      const yOf = v => top + plotH - (v / (yMax || 1)) * plotH;
 
       const parts = [];
-      // axes
       parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
       parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
-      // y gridlines + ticks (3)
-      for (let t = 0; t <= 2; t++) {
-        const v = yMin + (yMax - yMin) * t / 2;
-        const y = yOf(v);
+      // y gridlines at each integer goal count
+      for (let g = 0; g <= yMax - 1; g++) {
+        const y = yOf(g);
         parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
-        parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v.toFixed(1)}</text>`);
+        parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${g}</text>`);
       }
-      // x ticks (3)
-      for (let t = 0; t <= 2; t++) {
-        const v = xMin + (xMax - xMin) * t / 2;
-        const x = xOf(v);
-        parts.push(`<text class="axis-label" x="${x.toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
+      // x ticks (4)
+      for (let t = 0; t <= 3; t++) {
+        const v = (xMax * t) / 3;
+        parts.push(`<text class="axis-label" x="${xOf(v).toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
       }
-      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Average ranking gap →</text>`);
-      parts.push(`<text class="axis-title" x="${12}" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">Goals / game</text>`);
-      // points — year sits above the dot, coordinates below, so neighbouring
-      // points (close in y) never stack their text on the same side.
+      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Ranking gap →</text>`);
+      parts.push(`<text class="axis-title" x="12" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">Goals (match total)</text>`);
+
+      // jittered, semi-transparent dots so overlapping integer goal counts stay legible
       for (const p of points) {
-        const cx = xOf(p.x), cy = yOf(p.y);
-        let lx = cx, anchor = "middle";
-        if (cx < left + 30) { lx = left + 4; anchor = "start"; }
-        else if (cx > W - right - 30) { lx = W - right - 4; anchor = "end"; }
-        const yTop = Math.max(top + 12, cy - 13);
-        const yBot = Math.min(top + plotH - 4, cy + 22);
-        parts.push(`<circle class="pt" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="#f7b801"/>`);
-        parts.push(`<text class="pt-label" x="${lx.toFixed(1)}" y="${yTop.toFixed(1)}" text-anchor="${anchor}">${esc(p.label)}</text>`);
-        parts.push(`<text class="pt-sub" x="${lx.toFixed(1)}" y="${yBot.toFixed(1)}" text-anchor="${anchor}">gap ${Math.round(p.x)} · ${p.y.toFixed(2)} gpg</text>`);
+        const jx = (hash01(p.key + "x") - 0.5) * (xMax * 0.018 + 0.6);
+        const jy = (hash01(p.key + "y") - 0.5) * 0.5;
+        const cx = xOf(Math.max(0, p.x + jx));
+        const cy = yOf(Math.max(0, p.y + jy));
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.62"/>`);
       }
+
+      // least-squares trend line (on the true values) to read the relationship
+      if (points.length >= 3) {
+        const n = points.length;
+        const mx = points.reduce((s, p) => s + p.x, 0) / n;
+        const my = points.reduce((s, p) => s + p.y, 0) / n;
+        let sxy = 0, sxx = 0;
+        for (const p of points) { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; }
+        if (sxx > 0) {
+          const slope = sxy / sxx, b = my - slope * mx;
+          const x1 = 0, x2 = xMax;
+          const clamp = y => Math.min(yMax, Math.max(0, y));
+          parts.push(`<line class="trend-line" x1="${xOf(x1).toFixed(1)}" y1="${yOf(clamp(b)).toFixed(1)}" x2="${xOf(x2).toFixed(1)}" y2="${yOf(clamp(slope * x2 + b)).toFixed(1)}"/>`);
+        }
+      }
+
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
       svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
       svg.style.height = "";
