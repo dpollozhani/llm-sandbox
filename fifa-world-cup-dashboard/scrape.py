@@ -19,8 +19,10 @@ Stdlib only — no pip install needed in CI.
 
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
@@ -47,6 +49,42 @@ HEADERS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+RANK_FILE = os.path.join(DATA_DIR, "rankings.json")
+
+# FIFA men's ranking (hidden JSON API on inside.fifa.com; www.fifa.com is blocked).
+RANK_PAGE = "https://inside.fifa.com/fifa-world-ranking/men"
+RANK_API = "https://inside.fifa.com/api/ranking-overview?locale=en&dateId={}"
+RANK_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Accept": "application/json, text/plain, */*",
+    "Referer": RANK_PAGE,
+}
+# ESPN abbreviation -> FIFA country code, only where they differ.
+ABBR_TO_FIFA = {
+    "TUR": "TUR",  # Türkiye (same code; listed for clarity)
+}
+
+# Current ranking (HTML table) used when FIFA has no pre-tournament release yet.
+WHEREIG_URL = "https://www.whereig.com/football/fifa-world-rankings.html"
+# If the best FIFA release is more than this many days before kickoff, it isn't a
+# real pre-tournament ranking — fall back to the current (whereig) table instead.
+PRE_TOURNAMENT_WINDOW_DAYS = 75
+
+# Country-name variants -> canonical (normalized) name, so whereig/FIFA names line
+# up with the ESPN team names regardless of spelling.
+NAME_CANON = {
+    "korea republic": "south korea",
+    "cote d ivoire": "ivory coast",
+    "turkey": "turkiye",
+    "dr congo": "congo dr", "democratic republic of the congo": "congo dr",
+    "congo democratic republic": "congo dr",
+    "bosnia and herzegovina": "bosnia herzegovina",
+    "cabo verde": "cape verde",
+    "usa": "united states", "united states of america": "united states",
+    "czech republic": "czechia",
+    "ir iran": "iran",
+    "china pr": "china",
+}
 
 
 def daterange(start_s, end_s):
@@ -195,8 +233,195 @@ def scrape_edition(key, cfg):
     return True
 
 
+# ---------------------------------------------------------------------------
+# FIFA rankings (pre-tournament rank + points per country, per edition)
+# ---------------------------------------------------------------------------
+
+def _norm(s):
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", s)).strip()
+
+
+def _canon(name):
+    """Normalized + alias-collapsed country name, for cross-source matching."""
+    n = _norm(name)
+    return NAME_CANON.get(n, n)
+
+
+def whereig_ranking():
+    """canonical-name -> {rank, points} from the whereig current-ranking table."""
+    with urllib.request.urlopen(urllib.request.Request(WHEREIG_URL, headers=RANK_HEADERS), timeout=60) as r:
+        page = r.read().decode("utf-8", "ignore")
+    tables = re.findall(r"<table[^>]*>(.*?)</table>", page, re.S | re.I)
+    if not tables:
+        return {}
+    best = max(tables, key=lambda t: len(re.findall(r"<tr", t, re.I)))
+    out = {}
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", best, re.S | re.I):
+        cells = [re.sub(r"\s+", " ", unicodedata.normalize("NFKD", re.sub(r"<[^>]+>", " ", c))).strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S | re.I)]
+        if len(cells) < 3:
+            continue
+        m = re.match(r"\d+", cells[0])
+        if not m:
+            continue                      # skip header / non-data rows
+        rank = int(m.group())
+        country = cells[1]
+        try:
+            points = round(float(re.sub(r"[^0-9.]", "", cells[2])))
+        except ValueError:
+            points = None
+        if country:
+            out[_canon(country)] = {"rank": rank, "points": points}
+    return out
+
+
+def fifa_fetch(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=RANK_HEADERS), timeout=60) as r:
+        return r.read().decode("utf-8", "ignore")
+
+
+def fifa_date_map():
+    """date (YYYY-MM-DD) -> dateId, from the ranking page's __NEXT_DATA__."""
+    page = fifa_fetch(RANK_PAGE)
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return {}
+    data = json.loads(m.group(1))
+    out = {}
+    def walk(o):
+        if isinstance(o, dict):
+            i, iso = o.get("id"), (o.get("iso") or o.get("date"))
+            if isinstance(i, str) and re.fullmatch(r"id\d{3,6}", i) and isinstance(iso, str):
+                d = iso[:10]
+                if re.fullmatch(r"\d{4}-\d\d-\d\d", d):
+                    out[d] = i
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(data)
+    return out
+
+
+def fifa_ranking(date_id):
+    """countryCode -> {rank, points} for one release."""
+    data = json.loads(fifa_fetch(RANK_API.format(date_id)))
+    out = {}
+    for e in data.get("rankings") or []:
+        ri = e.get("rankingItem") or {}
+        cc, rank = ri.get("countryCode"), ri.get("rank")
+        if cc and rank:
+            out[cc] = {"rank": rank, "points": ri.get("totalPoints"), "name": ri.get("name")}
+    return out
+
+
+def _edition_teams(cfg):
+    """{espn_name: abbr} for an edition, from its committed matches file."""
+    try:
+        with open(os.path.join(DATA_DIR, cfg["file"]), encoding="utf-8") as f:
+            matches = json.load(f).get("matches", [])
+    except (FileNotFoundError, ValueError):
+        return {}
+    teams = {}
+    for mm in matches:
+        teams[mm["home"]] = mm.get("homeAbbr", "")
+        teams[mm["away"]] = mm.get("awayAbbr", "")
+    return teams
+
+
+def _fetch_edition_ranks(cfg, teams, date_map, whereig_cache):
+    """Return (ranks {name: rank}, source label, ref, missing list) for one edition."""
+    start = datetime.strptime(cfg["start"], "%Y-%m-%d").date()
+    on_before = sorted(d for d in date_map if d <= cfg["start"])
+    chosen = on_before[-1] if on_before else None
+    fresh = chosen and (start - datetime.strptime(chosen, "%Y-%m-%d").date()).days <= PRE_TOURNAMENT_WINDOW_DAYS
+    ranks, missing = {}, []
+    if fresh:
+        table = fifa_ranking(date_map[chosen])
+        by_name = {_canon(v["name"]): v for v in table.values()}
+        for name, abbr in teams.items():
+            v = table.get(ABBR_TO_FIFA.get(abbr, abbr)) or by_name.get(_canon(name))
+            if v:
+                ranks[name] = v["rank"]
+            else:
+                missing.append(f"{name}/{abbr}")
+        return ranks, "FIFA " + chosen, chosen, missing
+    # No pre-tournament FIFA release — use the current whereig table (cached).
+    if whereig_cache.get("table") is None:
+        whereig_cache["table"] = whereig_ranking()
+    for name in teams:
+        v = whereig_cache["table"].get(_canon(name))
+        if v:
+            ranks[name] = v["rank"]
+        else:
+            missing.append(name)
+    return ranks, "whereig (current)", "current", missing
+
+
+def scrape_rankings():
+    """Maintain data/rankings.json: pre-tournament FIFA rank per ESPN team.
+
+    Frozen + safe: every edition already stored is left exactly as-is (never
+    re-fetched — including 2026), so stored data can't be lost. Only an edition
+    that is missing from the file is fetched, and only a fetch covering >=80% of
+    its teams is accepted. 2018/2022 use FIFA's pre-tournament release; editions
+    with no FIFA release near kickoff (2026) use the current whereig table.
+    """
+    try:
+        with open(RANK_FILE, encoding="utf-8") as f:
+            prev = json.load(f)
+    except (FileNotFoundError, ValueError):
+        prev = {}
+    editions = dict(prev.get("editions") or {})
+    meta = dict(prev.get("meta") or {})
+
+    date_map = {}
+    whereig_cache = {"table": None}
+    changed = False
+
+    for key, cfg in EDITIONS.items():
+        if editions.get(key):
+            print(f"[rankings] {key}: frozen ({len(editions[key])} teams), skipping.")
+            continue
+        teams = _edition_teams(cfg)
+        if not teams:
+            continue
+        if not date_map:
+            try:
+                date_map = fifa_date_map()
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+                print("[rankings] FIFA date map failed:", e, file=sys.stderr)
+        try:
+            ranks, src, ref, missing = _fetch_edition_ranks(cfg, teams, date_map, whereig_cache)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+            print(f"[rankings] {key}: fetch failed ({e}); not stored.", file=sys.stderr)
+            continue
+        if len(ranks) < max(1, int(0.8 * len(teams))):
+            print(f"[rankings] {key}: only matched {len(ranks)}/{len(teams)}; not stored.", file=sys.stderr)
+            continue
+        editions[key] = ranks
+        meta[key] = {"source": src, "ref": ref, "matched": len(ranks), "teams": len(teams)}
+        changed = True
+        print(f"[rankings] {key}: {src} -> matched {len(ranks)}/{len(teams)}"
+              + (f"; UNMATCHED: {', '.join(missing)}" if missing else ""))
+
+    if not changed and prev:
+        print("[rankings] no changes; rankings.json left untouched.")
+        return
+    out = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "source": "FIFA (inside.fifa.com) + whereig.com", "editions": editions, "meta": meta}
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(RANK_FILE, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("[rankings] wrote", RANK_FILE)
+
+
 def main():
     results = [scrape_edition(k, cfg) for k, cfg in EDITIONS.items()]
+    scrape_rankings()
     # Fail the run only if a current edition produced nothing at all.
     if any(r is False for r in results):
         sys.exit(1)
