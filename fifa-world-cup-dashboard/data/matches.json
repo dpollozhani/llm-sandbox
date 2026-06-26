@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-25T23:44:39Z",
+  "updated": "2026-06-26T01:54:16Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 60,
-  "finishedMatches": 56,
+  "totalMatches": 66,
+  "finishedMatches": 58,
   "matches": [
     {
       "id": "760415",
@@ -689,10 +689,10 @@
       "away": "Sweden",
       "homeAbbr": "JPN",
       "awayAbbr": "SWE",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "homeScore": 1,
+      "awayScore": 1,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760472",
@@ -701,10 +701,10 @@
       "away": "Netherlands",
       "homeAbbr": "TUN",
       "awayAbbr": "NED",
-      "homeScore": 0,
-      "awayScore": 2,
-      "completed": false,
-      "status": "First Half"
+      "homeScore": 1,
+      "awayScore": 3,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760469",
@@ -725,6 +725,78 @@
       "away": "United States",
       "homeAbbr": "TUR",
       "awayAbbr": "USA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760474",
+      "date": "2026-06-26T19:00Z",
+      "home": "Senegal",
+      "away": "Iraq",
+      "homeAbbr": "SEN",
+      "awayAbbr": "IRQ",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760475",
+      "date": "2026-06-26T19:00Z",
+      "home": "Norway",
+      "away": "France",
+      "homeAbbr": "NOR",
+      "awayAbbr": "FRA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760478",
+      "date": "2026-06-27T00:00Z",
+      "home": "Cape Verde",
+      "away": "Saudi Arabia",
+      "homeAbbr": "CPV",
+      "awayAbbr": "KSA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760479",
+      "date": "2026-06-27T00:00Z",
+      "home": "Uruguay",
+      "away": "Spain",
+      "homeAbbr": "URU",
+      "awayAbbr": "ESP",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760476",
+      "date": "2026-06-27T03:00Z",
+      "home": "Egypt",
+      "away": "Iran",
+      "homeAbbr": "EGY",
+      "awayAbbr": "IRN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760477",
+      "date": "2026-06-27T03:00Z",
+      "home": "New Zealand",
+      "away": "Belgium",
+      "homeAbbr": "NZL",
+      "awayAbbr": "BEL",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
