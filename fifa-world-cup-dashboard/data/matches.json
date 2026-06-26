@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-26T20:51:44Z",
+  "updated": "2026-06-26T22:10:37Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 66,
-  "finishedMatches": 60,
+  "finishedMatches": 62,
   "matches": [
     {
       "id": "760415",
@@ -739,8 +739,8 @@
       "awayAbbr": "IRQ",
       "homeScore": 5,
       "awayScore": 0,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760475",
@@ -750,9 +750,9 @@
       "homeAbbr": "NOR",
       "awayAbbr": "FRA",
       "homeScore": 1,
-      "awayScore": 3,
-      "completed": false,
-      "status": "Second Half"
+      "awayScore": 4,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760478",
