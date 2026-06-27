@@ -101,6 +101,9 @@
     .sm { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 6px; }
     .sm-head { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
     .sm-head span { display: block; font-weight: 600; color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .sm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+    .sm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .sm-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
     .guide { stroke: #ff5d8f; stroke-width: 1; stroke-dasharray: 4 4; stroke-opacity: .45; }
     .guide-label { fill: #ff9bb6; font-size: 10px; font-weight: 700; }
     .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
@@ -233,6 +236,7 @@
       <h2>Distinct results</h2>
       <p class="sub" id="sub-scores">Frequency of each scoreline.</p>
       <svg id="chart-scores" class="chart" role="img" aria-label="Frequency of each scoreline"></svg>
+      <div class="sm-legend" id="legend-scores-split" hidden></div>
       <div class="split" id="split-scores" hidden></div>
     </section>
 
@@ -412,7 +416,7 @@
         const h = max ? Math.max(2, (e.value / max) * plotH) : 2;
         const y = top + plotH - h;
         const cx = x + barW / 2;
-        parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}"/>`);
+        parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${e.color || color}"/>`);
         parts.push(`<text class="bar-label" x="${cx.toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle">${esc(fmt(e.value))}</text>`);
         parts.push(`<text class="axis-label" x="${cx.toFixed(1)}" y="${(top+plotH+18).toFixed(1)}" text-anchor="middle">${esc(e.label)}</text>`);
         if (opts.cumulative && total) {
@@ -520,18 +524,38 @@
         renderBarChartEl(svg, entries, { color: "#4cc9f0", total, relative, cumulative: true, guide80: relative, compact: true });
       }
     }
+    // Outcome colour for a scoreline bar (gap-split only). Favourite-oriented keys
+    // map cleanly to win/draw/loss; order-independent can only tell draw vs decisive.
+    const OUT_COLORS = { win: "#5ad19b", draw: "#4cc9f0", loss: "#ff7a7a", decisive: "#f7b801", other: "#6b7699" };
+    function scoreOutcome(label, oriented) {
+      if (label === "Other") return "other";
+      const p = label.split("–"); const a = +p[0], b = +p[1];
+      if (!isFinite(a) || !isFinite(b)) return "decisive";
+      if (a === b) return "draw";
+      if (!oriented) return "decisive";
+      return a > b ? "win" : "loss";   // favScore – dogScore
+    }
+    function renderScoresSplitLegend(oriented) {
+      const el = $("legend-scores-split");
+      const chip = (c, t) => `<span><i style="background:${c}"></i>${t}</span>`;
+      el.innerHTML = oriented
+        ? chip(OUT_COLORS.win, "Favourite win") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.loss, "Upset") + chip(OUT_COLORS.other, "Other")
+        : chip(OUT_COLORS.decisive, "Decisive") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.other, "Other");
+    }
     function renderScoresSplit(ms, relative, oriented) {
-      $("sub-scores").textContent = "By ranking gap (" + (oriented ? "favourite→underdog" : "order-independent") + ") — does knowing the gap concentrate the results?";
+      $("sub-scores").textContent = "By ranking gap (" + (oriented ? "favourite→underdog" : "order-independent") + ") — bars coloured by outcome so you can see the mix rotate.";
+      renderScoresSplitLegend(oriented);
       const cont = $("split-scores"); cont.innerHTML = "";
       const groups = matchesByGap(ms);
       if (!groups.length) { cont.innerHTML = `<p class="empty" style="grid-column:1/-1">No ranking data for this filter.</p>`; return; }
       for (const g of groups) {
         const { sorted, total } = scoresSorted(g.list, oriented);
+        const entries = scoreBarEntries(sorted).map(e => ({ ...e, color: OUT_COLORS[scoreOutcome(e.label, oriented)] }));
         const wrap = document.createElement("div"); wrap.className = "sm";
         wrap.innerHTML = `<div class="sm-head">${esc(g.b.name)}<span>gap ${esc(g.b.label)} · n=${total} · 80% = top ${topK80(sorted, total)}</span></div>`;
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "chart");
         wrap.appendChild(svg); cont.appendChild(wrap);
-        renderBarChartEl(svg, scoreBarEntries(sorted), { color: "#f7b801", total, relative, cumulative: true, guide80: relative, compact: true });
+        renderBarChartEl(svg, entries, { color: "#f7b801", total, relative, cumulative: true, guide80: relative, compact: true });
       }
     }
 
@@ -903,6 +927,7 @@
       $("chart-scores").classList.toggle("hidden", isGap);
       $("split-goals").hidden = !isGap;
       $("split-scores").hidden = !isGap;
+      $("legend-scores-split").hidden = !isGap;
       if (isTour) {
         renderHeatmaps(matches, oriented);
       } else if (isGap) {
