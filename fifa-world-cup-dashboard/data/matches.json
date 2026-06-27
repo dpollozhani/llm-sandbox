@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-26T22:10:37Z",
+  "updated": "2026-06-27T01:34:19Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 66,
+  "totalMatches": 72,
   "finishedMatches": 62,
   "matches": [
     {
@@ -764,7 +764,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760479",
@@ -774,9 +774,9 @@
       "homeAbbr": "URU",
       "awayAbbr": "ESP",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760476",
@@ -797,6 +797,78 @@
       "away": "Belgium",
       "homeAbbr": "NZL",
       "awayAbbr": "BEL",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760480",
+      "date": "2026-06-27T21:00Z",
+      "home": "Croatia",
+      "away": "Ghana",
+      "homeAbbr": "CRO",
+      "awayAbbr": "GHA",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760485",
+      "date": "2026-06-27T21:00Z",
+      "home": "Panama",
+      "away": "England",
+      "homeAbbr": "PAN",
+      "awayAbbr": "ENG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760481",
+      "date": "2026-06-27T23:30Z",
+      "home": "Colombia",
+      "away": "Portugal",
+      "homeAbbr": "COL",
+      "awayAbbr": "POR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760482",
+      "date": "2026-06-27T23:30Z",
+      "home": "Congo DR",
+      "away": "Uzbekistan",
+      "homeAbbr": "COD",
+      "awayAbbr": "UZB",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760483",
+      "date": "2026-06-28T02:00Z",
+      "home": "Jordan",
+      "away": "Argentina",
+      "homeAbbr": "JOR",
+      "awayAbbr": "ARG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760484",
+      "date": "2026-06-28T02:00Z",
+      "home": "Algeria",
+      "away": "Austria",
+      "homeAbbr": "ALG",
+      "awayAbbr": "AUT",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
