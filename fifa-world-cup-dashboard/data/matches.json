@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-27T05:38:39Z",
+  "updated": "2026-06-27T21:45:26Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -809,10 +809,10 @@
       "away": "Ghana",
       "homeAbbr": "CRO",
       "awayAbbr": "GHA",
-      "homeScore": 0,
+      "homeScore": 1,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760485",
@@ -824,7 +824,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760481",
