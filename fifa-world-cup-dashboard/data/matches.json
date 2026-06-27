@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-27T21:45:26Z",
+  "updated": "2026-06-27T23:00:01Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 72,
-  "finishedMatches": 66,
+  "finishedMatches": 68,
   "matches": [
     {
       "id": "760415",
@@ -809,10 +809,10 @@
       "away": "Ghana",
       "homeAbbr": "CRO",
       "awayAbbr": "GHA",
-      "homeScore": 1,
-      "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "homeScore": 2,
+      "awayScore": 1,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760485",
@@ -822,9 +822,9 @@
       "homeAbbr": "PAN",
       "awayAbbr": "ENG",
       "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "awayScore": 2,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760481",
