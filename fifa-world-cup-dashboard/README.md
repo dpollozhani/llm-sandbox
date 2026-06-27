@@ -11,19 +11,29 @@ filter by **stage** (group / knockout), toggle the charts between **count** and
 distribution at any point in the tournament (e.g. "50% of matches played"). The
 completion cutoff is applied per edition, so it's comparable across tournaments and
 works in All-time too. The All-time view is always relative, since the tournaments
-have different numbers of matches. Both charts also carry a cumulative **Pareto** line.
+have different numbers of matches. Both charts carry a cumulative **Pareto** line and
+an **80%** guide, so you can read how concentrated outcomes are ("80% of games have
+≤ 4 goals", "80% of results are the 8 most common").
 
-In the **All-time** view a **Display** toggle switches between **Aggregate** (the
-combined bar charts) and **Compare** — two heatmaps (goals-per-game and scorelines)
-with one row per tournament, each cell shaded by that tournament's share of matches,
-so you can compare 2018 / 2022 / 2026 side by side. The heatmaps respect the stage
-and completion filters too.
+The dashboard is built around one question: *how predictable is a game, and what does
+each piece of information buy you?* Two controls drive that:
+
+- **Split by** — view the distributions **combined**, **by ranking gap** (small-multiple
+  Pareto charts per gap bucket — Even / Slight edge / Clear edge / Mismatch — so you can
+  see whether controlling for the FIFA-ranking gap sharpens the distribution), or **by
+  tournament** (All-time only — two heatmaps, one row per tournament).
+- **Scoreline** — show results **order-independent** (2–1 counts a 1–2 too) or oriented
+  **favourite → underdog** (using the ranking), which exposes whether the favourite or
+  the underdog won.
 
 It shows:
 
 - **Summary cards** — games played, total goals, goals per game, highest-scoring match.
-- **Goals per game** — distribution of how many matches finished with each total goal count.
-- **Distinct results** — frequency of each scoreline (order-independent, so 2–1 also counts 1–2).
+- **Goals per game** — distribution of total goals, splittable by ranking gap.
+- **Distinct results** — scoreline frequency (order-independent or favourite-oriented),
+  splittable by ranking gap.
+- **Rankings** — the higher-ranked team's win rate by ranking gap (with an aggregate
+  "All" bar and average goal margin), and the upset rate per tournament.
 - **Finished matches** — recent results list.
 
 The page is a single self-contained `index.html` with hand-drawn SVG charts (no

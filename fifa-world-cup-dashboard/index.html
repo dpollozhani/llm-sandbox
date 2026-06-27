@@ -95,6 +95,14 @@
     .heat .hc { font-size: 9px; font-weight: 600; opacity: .75; }
     .heat .hhead { color: var(--muted); font-weight: 700; font-size: 11px; background: transparent; padding-bottom: 2px; }
     .heat .hrow { color: var(--ink); font-weight: 800; text-align: left; white-space: nowrap; align-items: flex-start; justify-content: center; padding-left: 0; }
+    /* Small multiples (split by ranking gap) */
+    .split { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 560px) { .split { grid-template-columns: 1fr 1fr; } }
+    .sm { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 6px; }
+    .sm-head { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
+    .sm-head span { display: block; font-weight: 600; color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .guide { stroke: #ff5d8f; stroke-width: 1; stroke-dasharray: 4 4; stroke-opacity: .45; }
+    .guide-label { fill: #ff9bb6; font-size: 10px; font-weight: 700; }
     .cum-line { fill: none; stroke: #ff5d8f; stroke-width: 2; stroke-opacity: .9; }
     .cum-dot { fill: #ff5d8f; }
     .cum-label {
@@ -118,10 +126,6 @@
     .agg-fit { stroke-width: 2.5; stroke-opacity: .95; }
     .avg-dot { stroke: #0b1020; stroke-width: 2.5; }
     .whisker { stroke-width: 2; stroke-opacity: .5; }
-    #rankview-ctl { margin: 0 0 10px; }
-    .rank-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
-    .rank-legend span { display: inline-flex; align-items: center; gap: 6px; }
-    .rank-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 
     .matches { list-style: none; margin: 0; padding: 0; }
     .matches li {
@@ -202,10 +206,17 @@
             <option value="rel">Percent</option>
           </select>
         </label>
-        <label class="ctl hidden" id="viewctl-display">Display
-          <select id="view" aria-label="Display">
-            <option value="aggregate">Aggregate</option>
-            <option value="compare">Compare</option>
+        <label class="ctl" id="viewctl-display">Split by
+          <select id="view" aria-label="Split distributions by">
+            <option value="combined">Nothing</option>
+            <option value="gap">Ranking gap</option>
+            <option value="tournament">Tournament</option>
+          </select>
+        </label>
+        <label class="ctl" id="orient-ctl">Scoreline
+          <select id="orient" aria-label="Scoreline orientation">
+            <option value="order">Order-independent</option>
+            <option value="fav">Favourite → underdog</option>
           </select>
         </label>
       </span>
@@ -215,12 +226,14 @@
       <h2>Goals per game</h2>
       <p class="sub" id="sub-goals">How many matches finished with each total number of goals.</p>
       <svg id="chart-goals" class="chart" role="img" aria-label="Distribution of goals per game"></svg>
+      <div class="split" id="split-goals" hidden></div>
     </section>
 
     <section class="panel" id="panel-scores">
       <h2>Distinct results</h2>
-      <p class="sub" id="sub-scores">Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).</p>
+      <p class="sub" id="sub-scores">Frequency of each scoreline.</p>
       <svg id="chart-scores" class="chart" role="img" aria-label="Frequency of each scoreline"></svg>
+      <div class="split" id="split-scores" hidden></div>
     </section>
 
     <section class="panel hidden" id="panel-heat-goals">
@@ -239,19 +252,6 @@
       <h2>Does ranking predict the result?</h2>
       <p class="sub" id="sub-rank-outcome">Higher-ranked team’s win rate, by ranking gap.</p>
       <svg id="chart-rank-outcome" class="chart" role="img" aria-label="Higher-ranked team win rate by ranking gap"></svg>
-    </section>
-
-    <section class="panel" id="panel-rank-goals">
-      <h2>Ranking gap vs goals</h2>
-      <p class="sub" id="sub-rank-goals">Ranking gap vs goals scored, coloured by tournament.</p>
-      <label class="ctl hidden" id="rankview-ctl">View
-        <select id="rankview" aria-label="Ranking-gap view">
-          <option value="match">Per match</option>
-          <option value="tournament">Per tournament</option>
-        </select>
-      </label>
-      <div class="rank-legend" id="legend-rank-goals"></div>
-      <svg id="chart-rank-goals" class="chart" role="img" aria-label="Ranking gap versus goals scored, one point per match"></svg>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -290,7 +290,7 @@
     const LS_STAGE = "wc-dashboard-stage";
     const LS_FREQ = "wc-dashboard-freq";
     const LS_VIEW = "wc-dashboard-view";
-    const LS_RANKVIEW = "wc-dashboard-rankview";
+    const LS_ORIENT = "wc-dashboard-orient";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -300,8 +300,15 @@
     function isAll() { return currentEdition() === "all"; }
     // Relative is forced in the All-time view (tournaments have different match counts).
     function relativeMode() { return isAll() ? true : $("freq").value === "rel"; }
-    // Compare mode (per-tournament heatmaps) only exists in the All-time view.
-    function compareMode() { return isAll() && $("view").value === "compare"; }
+    // How the distributions are split: nothing (combined), by ranking gap, or by
+    // tournament (heatmaps — only meaningful in All-time).
+    function splitMode() {
+      let v = $("view").value;
+      if (v === "tournament" && !isAll()) v = "combined";
+      return v;
+    }
+    // Scorelines oriented favourite -> underdog (vs order-independent).
+    function orientFav() { return $("orient").value === "fav"; }
 
     // Group/knockout by date — World Cup phases never overlap in dates.
     function stageOf(match, edKey) {
@@ -359,9 +366,10 @@
       } else $("stat-high").textContent = "–";
     }
 
-    function renderBarChart(svgId, entries, opts) {
+    function renderBarChart(svgId, entries, opts) { renderBarChartEl($(svgId), entries, opts); }
+
+    function renderBarChartEl(svg, entries, opts) {
       opts = opts || {};
-      const svg = $(svgId);
       svg.innerHTML = "";
       if (!entries.length) {
         svg.removeAttribute("viewBox");
@@ -369,11 +377,12 @@
         svg.innerHTML = `<text x="50%" y="34" text-anchor="middle" class="axis-label">No data yet</text>`;
         return;
       }
+      const compact = !!opts.compact;
       const n = entries.length;
       const W = 700;
-      const barW = Math.max(18, Math.min(64, (W - 40) / n - 10));
-      const left = 20, top = 14;
-      const plotH = 220, bottom = 40;
+      const barW = Math.max(14, Math.min(64, (W - 40) / n - 10));
+      const left = 20, top = compact ? 16 : 14;
+      const plotH = compact ? 150 : 220, bottom = 40;
       const gap = ((W - 40) - barW * n) / Math.max(1, n + 1);
       const H = top + plotH + bottom;
       const max = Math.max(...entries.map(e => e.value));
@@ -386,10 +395,16 @@
       // In relative mode the bar label shows a percentage of the total.
       const total = opts.total || 0;
       const fmt = (v) => (opts.relative && total)
-        ? (100 * v / total).toFixed(1) + "%"
+        ? (100 * v / total).toFixed(compact ? 0 : 1) + "%"
         : String(v);
 
       const parts = [`<line class="tick" x1="${left}" y1="${top+plotH}" x2="${W-left}" y2="${top+plotH}"/>`];
+      // 80% reference on the cumulative (Pareto) axis — the "how concentrated" line.
+      if (opts.guide80 && opts.cumulative && total) {
+        const gy = top + plotH - 0.8 * plotH;
+        parts.push(`<line class="guide" x1="${left}" y1="${gy.toFixed(1)}" x2="${W-left}" y2="${gy.toFixed(1)}"/>`);
+        parts.push(`<text class="guide-label" x="${left}" y="${(gy-4).toFixed(1)}" text-anchor="start">80%</text>`);
+      }
       let x = left + gap;
       let cum = 0;
       const cumPts = [];   // [cx, cy, cumValue] for the Pareto line
@@ -407,57 +422,120 @@
         x += barW + gap;
       }
 
-      // Pareto overlay: cumulative line + markers + labels (cum % or count).
+      // Pareto overlay: cumulative line + markers (+ labels when not compact).
       if (opts.cumulative && total && cumPts.length) {
         const line = cumPts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
         parts.push(`<polyline class="cum-line" points="${line}"/>`);
         for (const [cx, cy, c] of cumPts) {
           const lab = opts.relative ? Math.round(100 * c / total) + "%" : String(c);
           parts.push(`<circle class="cum-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3"/>`);
-          parts.push(`<text class="cum-label" x="${cx.toFixed(1)}" y="${(cy-7).toFixed(1)}" text-anchor="middle">${esc(lab)}</text>`);
+          if (!compact) parts.push(`<text class="cum-label" x="${cx.toFixed(1)}" y="${(cy-7).toFixed(1)}" text-anchor="middle">${esc(lab)}</text>`);
         }
       }
       svg.innerHTML = parts.join("");
     }
 
-    function renderGoalsChart(hist, total, relative) {
-      if (!hist.size) return renderBarChart("chart-goals", []);
-      const maxGoals = Math.max(...hist.keys());
-      const entries = [];
-      for (let g = 0; g <= maxGoals; g++) entries.push({ label: String(g), value: hist.get(g) || 0 });
-      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative, cumulative: true });
-      $("sub-goals").textContent = (relative
-        ? "Share of matches by total goals scored."
-        : "How many matches finished with each total number of goals.") +
-        " Line = cumulative " + (relative ? "%." : "count.");
-    }
+    // ---------- distribution data (goals + scorelines) ----------
+    const SCORE_MAX_BARS = 12;
+    // Ranking-gap buckets used for the "split by ranking gap" small multiples.
+    const GAP_BINS = [
+      { name: "Even", label: "0–9", lo: 0, hi: 9 },
+      { name: "Slight edge", label: "10–19", lo: 10, hi: 19 },
+      { name: "Clear edge", label: "20–34", lo: 20, hi: 34 },
+      { name: "Mismatch", label: "35+", lo: 35, hi: Infinity },
+    ];
 
-    function renderScoresChart(freq, total, relative) {
-      const sorted = [...freq.entries()]
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
-      // Keep the Pareto complete: bucket the long tail into "Other" so the
-      // bars cover every match and the cumulative line reaches 100%.
-      let entries = sorted;
-      const MAX_BARS = 12;
-      if (sorted.length > MAX_BARS) {
-        const head = sorted.slice(0, MAX_BARS - 1);
-        const otherSum = sorted.slice(MAX_BARS - 1).reduce((s, e) => s + e.value, 0);
-        entries = head.concat([{ label: "Other", value: otherSum }]);
-      }
-      renderBarChart("chart-scores", entries, { color: "#f7b801", total, relative, cumulative: true });
-      const tail = sorted.length > MAX_BARS ? " Rarer scorelines are grouped as “Other”." : "";
-      $("sub-scores").textContent = (relative
-        ? "Share of matches by scoreline (order-independent, e.g. 2–1 counts a 1–2 too)."
-        : "Frequency of each scoreline (order-independent, e.g. 2–1 counts a 1–2 too).") +
-        " Line = cumulative " + (relative ? "%." : "count.") + tail;
+    function goalsEntries(ms) {
+      const h = new Map(); let max = 0;
+      for (const m of ms) { const t = m.homeScore + m.awayScore; h.set(t, (h.get(t) || 0) + 1); if (t > max) max = t; }
+      const e = []; for (let g = 0; g <= max; g++) e.push({ label: String(g), value: h.get(g) || 0 });
+      return e;
     }
-
-    // ---------- comparison heatmaps (All-time / Compare) ----------
-    function scorelineKey(m) {
+    // Smallest goal total whose cumulative share first reaches 80%.
+    function goals80(entries, total) {
+      let c = 0;
+      for (const e of entries) { c += e.value; if (total && c / total >= 0.8) return e.label; }
+      return entries.length ? entries[entries.length - 1].label : "–";
+    }
+    // Scoreline key: order-independent (hi–lo) or favourite→underdog when oriented.
+    function scoreKey(m, oriented) {
+      if (oriented) { const i = rankInfo(m); if (!i) return null; return i.favScore + "–" + i.dogScore; }
       return Math.max(m.homeScore, m.awayScore) + "–" + Math.min(m.homeScore, m.awayScore);
     }
+    function scoresSorted(ms, oriented) {
+      const f = new Map(); let used = 0;
+      for (const m of ms) { const k = scoreKey(m, oriented); if (k == null) continue; f.set(k, (f.get(k) || 0) + 1); used++; }
+      const sorted = [...f.entries()].map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+      return { sorted, total: used };
+    }
+    // How many distinct scorelines it takes to cover 80% of matches.
+    function topK80(sorted, total) {
+      let c = 0, k = 0;
+      for (const e of sorted) { c += e.value; k++; if (total && c / total >= 0.8) return k; }
+      return k;
+    }
+    // Bucket the long tail into "Other" so the Pareto line still reaches 100%.
+    function scoreBarEntries(sorted) {
+      if (sorted.length <= SCORE_MAX_BARS) return sorted;
+      const head = sorted.slice(0, SCORE_MAX_BARS - 1);
+      const other = sorted.slice(SCORE_MAX_BARS - 1).reduce((s, e) => s + e.value, 0);
+      return head.concat([{ label: "Other", value: other }]);
+    }
+    function matchesByGap(ms) {
+      return GAP_BINS
+        .map(b => ({ b, list: ms.filter(m => { const i = rankInfo(m); return i && i.gap >= b.lo && i.gap <= b.hi; }) }))
+        .filter(g => g.list.length > 0);
+    }
 
+    function renderGoalsChart(ms, relative) {
+      const entries = goalsEntries(ms); const total = ms.length;
+      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative, cumulative: true, guide80: relative });
+      $("sub-goals").textContent = total
+        ? "Total goals per game · 80% of games have ≤ " + goals80(entries, total) + " goals · line = cumulative " + (relative ? "%." : "count.")
+        : "How many matches finished with each total number of goals.";
+    }
+
+    function renderScoresChart(ms, relative, oriented) {
+      const { sorted, total } = scoresSorted(ms, oriented);
+      renderBarChart("chart-scores", scoreBarEntries(sorted), { color: "#f7b801", total, relative, cumulative: true, guide80: relative });
+      const lens = oriented ? "favourite→underdog" : "order-independent";
+      $("sub-scores").textContent = total
+        ? "Scorelines (" + lens + ") · 80% are the " + topK80(sorted, total) + " most common · line = cumulative " + (relative ? "%." : "count.")
+        : "Frequency of each scoreline.";
+    }
+
+    // Small multiples: one mini Pareto chart per ranking-gap bucket.
+    function renderGoalsSplit(ms, relative) {
+      $("sub-goals").textContent = "By ranking gap — each panel is one bucket; 80% line + cumulative shown per bucket.";
+      const cont = $("split-goals"); cont.innerHTML = "";
+      const groups = matchesByGap(ms);
+      if (!groups.length) { cont.innerHTML = `<p class="empty" style="grid-column:1/-1">No ranking data for this filter.</p>`; return; }
+      for (const g of groups) {
+        const entries = goalsEntries(g.list), total = g.list.length;
+        const wrap = document.createElement("div"); wrap.className = "sm";
+        wrap.innerHTML = `<div class="sm-head">${esc(g.b.name)}<span>gap ${esc(g.b.label)} · n=${total} · 80% ≤ ${esc(goals80(entries, total))} goals</span></div>`;
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "chart");
+        wrap.appendChild(svg); cont.appendChild(wrap);
+        renderBarChartEl(svg, entries, { color: "#4cc9f0", total, relative, cumulative: true, guide80: relative, compact: true });
+      }
+    }
+    function renderScoresSplit(ms, relative, oriented) {
+      $("sub-scores").textContent = "By ranking gap (" + (oriented ? "favourite→underdog" : "order-independent") + ") — does knowing the gap concentrate the results?";
+      const cont = $("split-scores"); cont.innerHTML = "";
+      const groups = matchesByGap(ms);
+      if (!groups.length) { cont.innerHTML = `<p class="empty" style="grid-column:1/-1">No ranking data for this filter.</p>`; return; }
+      for (const g of groups) {
+        const { sorted, total } = scoresSorted(g.list, oriented);
+        const wrap = document.createElement("div"); wrap.className = "sm";
+        wrap.innerHTML = `<div class="sm-head">${esc(g.b.name)}<span>gap ${esc(g.b.label)} · n=${total} · 80% = top ${topK80(sorted, total)}</span></div>`;
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "chart");
+        wrap.appendChild(svg); cont.appendChild(wrap);
+        renderBarChartEl(svg, scoreBarEntries(sorted), { color: "#f7b801", total, relative, cumulative: true, guide80: relative, compact: true });
+      }
+    }
+
+    // ---------- comparison heatmaps (split by tournament) ----------
     // rows: [{label, cells:[{frac}]}]; colLabels: string[]; rgb: "r,g,b".
     // Each cell shows the per-bin % (big) and the left-to-right cumulative % (small).
     function buildHeatTable(containerId, colLabels, rows, rgb) {
@@ -487,7 +565,7 @@
       el.innerHTML = parts.join("");
     }
 
-    function renderHeatmaps(matches) {
+    function renderHeatmaps(matches, oriented) {
       const eds = ALL_KEYS.filter(k => matches.some(m => m.edition === k));
       const byEd = {};
       eds.forEach(k => { byEd[k] = matches.filter(m => m.edition === k); });
@@ -496,10 +574,11 @@
       // Match counts live in the captions, not the matrix (keeps rows uncluttered).
       const counts = eds.map(k => EDITIONS[k].label + ": " + byEd[k].length).join(" · ");
       const cntNote = counts ? " Matches — " + counts + "." : "";
+      const lens = oriented ? "favourite→underdog" : "order-independent";
       $("sub-heat-goals").textContent =
         "Share of each tournament's matches; small Σ = cumulative %. Brighter = more common." + cntNote;
       $("sub-heat-scores").textContent =
-        "Share by scoreline (order-independent); small Σ = cumulative %. Brighter = more common." + cntNote;
+        "Share by scoreline (" + lens + "); small Σ = cumulative %. Brighter = more common." + cntNote;
 
       // Goals per game: columns 0..maxGoals across the filtered set.
       const maxGoals = Math.max(0, ...matches.map(m => m.homeScore + m.awayScore));
@@ -518,16 +597,17 @@
       // Scorelines: every distinct scoreline as a column, ordered by combined
       // frequency (Pareto order) so each row's cumulative Σ reaches 100%.
       const combined = new Map();
-      for (const m of matches) { const k = scorelineKey(m); combined.set(k, (combined.get(k) || 0) + 1); }
+      for (const m of matches) { const k = scoreKey(m, oriented); if (k == null) continue; combined.set(k, (combined.get(k) || 0) + 1); }
       const allScores = [...combined.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(e => e[0]);
       const scoreRows = eds.map(k => {
-        const list = byEd[k], n = list.length;
+        const list = byEd[k];
+        const ranked = oriented ? list.filter(m => rankInfo(m)).length : list.length;
         const cells = allScores.map(s => {
-          const c = list.filter(m => scorelineKey(m) === s).length;
-          return { frac: n ? c / n : 0 };
+          const c = list.filter(m => scoreKey(m, oriented) === s).length;
+          return { frac: ranked ? c / ranked : 0 };
         });
-        return { label: rowLabel(k), n, cells };
+        return { label: rowLabel(k), n: ranked, cells };
       });
       buildHeatTable("heat-scores", allScores, scoreRows, "247,184,1");
     }
@@ -586,7 +666,7 @@
       const dogScore = homeFav ? m.awayScore : m.homeScore;
       return {
         gap: Math.abs(hr - ar),
-        draw,
+        draw, favScore, dogScore,
         favWin: !draw && favScore > dogScore,
         upset:  !draw && favScore < dogScore,  // the underdog won
         margin: favScore - dogScore,           // favourite's goal margin (can be negative)
@@ -645,12 +725,6 @@
     }
 
     // Panel 1 — favourite win rate by ranking gap (does ranking predict the result?).
-    const GAP_BINS = [
-      { label: "0–9", lo: 0, hi: 9 },
-      { label: "10–19", lo: 10, hi: 19 },
-      { label: "20–34", lo: 20, hi: 34 },
-      { label: "35+", lo: 35, hi: Infinity },
-    ];
     function renderRankOutcome(matches) {
       const infos = matches.map(rankInfo).filter(Boolean);
       const entries = GAP_BINS.map(b => {
@@ -693,185 +767,6 @@
         .map(k => ({ key: k, label: EDITIONS[k].label, list: matches.filter(m => m.edition === k) }));
     }
 
-    // Per-tournament colours for the scatter.
-    const ED_COLORS = { "2018": "#4cc9f0", "2022": "#f7b801", "2026": "#ff5d8f" };
-
-    // Stable pseudo-random in [0,1) from a string — deterministic jitter so the
-    // cloud doesn't reshuffle on every re-render.
-    function hash01(str) {
-      let h = 2166136261;
-      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-      return ((h >>> 0) % 100000) / 100000;
-    }
-    function pearson(xs, ys) {
-      const n = xs.length;
-      if (n < 2) return 0;
-      const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
-      let sxy = 0, sxx = 0, syy = 0;
-      for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
-      const d = Math.sqrt(sxx * syy);
-      return d ? sxy / d : 0;
-    }
-
-    function buildScatterLegend(containerId, stats, mode, multi) {
-      const el = $(containerId);
-      const rows = stats.map(s =>
-        `<span><i style="background:${ED_COLORS[s.ed] || "#98a2c8"}"></i>` +
-        `${esc(EDITIONS[s.ed].label)} · ${s.avg.toFixed(2)} gpg · r ${s.r.toFixed(2)}</span>`
-      );
-      if (mode === "tournament" && multi) rows.push(`<span><i style="background:#b794f6"></i>Trend through averages</span>`);
-      else if (multi) rows.push(`<span><i style="background:#e8ecf8"></i>Trend across all matches</span>`);
-      el.innerHTML = rows.join("");
-    }
-
-    // Least-squares fit over [{x,y}]; null if degenerate.
-    function lsqFit(pts) {
-      const n = pts.length;
-      if (n < 2) return null;
-      const mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
-      let sxy = 0, sxx = 0;
-      for (const p of pts) { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; }
-      if (sxx <= 0) return null;
-      const slope = sxy / sxx;
-      return { slope, b: my - slope * mx, mx, my };
-    }
-
-    // Panel 2 — one point per match: ranking gap (x) vs goals scored (y), by tournament.
-    function renderRankGoals(matches) {
-      const points = [];
-      for (const m of matches) {
-        const info = rankInfo(m);
-        if (!info) continue;
-        points.push({ x: info.gap, y: m.homeScore + m.awayScore, ed: m.edition,
-          key: String(m.id || (m.date + m.home + m.away)) });
-      }
-      const eds = ALL_KEYS.filter(k => points.some(p => p.ed === k));
-      const multi = eds.length > 1;
-      const stats = eds.map(k => {
-        const pts = points.filter(p => p.ed === k);
-        const avg = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-        return { ed: k, n: pts.length, avg, r: pearson(pts.map(p => p.x), pts.map(p => p.y)) };
-      });
-      // The Per-match / Per-tournament toggle only applies in the All-time view.
-      $("rankview-ctl").classList.toggle("hidden", !multi);
-      const mode = multi ? $("rankview").value : "match";
-
-      buildScatterLegend("legend-rank-goals", stats, mode, multi);
-      if (mode === "tournament") {
-        $("sub-rank-goals").textContent = "Per tournament: average gap vs goals/game, ±1 SD whiskers.";
-      } else {
-        let rStr = points.length >= 3 ? " · r " + pearson(points.map(p => p.x), points.map(p => p.y)).toFixed(2) : "";
-        $("sub-rank-goals").textContent = points.length
-          ? "Per match: gap vs goals · " + points.length + " matches" + rStr + "."
-          : "Ranking gap vs goals scored, one point per match.";
-      }
-      renderRankScatter("chart-rank-goals", points, eds, mode);
-    }
-
-    function renderRankScatter(svgId, points, eds, mode) {
-      const svg = $(svgId);
-      svg.innerHTML = "";
-      if (!points.length) {
-        svg.removeAttribute("viewBox");
-        svg.style.height = "64px";
-        svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No ranking data for this filter.</text>`;
-        return;
-      }
-      const W = 700, left = 44, right = 22, top = 18, plotH = 232, bottom = 48;
-      const H = top + plotH + bottom;
-      const tournamentMode = mode === "tournament";
-
-      // Per-tournament mean and ±1 SD of gap (x) and goals (y).
-      const meanStats = eds.map(k => {
-        const pts = points.filter(p => p.ed === k);
-        const n = pts.length;
-        const mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
-        const sx = Math.sqrt(pts.reduce((s, p) => s + (p.x - mx) ** 2, 0) / n);
-        const sy = Math.sqrt(pts.reduce((s, p) => s + (p.y - my) ** 2, 0) / n);
-        return { k, x: mx, y: my, sx, sy };
-      });
-
-      // Domains: match mode spans every game (goals start at 0); tournament mode
-      // zooms to the averages + whiskers so the three points are well separated.
-      let xMin = 0, xMax, yMin = 0, yMax, yStep;
-      if (tournamentMode) {
-        const xs = meanStats.flatMap(m => [m.x - m.sx, m.x + m.sx]);
-        const ys = meanStats.flatMap(m => [m.y - m.sy, m.y + m.sy]);
-        let xlo = Math.min(...xs), xhi = Math.max(...xs), ylo = Math.min(...ys), yhi = Math.max(...ys);
-        const xp = (xhi - xlo) * 0.18 || 4, yp = (yhi - ylo) * 0.22 || 0.4;
-        xMin = Math.max(0, xlo - xp); xMax = xhi + xp;
-        yMin = Math.max(0, ylo - yp); yMax = yhi + yp;
-      } else {
-        xMax = Math.max(...points.map(p => p.x)) * 1.06 + 2;
-        yMax = Math.max(...points.map(p => p.y)) + 1;
-      }
-      const xOf = v => left + ((v - xMin) / ((xMax - xMin) || 1)) * (W - left - right);
-      const yOf = v => top + plotH - ((v - yMin) / ((yMax - yMin) || 1)) * plotH;
-      const clampY = y => Math.min(yMax, Math.max(yMin, y));
-
-      const parts = [];
-      parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
-      parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
-      // y gridlines: integer goals in match mode, 3 even ticks in tournament mode
-      if (tournamentMode) {
-        for (let t = 0; t <= 2; t++) {
-          const v = yMin + (yMax - yMin) * t / 2, y = yOf(v);
-          parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
-          parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v.toFixed(1)}</text>`);
-        }
-      } else {
-        for (let g = 0; g <= yMax - 1; g++) {
-          const y = yOf(g);
-          parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
-          parts.push(`<text class="axis-label" x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${g}</text>`);
-        }
-      }
-      // x ticks (4)
-      for (let t = 0; t <= 3; t++) {
-        const v = xMin + (xMax - xMin) * t / 3;
-        parts.push(`<text class="axis-label" x="${xOf(v).toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(v)}</text>`);
-      }
-      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 40).toFixed(1)}" text-anchor="middle">Ranking gap →</text>`);
-      parts.push(`<text class="axis-title" x="12" y="${(top + plotH / 2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 12 ${(top + plotH / 2).toFixed(1)})">${tournamentMode ? "Goals / game" : "Goals (match total)"}</text>`);
-
-      const fitLine = (fit, color, cls) => {
-        const y1 = clampY(fit.slope * xMin + fit.b), y2 = clampY(fit.slope * xMax + fit.b);
-        return `<line class="${cls}" x1="${xOf(xMin).toFixed(1)}" y1="${yOf(y1).toFixed(1)}" ` +
-          `x2="${xOf(xMax).toFixed(1)}" y2="${yOf(y2).toFixed(1)}"${color ? ` stroke="${color}"` : ""}/>`;
-      };
-
-      if (tournamentMode) {
-        // Just the three averages, with ±1 SD whiskers and a single trend through them.
-        const aggFit = eds.length > 1 ? lsqFit(meanStats.map(m => ({ x: m.x, y: m.y }))) : null;
-        if (aggFit) parts.push(fitLine(aggFit, "#b794f6", "agg-fit"));
-        for (const m of meanStats) {
-          const color = ED_COLORS[m.k] || "#98a2c8";
-          const cx = xOf(m.x), cy = yOf(m.y);
-          const xL = xOf(Math.max(xMin, m.x - m.sx)), xR = xOf(Math.min(xMax, m.x + m.sx));
-          const yHi = yOf(clampY(m.y + m.sy)), yLo = yOf(clampY(m.y - m.sy));
-          const wh = (x1, y1, x2, y2) => parts.push(`<line class="whisker" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}"/>`);
-          wh(xL, cy, xR, cy); wh(xL, cy - 4, xL, cy + 4); wh(xR, cy - 4, xR, cy + 4);
-          wh(cx, yHi, cx, yLo); wh(cx - 4, yHi, cx + 4, yHi); wh(cx - 4, yLo, cx + 4, yLo);
-          parts.push(`<circle class="avg-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7" fill="${color}"/>`);
-          parts.push(`<text class="pt-label" x="${cx.toFixed(1)}" y="${(cy - 13).toFixed(1)}" text-anchor="middle">${esc(EDITIONS[m.k].label)}</text>`);
-        }
-      } else {
-        // Jittered, semi-transparent match dots + a single fit across all matches.
-        for (const p of points) {
-          const jx = (hash01(p.key + "x") - 0.5) * (xMax * 0.018 + 0.6);
-          const jy = (hash01(p.key + "y") - 0.5) * 0.5;
-          parts.push(`<circle cx="${xOf(Math.max(0, p.x + jx)).toFixed(1)}" cy="${yOf(Math.max(0, p.y + jy)).toFixed(1)}" r="3.6" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.5"/>`);
-        }
-        const matchFit = lsqFit(points);
-        if (matchFit) parts.push(fitLine(matchFit, null, "trend-line"));
-      }
-
-      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-      svg.style.height = "";
-      svg.innerHTML = parts.join("");
-    }
-
     // Panel 3 — upset rate per tournament (lower-ranked team wins).
     function renderUpsets(matches) {
       const groups = matchesByEdition(matches);
@@ -899,7 +794,7 @@
 
     function renderRankings(matches) {
       if (!RANKINGS) {
-        for (const id of ["chart-rank-outcome", "chart-rank-goals", "chart-rank-upsets"]) {
+        for (const id of ["chart-rank-outcome", "chart-rank-upsets"]) {
           const svg = $(id);
           svg.removeAttribute("viewBox");
           svg.style.height = "64px";
@@ -908,7 +803,6 @@
         return;
       }
       renderRankOutcome(matches);
-      renderRankGoals(matches);
       renderUpsets(matches);
     }
 
@@ -995,17 +889,28 @@
       const stats = computeStats(matches);
       renderCards(stats);
 
-      // Aggregate (bars) vs Compare (per-tournament heatmaps); Compare only in All-time.
-      const compare = compareMode();
-      $("panel-goals").classList.toggle("hidden", compare);
-      $("panel-scores").classList.toggle("hidden", compare);
-      $("panel-heat-goals").classList.toggle("hidden", !compare);
-      $("panel-heat-scores").classList.toggle("hidden", !compare);
-      if (compare) {
-        renderHeatmaps(matches);
+      // Split the distributions by: nothing (combined bars), ranking gap (small
+      // multiples), or tournament (heatmaps — All-time only).
+      const split = splitMode();
+      const oriented = orientFav();
+      const isTour = split === "tournament";
+      const isGap = split === "gap";
+      $("panel-goals").classList.toggle("hidden", isTour);
+      $("panel-scores").classList.toggle("hidden", isTour);
+      $("panel-heat-goals").classList.toggle("hidden", !isTour);
+      $("panel-heat-scores").classList.toggle("hidden", !isTour);
+      $("chart-goals").classList.toggle("hidden", isGap);
+      $("chart-scores").classList.toggle("hidden", isGap);
+      $("split-goals").hidden = !isGap;
+      $("split-scores").hidden = !isGap;
+      if (isTour) {
+        renderHeatmaps(matches, oriented);
+      } else if (isGap) {
+        renderGoalsSplit(matches, relative);
+        renderScoresSplit(matches, relative, oriented);
       } else {
-        renderGoalsChart(stats.goalsHist, stats.games, relative);
-        renderScoresChart(stats.scoreFreq, stats.games, relative);
+        renderGoalsChart(matches, relative);
+        renderScoresChart(matches, relative, oriented);
       }
 
       renderRankings(matches);
@@ -1037,8 +942,10 @@
       // The frequency control is locked to Percent in the All-time view.
       $("freq").disabled = viewIsAll;
       if (viewIsAll) $("freq").value = "rel";
-      // Aggregate/Compare toggle only applies to the All-time view.
-      $("viewctl-display").classList.toggle("hidden", !viewIsAll);
+      // "Split by tournament" only makes sense in the All-time view.
+      const tourOpt = $("view").querySelector('option[value="tournament"]');
+      if (tourOpt) tourOpt.hidden = !viewIsAll;
+      if (!viewIsAll && $("view").value === "tournament") $("view").value = "combined";
 
       try {
         await ensureRankings();   // frozen pre-tournament ranks, fetched once and cached
@@ -1077,14 +984,14 @@
     if (savedFreq) $("freq").value = savedFreq;
     const savedView = localStorage.getItem(LS_VIEW);
     if (savedView) $("view").value = savedView;
-    const savedRankView = localStorage.getItem(LS_RANKVIEW);
-    if (savedRankView) $("rankview").value = savedRankView;
+    const savedOrient = localStorage.getItem(LS_ORIENT);
+    if (savedOrient) $("orient").value = savedOrient;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
-    $("rankview").addEventListener("change", () => { store(LS_RANKVIEW, $("rankview").value); render(); });
+    $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
     $("asof").addEventListener("input", render);
     $("refresh").addEventListener("click", load);
     load();
