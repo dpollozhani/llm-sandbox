@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-28T00:11:20Z",
+  "updated": "2026-06-28T04:50:34Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 73,
-  "finishedMatches": 68,
+  "finishedMatches": 72,
   "matches": [
     {
       "id": "760415",
@@ -835,8 +835,8 @@
       "awayAbbr": "POR",
       "homeScore": 0,
       "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760482",
@@ -845,10 +845,10 @@
       "away": "Uzbekistan",
       "homeAbbr": "COD",
       "awayAbbr": "UZB",
-      "homeScore": 0,
+      "homeScore": 3,
       "awayScore": 1,
-      "completed": false,
-      "status": "First Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760483",
@@ -857,10 +857,10 @@
       "away": "Argentina",
       "homeAbbr": "JOR",
       "awayAbbr": "ARG",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 1,
+      "awayScore": 3,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760484",
@@ -869,10 +869,10 @@
       "away": "Austria",
       "homeAbbr": "ALG",
       "awayAbbr": "AUT",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 3,
+      "awayScore": 3,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760486",
