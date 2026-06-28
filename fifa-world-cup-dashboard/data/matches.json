@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-27T23:00:01Z",
+  "updated": "2026-06-28T00:11:20Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 72,
+  "totalMatches": 73,
   "finishedMatches": 68,
   "matches": [
     {
@@ -836,7 +836,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760482",
@@ -846,9 +846,9 @@
       "homeAbbr": "COD",
       "awayAbbr": "UZB",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     },
     {
       "id": "760483",
@@ -869,6 +869,18 @@
       "away": "Austria",
       "homeAbbr": "ALG",
       "awayAbbr": "AUT",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760486",
+      "date": "2026-06-28T19:00Z",
+      "home": "South Africa",
+      "away": "Canada",
+      "homeAbbr": "RSA",
+      "awayAbbr": "CAN",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
