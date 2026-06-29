@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-28T22:00:21Z",
+  "updated": "2026-06-29T01:35:48Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 73,
+  "totalMatches": 76,
   "finishedMatches": 73,
   "matches": [
     {
@@ -885,6 +885,42 @@
       "awayScore": 1,
       "completed": true,
       "status": "Full Time"
+    },
+    {
+      "id": "760487",
+      "date": "2026-06-29T17:00Z",
+      "home": "Brazil",
+      "away": "Japan",
+      "homeAbbr": "BRA",
+      "awayAbbr": "JPN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760489",
+      "date": "2026-06-29T20:30Z",
+      "home": "Germany",
+      "away": "Paraguay",
+      "homeAbbr": "GER",
+      "awayAbbr": "PAR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760488",
+      "date": "2026-06-30T01:00Z",
+      "home": "Netherlands",
+      "away": "Morocco",
+      "homeAbbr": "NED",
+      "awayAbbr": "MAR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
     }
   ]
 }
