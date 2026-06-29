@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-29T19:52:58Z",
+  "updated": "2026-06-29T21:23:47Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -906,9 +906,9 @@
       "homeAbbr": "GER",
       "awayAbbr": "PAR",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Halftime"
     },
     {
       "id": "760488",
