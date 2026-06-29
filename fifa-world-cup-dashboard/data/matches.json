@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-29T22:36:01Z",
+  "updated": "2026-06-29T23:40:31Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 76,
-  "finishedMatches": 74,
+  "finishedMatches": 75,
   "matches": [
     {
       "id": "760415",
@@ -907,8 +907,8 @@
       "awayAbbr": "PAR",
       "homeScore": 1,
       "awayScore": 1,
-      "completed": false,
-      "status": "Overtime"
+      "completed": true,
+      "status": "Final Score - After Penalties"
     },
     {
       "id": "760488",
