@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-30T01:49:27Z",
+  "updated": "2026-06-30T06:09:21Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 79,
-  "finishedMatches": 75,
+  "finishedMatches": 76,
   "matches": [
     {
       "id": "760415",
@@ -917,10 +917,10 @@
       "away": "Morocco",
       "homeAbbr": "NED",
       "awayAbbr": "MAR",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "First Half"
+      "homeScore": 1,
+      "awayScore": 1,
+      "completed": true,
+      "status": "Final Score - After Penalties"
     },
     {
       "id": "760490",
