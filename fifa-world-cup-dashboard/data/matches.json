@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-29T23:40:31Z",
+  "updated": "2026-06-30T01:49:27Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 76,
+  "totalMatches": 79,
   "finishedMatches": 75,
   "matches": [
     {
@@ -917,6 +917,42 @@
       "away": "Morocco",
       "homeAbbr": "NED",
       "awayAbbr": "MAR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "First Half"
+    },
+    {
+      "id": "760490",
+      "date": "2026-06-30T17:00Z",
+      "home": "Ivory Coast",
+      "away": "Norway",
+      "homeAbbr": "CIV",
+      "awayAbbr": "NOR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760492",
+      "date": "2026-06-30T21:00Z",
+      "home": "France",
+      "away": "Sweden",
+      "homeAbbr": "FRA",
+      "awayAbbr": "SWE",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760491",
+      "date": "2026-07-01T01:00Z",
+      "home": "Mexico",
+      "away": "Ecuador",
+      "homeAbbr": "MEX",
+      "awayAbbr": "ECU",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
