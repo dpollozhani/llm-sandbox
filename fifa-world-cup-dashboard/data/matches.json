@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-01T21:58:55Z",
+  "updated": "2026-07-01T23:21:16Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 82,
-  "finishedMatches": 80,
+  "finishedMatches": 81,
   "matches": [
     {
       "id": "760415",
@@ -977,10 +977,10 @@
       "away": "Senegal",
       "homeAbbr": "BEL",
       "awayAbbr": "SEN",
-      "homeScore": 2,
+      "homeScore": 3,
       "awayScore": 2,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Final Score - After Extra Time"
     },
     {
       "id": "760494",
