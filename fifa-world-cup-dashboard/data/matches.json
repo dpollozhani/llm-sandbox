@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-30T23:50:40Z",
+  "updated": "2026-07-01T03:32:57Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 79,
+  "totalMatches": 82,
   "finishedMatches": 78,
   "matches": [
     {
@@ -948,11 +948,47 @@
     },
     {
       "id": "760491",
-      "date": "2026-07-01T01:00Z",
+      "date": "2026-07-01T02:00Z",
       "home": "Mexico",
       "away": "Ecuador",
       "homeAbbr": "MEX",
       "awayAbbr": "ECU",
+      "homeScore": 2,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Second Half"
+    },
+    {
+      "id": "760495",
+      "date": "2026-07-01T16:00Z",
+      "home": "England",
+      "away": "Congo DR",
+      "homeAbbr": "ENG",
+      "awayAbbr": "COD",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760493",
+      "date": "2026-07-01T20:00Z",
+      "home": "Belgium",
+      "away": "Senegal",
+      "homeAbbr": "BEL",
+      "awayAbbr": "SEN",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760494",
+      "date": "2026-07-02T00:00Z",
+      "home": "United States",
+      "away": "Bosnia-Herzegovina",
+      "homeAbbr": "USA",
+      "awayAbbr": "BIH",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
