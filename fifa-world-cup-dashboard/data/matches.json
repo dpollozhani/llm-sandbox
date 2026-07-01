@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-01T18:24:18Z",
+  "updated": "2026-07-01T20:23:15Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -980,7 +980,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "In Progress"
     },
     {
       "id": "760494",
