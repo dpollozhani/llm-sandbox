@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-01T23:21:16Z",
+  "updated": "2026-07-02T01:31:44Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 82,
+  "totalMatches": 85,
   "finishedMatches": 81,
   "matches": [
     {
@@ -989,6 +989,42 @@
       "away": "Bosnia-Herzegovina",
       "homeAbbr": "USA",
       "awayAbbr": "BIH",
+      "homeScore": 1,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Second Half"
+    },
+    {
+      "id": "760497",
+      "date": "2026-07-02T19:00Z",
+      "home": "Spain",
+      "away": "Austria",
+      "homeAbbr": "ESP",
+      "awayAbbr": "AUT",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760496",
+      "date": "2026-07-02T23:00Z",
+      "home": "Portugal",
+      "away": "Croatia",
+      "homeAbbr": "POR",
+      "awayAbbr": "CRO",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760498",
+      "date": "2026-07-03T03:00Z",
+      "home": "Switzerland",
+      "away": "Algeria",
+      "homeAbbr": "SUI",
+      "awayAbbr": "ALG",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
