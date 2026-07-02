@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-02T05:42:27Z",
+  "updated": "2026-07-02T20:18:41Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1001,10 +1001,10 @@
       "away": "Austria",
       "homeAbbr": "ESP",
       "awayAbbr": "AUT",
-      "homeScore": 0,
+      "homeScore": 1,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760496",
