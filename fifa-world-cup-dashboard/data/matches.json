@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-02T20:18:41Z",
+  "updated": "2026-07-02T21:43:14Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 85,
-  "finishedMatches": 82,
+  "finishedMatches": 83,
   "matches": [
     {
       "id": "760415",
@@ -1001,10 +1001,10 @@
       "away": "Austria",
       "homeAbbr": "ESP",
       "awayAbbr": "AUT",
-      "homeScore": 1,
+      "homeScore": 3,
       "awayScore": 0,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760496",
