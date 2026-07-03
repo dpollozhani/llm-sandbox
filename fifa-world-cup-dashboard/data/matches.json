@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T04:07:27Z",
+  "updated": "2026-07-03T07:35:22Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 88,
-  "finishedMatches": 84,
+  "finishedMatches": 85,
   "matches": [
     {
       "id": "760415",
@@ -1027,8 +1027,8 @@
       "awayAbbr": "ALG",
       "homeScore": 2,
       "awayScore": 0,
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760499",
