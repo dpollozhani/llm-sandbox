@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T22:44:30Z",
+  "updated": "2026-07-03T23:45:57Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1050,9 +1050,9 @@
       "homeAbbr": "ARG",
       "awayAbbr": "CPV",
       "homeScore": 1,
-      "awayScore": 0,
+      "awayScore": 1,
       "completed": false,
-      "status": "First Half"
+      "status": "Second Half"
     },
     {
       "id": "760501",
