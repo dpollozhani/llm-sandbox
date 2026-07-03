@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T19:16:28Z",
+  "updated": "2026-07-03T20:37:27Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1037,10 +1037,10 @@
       "away": "Egypt",
       "homeAbbr": "AUS",
       "awayAbbr": "EGY",
-      "homeScore": 0,
+      "homeScore": 1,
       "awayScore": 1,
       "completed": false,
-      "status": "Second Half"
+      "status": "Overtime"
     },
     {
       "id": "760500",
