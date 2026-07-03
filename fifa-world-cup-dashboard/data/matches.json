@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T00:03:29Z",
+  "updated": "2026-07-03T04:07:27Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 88,
-  "finishedMatches": 83,
+  "finishedMatches": 84,
   "matches": [
     {
       "id": "760415",
@@ -1013,10 +1013,10 @@
       "away": "Croatia",
       "homeAbbr": "POR",
       "awayAbbr": "CRO",
-      "homeScore": 0,
-      "awayScore": 0,
-      "completed": false,
-      "status": "Halftime"
+      "homeScore": 2,
+      "awayScore": 1,
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760498",
@@ -1025,10 +1025,10 @@
       "away": "Algeria",
       "homeAbbr": "SUI",
       "awayAbbr": "ALG",
-      "homeScore": 0,
+      "homeScore": 2,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     },
     {
       "id": "760499",
