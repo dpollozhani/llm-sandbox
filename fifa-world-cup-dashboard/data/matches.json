@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-02T21:43:14Z",
+  "updated": "2026-07-03T00:03:29Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 85,
+  "totalMatches": 88,
   "finishedMatches": 83,
   "matches": [
     {
@@ -1016,7 +1016,7 @@
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
-      "status": "Scheduled"
+      "status": "Halftime"
     },
     {
       "id": "760498",
@@ -1025,6 +1025,42 @@
       "away": "Algeria",
       "homeAbbr": "SUI",
       "awayAbbr": "ALG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760499",
+      "date": "2026-07-03T18:00Z",
+      "home": "Australia",
+      "away": "Egypt",
+      "homeAbbr": "AUS",
+      "awayAbbr": "EGY",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760500",
+      "date": "2026-07-03T22:00Z",
+      "home": "Argentina",
+      "away": "Cape Verde",
+      "homeAbbr": "ARG",
+      "awayAbbr": "CPV",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760501",
+      "date": "2026-07-04T01:30Z",
+      "home": "Colombia",
+      "away": "Ghana",
+      "homeAbbr": "COL",
+      "awayAbbr": "GHA",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
