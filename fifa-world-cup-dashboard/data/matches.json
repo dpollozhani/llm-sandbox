@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T20:37:27Z",
+  "updated": "2026-07-03T21:44:30Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 88,
-  "finishedMatches": 85,
+  "finishedMatches": 86,
   "matches": [
     {
       "id": "760415",
@@ -1039,8 +1039,8 @@
       "awayAbbr": "EGY",
       "homeScore": 1,
       "awayScore": 1,
-      "completed": false,
-      "status": "Overtime"
+      "completed": true,
+      "status": "Final Score - After Penalties"
     },
     {
       "id": "760500",
