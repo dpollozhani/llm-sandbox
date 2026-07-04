@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-04T02:37:21Z",
+  "updated": "2026-07-04T06:01:03Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 90,
-  "finishedMatches": 87,
+  "finishedMatches": 88,
   "matches": [
     {
       "id": "760415",
@@ -1063,8 +1063,8 @@
       "awayAbbr": "GHA",
       "homeScore": 1,
       "awayScore": 0,
-      "completed": false,
-      "status": "Halftime"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760502",
