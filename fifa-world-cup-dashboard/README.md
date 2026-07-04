@@ -15,6 +15,12 @@ have different numbers of matches. Both charts carry a cumulative **Pareto** lin
 an **80%** guide, so you can read how concentrated outcomes are ("80% of games have
 ≤ 4 goals", "80% of results are the 8 most common").
 
+Knockout games decided in extra time or on penalties are stored with their
+**120-minute** score (goals inflated; a shootout shows as a level score), so the
+**Games** control lets you keep **full-time only** (default) or include extra-time /
+penalty games. Full-time-only keeps the goal and result distributions comparable
+across every match.
+
 The dashboard is built around one question: *how predictable is a game, and what does
 each piece of information buy you?* Two controls drive that:
 
