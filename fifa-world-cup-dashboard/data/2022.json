@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-18T22:55:39Z",
+  "updated": "2026-07-04T10:54:53Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2022",
   "league": "fifa.world",
@@ -19,6 +19,9 @@
       "awayAbbr": "ECU",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -31,6 +34,9 @@
       "awayAbbr": "IRN",
       "homeScore": 6,
       "awayScore": 2,
+      "homeScore90": 6,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -43,6 +49,9 @@
       "awayAbbr": "NED",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -55,6 +64,9 @@
       "awayAbbr": "WAL",
       "homeScore": 1,
       "awayScore": 1,
+      "homeScore90": 1,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -67,6 +79,9 @@
       "awayAbbr": "KSA",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -79,6 +94,9 @@
       "awayAbbr": "TUN",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -91,6 +109,9 @@
       "awayAbbr": "POL",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -103,6 +124,9 @@
       "awayAbbr": "AUS",
       "homeScore": 4,
       "awayScore": 1,
+      "homeScore90": 4,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -115,6 +139,9 @@
       "awayAbbr": "CRO",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -127,6 +154,9 @@
       "awayAbbr": "JPN",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -139,6 +169,9 @@
       "awayAbbr": "CRC",
       "homeScore": 7,
       "awayScore": 0,
+      "homeScore90": 7,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -151,6 +184,9 @@
       "awayAbbr": "CAN",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -163,6 +199,9 @@
       "awayAbbr": "CMR",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -175,6 +214,9 @@
       "awayAbbr": "KOR",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -187,6 +229,9 @@
       "awayAbbr": "GHA",
       "homeScore": 3,
       "awayScore": 2,
+      "homeScore90": 3,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -199,6 +244,9 @@
       "awayAbbr": "SRB",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -211,6 +259,9 @@
       "awayAbbr": "IRN",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -223,6 +274,9 @@
       "awayAbbr": "SEN",
       "homeScore": 1,
       "awayScore": 3,
+      "homeScore90": 1,
+      "awayScore90": 3,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -235,6 +289,9 @@
       "awayAbbr": "ECU",
       "homeScore": 1,
       "awayScore": 1,
+      "homeScore90": 1,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -247,6 +304,9 @@
       "awayAbbr": "USA",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -259,6 +319,9 @@
       "awayAbbr": "AUS",
       "homeScore": 0,
       "awayScore": 1,
+      "homeScore90": 0,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -271,6 +334,9 @@
       "awayAbbr": "KSA",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -283,6 +349,9 @@
       "awayAbbr": "DEN",
       "homeScore": 2,
       "awayScore": 1,
+      "homeScore90": 2,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -295,6 +364,9 @@
       "awayAbbr": "MEX",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -307,6 +379,9 @@
       "awayAbbr": "CRC",
       "homeScore": 0,
       "awayScore": 1,
+      "homeScore90": 0,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -319,6 +394,9 @@
       "awayAbbr": "MAR",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -331,6 +409,9 @@
       "awayAbbr": "CAN",
       "homeScore": 4,
       "awayScore": 1,
+      "homeScore90": 4,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -343,6 +424,9 @@
       "awayAbbr": "GER",
       "homeScore": 1,
       "awayScore": 1,
+      "homeScore90": 1,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -355,6 +439,9 @@
       "awayAbbr": "SRB",
       "homeScore": 3,
       "awayScore": 3,
+      "homeScore90": 3,
+      "awayScore90": 3,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -367,6 +454,9 @@
       "awayAbbr": "GHA",
       "homeScore": 2,
       "awayScore": 3,
+      "homeScore90": 2,
+      "awayScore90": 3,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -379,6 +469,9 @@
       "awayAbbr": "SUI",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -391,6 +484,9 @@
       "awayAbbr": "URU",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -403,6 +499,9 @@
       "awayAbbr": "SEN",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -415,6 +514,9 @@
       "awayAbbr": "QAT",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -427,6 +529,9 @@
       "awayAbbr": "ENG",
       "homeScore": 0,
       "awayScore": 3,
+      "homeScore90": 0,
+      "awayScore90": 3,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -439,6 +544,9 @@
       "awayAbbr": "USA",
       "homeScore": 0,
       "awayScore": 1,
+      "homeScore90": 0,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -451,6 +559,9 @@
       "awayAbbr": "FRA",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -463,6 +574,9 @@
       "awayAbbr": "DEN",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -475,6 +589,9 @@
       "awayAbbr": "MEX",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -487,6 +604,9 @@
       "awayAbbr": "ARG",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -499,6 +619,9 @@
       "awayAbbr": "MAR",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -511,6 +634,9 @@
       "awayAbbr": "BEL",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -523,6 +649,9 @@
       "awayAbbr": "GER",
       "homeScore": 2,
       "awayScore": 4,
+      "homeScore90": 2,
+      "awayScore90": 4,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -535,6 +664,9 @@
       "awayAbbr": "ESP",
       "homeScore": 2,
       "awayScore": 1,
+      "homeScore90": 2,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -547,6 +679,9 @@
       "awayAbbr": "POR",
       "homeScore": 2,
       "awayScore": 1,
+      "homeScore90": 2,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -559,6 +694,9 @@
       "awayAbbr": "URU",
       "homeScore": 0,
       "awayScore": 2,
+      "homeScore90": 0,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -571,6 +709,9 @@
       "awayAbbr": "BRA",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -583,6 +724,9 @@
       "awayAbbr": "SUI",
       "homeScore": 2,
       "awayScore": 3,
+      "homeScore90": 2,
+      "awayScore90": 3,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -595,6 +739,9 @@
       "awayAbbr": "USA",
       "homeScore": 3,
       "awayScore": 1,
+      "homeScore90": 3,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -607,6 +754,9 @@
       "awayAbbr": "AUS",
       "homeScore": 2,
       "awayScore": 1,
+      "homeScore90": 2,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -619,6 +769,9 @@
       "awayAbbr": "POL",
       "homeScore": 3,
       "awayScore": 1,
+      "homeScore90": 3,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -631,6 +784,9 @@
       "awayAbbr": "SEN",
       "homeScore": 3,
       "awayScore": 0,
+      "homeScore90": 3,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -643,8 +799,13 @@
       "awayAbbr": "CRO",
       "homeScore": 1,
       "awayScore": 1,
+      "homeScore90": 1,
+      "awayScore90": 1,
+      "decidedBy": "pens",
       "completed": true,
-      "status": "Final Score - After Penalties"
+      "status": "Final Score - After Penalties",
+      "homeShootout": 1,
+      "awayShootout": 3
     },
     {
       "id": "633840",
@@ -655,6 +816,9 @@
       "awayAbbr": "KOR",
       "homeScore": 4,
       "awayScore": 1,
+      "homeScore90": 4,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -667,8 +831,13 @@
       "awayAbbr": "ESP",
       "homeScore": 0,
       "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "pens",
       "completed": true,
-      "status": "Final Score - After Penalties"
+      "status": "Final Score - After Penalties",
+      "homeShootout": 3,
+      "awayShootout": 0
     },
     {
       "id": "633842",
@@ -679,6 +848,9 @@
       "awayAbbr": "SUI",
       "homeScore": 6,
       "awayScore": 1,
+      "homeScore90": 6,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -691,8 +863,13 @@
       "awayAbbr": "BRA",
       "homeScore": 1,
       "awayScore": 1,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "pens",
       "completed": true,
-      "status": "Final Score - After Penalties"
+      "status": "Final Score - After Penalties",
+      "homeShootout": 4,
+      "awayShootout": 2
     },
     {
       "id": "633844",
@@ -703,8 +880,13 @@
       "awayAbbr": "ARG",
       "homeScore": 2,
       "awayScore": 2,
+      "homeScore90": 2,
+      "awayScore90": 2,
+      "decidedBy": "pens",
       "completed": true,
-      "status": "Final Score - After Penalties"
+      "status": "Final Score - After Penalties",
+      "homeShootout": 3,
+      "awayShootout": 4
     },
     {
       "id": "633845",
@@ -715,6 +897,9 @@
       "awayAbbr": "POR",
       "homeScore": 1,
       "awayScore": 0,
+      "homeScore90": 1,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -727,6 +912,9 @@
       "awayAbbr": "FRA",
       "homeScore": 1,
       "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -739,6 +927,9 @@
       "awayAbbr": "CRO",
       "homeScore": 3,
       "awayScore": 0,
+      "homeScore90": 3,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -751,6 +942,9 @@
       "awayAbbr": "MAR",
       "homeScore": 2,
       "awayScore": 0,
+      "homeScore90": 2,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -763,6 +957,9 @@
       "awayAbbr": "MAR",
       "homeScore": 2,
       "awayScore": 1,
+      "homeScore90": 2,
+      "awayScore90": 1,
+      "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
     },
@@ -775,8 +972,13 @@
       "awayAbbr": "FRA",
       "homeScore": 3,
       "awayScore": 3,
+      "homeScore90": 2,
+      "awayScore90": 2,
+      "decidedBy": "pens",
       "completed": true,
-      "status": "Final Score - After Penalties"
+      "status": "Final Score - After Penalties",
+      "homeShootout": 4,
+      "awayShootout": 2
     }
   ]
 }
