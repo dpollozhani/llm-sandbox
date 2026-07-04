@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-03T23:45:57Z",
+  "updated": "2026-07-04T02:37:21Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 88,
-  "finishedMatches": 86,
+  "totalMatches": 90,
+  "finishedMatches": 87,
   "matches": [
     {
       "id": "760415",
@@ -1049,10 +1049,10 @@
       "away": "Cape Verde",
       "homeAbbr": "ARG",
       "awayAbbr": "CPV",
-      "homeScore": 1,
-      "awayScore": 1,
-      "completed": false,
-      "status": "Second Half"
+      "homeScore": 3,
+      "awayScore": 2,
+      "completed": true,
+      "status": "Final Score - After Extra Time"
     },
     {
       "id": "760501",
@@ -1061,6 +1061,30 @@
       "away": "Ghana",
       "homeAbbr": "COL",
       "awayAbbr": "GHA",
+      "homeScore": 1,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Halftime"
+    },
+    {
+      "id": "760502",
+      "date": "2026-07-04T17:00Z",
+      "home": "Canada",
+      "away": "Morocco",
+      "homeAbbr": "CAN",
+      "awayAbbr": "MAR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760503",
+      "date": "2026-07-04T21:00Z",
+      "home": "Paraguay",
+      "away": "France",
+      "homeAbbr": "PAR",
+      "awayAbbr": "FRA",
       "homeScore": 0,
       "awayScore": 0,
       "completed": false,
