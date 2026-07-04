@@ -1,0 +1,25 @@
+name: ET probe (temporary)
+
+# Temporary: checks whether ESPN exposes per-goal period/clock data so we can
+# derive the score-at-90' for extra-time / penalty games. No deploy. Deleted
+# after validation.
+on:
+  push:
+    branches: [claude/fifa-world-cup-dashboard-6eqkkg]
+    paths:
+      - fifa-world-cup-dashboard/et_probe.py
+      - .github/workflows/et-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python fifa-world-cup-dashboard/et_probe.py
