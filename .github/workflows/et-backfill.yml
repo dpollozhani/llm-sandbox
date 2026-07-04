@@ -1,0 +1,36 @@
+name: ET backfill (temporary)
+
+# Temporary: re-scrapes all editions with WC_FORCE=1 so every match gets the new
+# score90 / decidedBy / shootout fields (rankings stay frozen), then commits the
+# updated data files back to the working branch. Deleted after use.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/fifa-world-cup-dashboard-6eqkkg]
+    paths:
+      - .github/workflows/et-backfill.yml
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/fifa-world-cup-dashboard-6eqkkg
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Re-scrape with 90' recovery
+        env:
+          WC_FORCE: "1"
+        run: python fifa-world-cup-dashboard/scrape.py
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add fifa-world-cup-dashboard/data
+          git commit -m "Backfill 90' scores (score90/decidedBy/shootout) [skip ci]" || { echo "no changes"; exit 0; }
+          git push origin HEAD:claude/fifa-world-cup-dashboard-6eqkkg

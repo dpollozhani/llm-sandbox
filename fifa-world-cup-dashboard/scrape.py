@@ -40,6 +40,12 @@ SCOREBOARD = (
     "https://site.api.espn.com/apis/site/v2/sports/soccer/"
     "{league}/scoreboard?dates={d}"
 )
+# Per-match detail (has keyEvents with per-goal period/clock) — used to recover
+# the score at 90' for games that went to extra time / penalties.
+SUMMARY = (
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/"
+    "{league}/summary?event={id}"
+)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -112,6 +118,47 @@ def to_int(v):
         return None
 
 
+def fetch_summary(league, event_id):
+    url = SUMMARY.format(league=league, id=event_id)
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def derive_reg_score(summary):
+    """Score at 90' (periods 1-2) from a match summary's keyEvents.
+
+    Returns (home90, away90) only if the goals through extra time (periods 1-4)
+    reconstruct the final 120' score exactly — a guard against mis-counted or
+    mis-attributed goals. Otherwise None (caller keeps the final as a fallback).
+    """
+    hdr = summary.get("header") or {}
+    comps = ((hdr.get("competitions") or [{}])[0].get("competitors")) or []
+    side_of = {}
+    final = {}
+    for c in comps:
+        tid = str((c.get("team") or {}).get("id"))
+        ha = c.get("homeAway")
+        side_of[tid] = ha
+        final[ha] = to_int(c.get("score"))
+    reg = {"home": 0, "away": 0}
+    thru_et = {"home": 0, "away": 0}
+    for e in summary.get("keyEvents") or []:
+        if not e.get("scoringPlay"):
+            continue
+        per = (e.get("period") or {}).get("number")
+        ha = side_of.get(str((e.get("team") or {}).get("id")))
+        if ha not in ("home", "away") or not per:
+            continue
+        if per <= 4:
+            thru_et[ha] += 1
+        if per <= 2:
+            reg[ha] += 1
+    if final.get("home") == thru_et["home"] and final.get("away") == thru_et["away"]:
+        return reg["home"], reg["away"]
+    return None
+
+
 def parse_events(payload):
     """Yield normalized match dicts from one scoreboard payload."""
     for ev in (payload or {}).get("events", []) or []:
@@ -136,18 +183,36 @@ def parse_events(payload):
             t = c.get("team") or {}
             return t.get("abbreviation") or (team_name(c)[:3].upper())
 
-        yield {
+        # How the match was decided (ft = ended in 90').
+        info = ((status.get("detail") or "") + " " + (status.get("description") or "")).lower()
+        if "pen" in info:
+            decided_by = "pens"
+        elif "extra time" in info or "aet" in info:
+            decided_by = "aet"
+        else:
+            decided_by = "ft"
+
+        hs, as_ = to_int(home.get("score")), to_int(away.get("score"))
+        m = {
             "id": str(ev.get("id") or comp.get("id") or ""),
             "date": ev.get("date") or comp.get("date") or "",
             "home": team_name(home),
             "away": team_name(away),
             "homeAbbr": team_abbr(home),
             "awayAbbr": team_abbr(away),
-            "homeScore": to_int(home.get("score")),
-            "awayScore": to_int(away.get("score")),
+            "homeScore": hs,           # final (incl. extra time)
+            "awayScore": as_,
+            # score at 90' — defaults to the final; corrected below for ET/pens games
+            "homeScore90": hs,
+            "awayScore90": as_,
+            "decidedBy": decided_by,
             "completed": completed,
             "status": status.get("description") or status.get("detail") or status.get("state") or "",
         }
+        sh, sa = to_int(home.get("shootoutScore")), to_int(away.get("shootoutScore"))
+        if sh is not None and sa is not None:
+            m["homeShootout"], m["awayShootout"] = sh, sa
+        yield m
 
 
 def load_existing(path):
@@ -200,6 +265,23 @@ def scrape_edition(key, cfg):
             errors += 1
             print(f"  ! [{key}] {d}: {e}", file=sys.stderr)
         time.sleep(0.3)  # be polite
+
+    # Recover the 90' score for games decided in extra time / penalties (their
+    # stored score is the 120' one). Only these few games need a summary fetch.
+    et_games = [m for m in scraped.values()
+                if m.get("completed") and m.get("decidedBy") in ("aet", "pens")]
+    for m in et_games:
+        try:
+            rs = derive_reg_score(fetch_summary(cfg["league"], m["id"]))
+            if rs:
+                m["homeScore90"], m["awayScore90"] = rs
+                print(f"  [{key}] 90' score {m['home']} {rs[0]}-{rs[1]} {m['away']} "
+                      f"(final {m['homeScore']}-{m['awayScore']}, {m['decidedBy']})")
+            else:
+                print(f"  ! [{key}] {m['id']} 90' derivation failed validation; keeping final", file=sys.stderr)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
+            print(f"  ! [{key}] summary {m['id']}: {e}", file=sys.stderr)
+        time.sleep(0.3)
 
     merged = merge(existing, scraped)
     if not merged:
