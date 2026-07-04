@@ -15,11 +15,12 @@ have different numbers of matches. Both charts carry a cumulative **Pareto** lin
 an **80%** guide, so you can read how concentrated outcomes are ("80% of games have
 ≤ 4 goals", "80% of results are the 8 most common").
 
-Knockout games decided in extra time or on penalties are stored with their
-**120-minute** score (goals inflated; a shootout shows as a level score), so the
-**Games** control lets you keep **full-time only** (default) or include extra-time /
-penalty games. Full-time-only keeps the goal and result distributions comparable
-across every match.
+Knockout games decided in extra time or on penalties end with a **120-minute**
+score (goals inflated; a shootout leaves a level score). The scraper recovers each
+game's **score at 90'** (from ESPN's per-goal timings, validated against the final),
+so the **Score** control switches every game between **90 min** (default — keeps the
+full sample comparable) and **Final (incl. ET)**. On the 90-minute basis a penalty
+game correctly reads as its regulation draw rather than an inflated 120' score.
 
 The dashboard is built around one question: *how predictable is a game, and what does
 each piece of information buy you?* Two controls drive that:
@@ -39,7 +40,9 @@ It shows:
 - **Distinct results** — scoreline frequency (order-independent or favourite-oriented),
   splittable by ranking gap.
 - **Rankings** — the higher-ranked team's win rate by ranking gap (with an aggregate
-  "All" bar and average goal margin), and the upset rate per tournament.
+  "All" bar and average goal margin), and the upset rate per tournament (an upset =
+  the lower-ranked side winning by a ranking gap of at least 10 places, so beating a
+  near-neighbour doesn't count).
 - **Finished matches** — recent results list.
 
 The page is a single self-contained `index.html` with hand-drawn SVG charts (no

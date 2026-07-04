@@ -185,10 +185,10 @@
           <option value="knockout">Knockout</option>
         </select>
       </label>
-      <label class="ctl">Games
-        <select id="et" aria-label="Extra-time games">
-          <option value="excl">Full-time only</option>
-          <option value="incl">Incl. extra time</option>
+      <label class="ctl">Score
+        <select id="basis" aria-label="Score basis">
+          <option value="90">90 min</option>
+          <option value="final">Final (incl. ET)</option>
         </select>
       </label>
     </div>
@@ -302,7 +302,7 @@
     const LS_FREQ = "wc-dashboard-freq";
     const LS_VIEW = "wc-dashboard-view";
     const LS_ORIENT = "wc-dashboard-orient";
-    const LS_ET = "wc-dashboard-et";
+    const LS_BASIS = "wc-dashboard-basis";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -338,20 +338,21 @@
     }
 
     // ---------- normalize ----------
-    // Extra-time / penalty games store the 120-min score (goals inflated; a
-    // shootout shows as a level score), so tag them to allow excluding them.
-    function extraTime(m) {
+    // How a game was decided (ft = ended in 90'). Prefer the scraped field;
+    // fall back to parsing the status for data scraped before that existed.
+    function decidedOf(m) {
+      if (m.decidedBy) return m.decidedBy;
       const s = m.status || "";
       if (/penalt/i.test(s)) return "pens";
       if (/extra time/i.test(s)) return "aet";
-      return "";
+      return "ft";
     }
-    // Keep finished matches, tagging each with its edition + stage + ET flag.
+    // Keep finished matches, tagging each with its edition + stage + decidedBy.
     function normalize(payload, edKey) {
       const all = (payload && payload.matches) || [];
       return all
         .filter(m => m.completed && Number.isFinite(m.homeScore) && Number.isFinite(m.awayScore))
-        .map(m => ({ ...m, edition: edKey, stage: stageOf(m, edKey), et: extraTime(m) }));
+        .map(m => ({ ...m, edition: edKey, stage: stageOf(m, edKey), decidedBy: decidedOf(m) }));
     }
 
     // ---------- stats ----------
@@ -460,10 +461,14 @@
     // Ranking-gap buckets used for the "split by ranking gap" small multiples.
     const GAP_BINS = [
       { name: "Even", label: "0–9", lo: 0, hi: 9 },
-      { name: "Slight edge", label: "10–19", lo: 10, hi: 19 },
+      { name: "Slight edge", label: "10–19", lo: 10, hi: 19 },  // UPSET_MIN_GAP anchors here
       { name: "Clear edge", label: "20–34", lo: 20, hi: 34 },
       { name: "Mismatch", label: "35+", lo: 35, hi: Infinity },
     ];
+    // A win only counts as an "upset" if the underdog beat a team at least this
+    // many ranking places higher (the second gap bucket's start) — beating a
+    // near-neighbour isn't really an upset.
+    const UPSET_MIN_GAP = GAP_BINS[1].lo;
 
     function goalsEntries(ms) {
       const h = new Map(); let max = 0;
@@ -555,7 +560,7 @@
       const el = $("legend-scores-split");
       const chip = (c, t) => `<span><i style="background:${c}"></i>${t}</span>`;
       el.innerHTML = oriented
-        ? chip(OUT_COLORS.win, "Favourite win") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.loss, "Upset") + chip(OUT_COLORS.other, "Other")
+        ? chip(OUT_COLORS.win, "Favourite win") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.loss, "Favourite loss") + chip(OUT_COLORS.other, "Other")
         : chip(OUT_COLORS.decisive, "Decisive") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.other, "Other");
     }
     function renderScoresSplit(ms, relative, oriented) {
@@ -665,7 +670,7 @@
         const li = document.createElement("li");
         li.innerHTML =
           `<span class="home">${esc(m.home)}</span>` +
-          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}${m.et ? " · " + m.et : ""}</span></span>` +
+          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}${m.decidedBy && m.decidedBy !== "ft" ? " · " + m.decidedBy : ""}</span></span>` +
           `<span class="away">${esc(m.away)}</span>`;
         frag.appendChild(li);
       }
@@ -701,14 +706,16 @@
       const hr = rankOf(m.edition, m.home), ar = rankOf(m.edition, m.away);
       if (hr == null || ar == null) return null;
       const draw = m.homeScore === m.awayScore;
+      const gap = Math.abs(hr - ar);
       const homeFav = hr < ar;                 // ranks are distinct, so no ties
       const favScore = homeFav ? m.homeScore : m.awayScore;
       const dogScore = homeFav ? m.awayScore : m.homeScore;
       return {
-        gap: Math.abs(hr - ar),
+        gap,
         draw, favScore, dogScore,
         favWin: !draw && favScore > dogScore,
-        upset:  !draw && favScore < dogScore,  // the underdog won
+        // an upset needs a meaningful gap — beating a near-neighbour doesn't count
+        upset:  !draw && favScore < dogScore && gap >= UPSET_MIN_GAP,
         margin: favScore - dogScore,           // favourite's goal margin (can be negative)
       };
     }
@@ -825,8 +832,8 @@
       });
       const totalUp = groups.reduce((s, g) => s + g.list.map(rankInfo).filter(i => i && i.upset).length, 0);
       $("sub-rank-upsets").textContent = entries.some(e => e.n > 0)
-        ? "Share won by the lower-ranked team · " + totalUp + " upsets."
-        : "Share of matches won by the lower-ranked team.";
+        ? "Lower-ranked team won, gap ≥ " + UPSET_MIN_GAP + " places · " + totalUp + " upsets."
+        : "Lower-ranked team won by a ranking gap of at least " + UPSET_MIN_GAP + " places.";
       renderRankBars("chart-rank-upsets", entries, {
         color: "#ff7a7a", empty: "No ranking data for this filter.",
       });
@@ -898,11 +905,11 @@
 
     // `cut` = full-tournament completion set (defines the % and as-of date);
     // `matches` = what's shown after the stage filter.
-    function updateAsOfLabel(cut, matches, pct, etDropped) {
+    function updateAsOfLabel(cut, matches, pct, basisNote) {
       const tag = pct >= 100 ? " (full)" : "";
-      const etNote = etDropped ? " · excl. " + etDropped + " ET/pens" : "";
+      basisNote = basisNote || "";
       if (viewIsAll) {
-        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag + etNote;
+        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag + basisNote;
         return;
       }
       let s = pct + "%";
@@ -913,7 +920,7 @@
       s += tag;
       const st = currentStage();
       if (st !== "all") s += " · " + matches.length + " " + st;   // make the stage count explicit
-      $("asof-label").textContent = s + etNote;
+      $("asof-label").textContent = s + basisNote;
     }
 
     // Apply completion (vs the whole tournament) then the stage filter, and draw. No network.
@@ -923,11 +930,18 @@
       const st = currentStage();
       // Completion is measured against the FULL tournament(s); the stage filter then
       // selects within what's been played — so e.g. 25% + knockout is (correctly) empty.
-      // Optionally drop extra-time / penalty games (their scores are 120-min,
-      // so goals are inflated and shootouts read as draws).
-      const exclEt = $("et").value === "excl";
-      const base = exclEt ? baseMatches.filter(m => !m.et) : baseMatches;
-      const etDropped = exclEt ? baseMatches.filter(m => m.et).length : 0;
+      // Score basis: 90-min (default) uses the recovered regulation score so
+      // every game is comparable; Final uses the 120-min / decisive score.
+      const use90 = $("basis").value !== "final";
+      const base = baseMatches.map(m => {
+        const h = use90 && Number.isFinite(m.homeScore90) ? m.homeScore90 : m.homeScore;
+        const a = use90 && Number.isFinite(m.awayScore90) ? m.awayScore90 : m.awayScore;
+        return { ...m, homeScore: h, awayScore: a };
+      });
+      const nEt = base.filter(m => m.decidedBy && m.decidedBy !== "ft").length;
+      const basisNote = use90
+        ? (nEt ? " · 90' basis (" + nEt + " ET/pens adj.)" : "")
+        : " · final scores";
       const cut = completionCut(base, pct);
       let matches = st === "all" ? cut.slice() : cut.filter(m => m.stage === st);
       matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -962,7 +976,7 @@
 
       renderRankings(matches);
       renderMatches(matches, viewIsAll);
-      updateAsOfLabel(cut, matches, pct, etDropped);
+      updateAsOfLabel(cut, matches, pct, basisNote);
 
       $("updated").innerHTML = updatedLine + "<br>Checked: " +
         new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -1033,12 +1047,12 @@
     if (savedView) $("view").value = savedView;
     const savedOrient = localStorage.getItem(LS_ORIENT);
     if (savedOrient) $("orient").value = savedOrient;
-    const savedEt = localStorage.getItem(LS_ET);
-    if (savedEt) $("et").value = savedEt;
+    const savedBasis = localStorage.getItem(LS_BASIS);
+    if (savedBasis) $("basis").value = savedBasis;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
-    $("et").addEventListener("change", () => { store(LS_ET, $("et").value); render(); });
+    $("basis").addEventListener("change", () => { store(LS_BASIS, $("basis").value); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
