@@ -185,6 +185,12 @@
           <option value="knockout">Knockout</option>
         </select>
       </label>
+      <label class="ctl">Games
+        <select id="et" aria-label="Extra-time games">
+          <option value="excl">Full-time only</option>
+          <option value="incl">Incl. extra time</option>
+        </select>
+      </label>
     </div>
 
     <div class="datectl" id="datectl">
@@ -296,6 +302,7 @@
     const LS_FREQ = "wc-dashboard-freq";
     const LS_VIEW = "wc-dashboard-view";
     const LS_ORIENT = "wc-dashboard-orient";
+    const LS_ET = "wc-dashboard-et";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -331,12 +338,20 @@
     }
 
     // ---------- normalize ----------
-    // Keep finished matches, tagging each with its edition + stage.
+    // Extra-time / penalty games store the 120-min score (goals inflated; a
+    // shootout shows as a level score), so tag them to allow excluding them.
+    function extraTime(m) {
+      const s = m.status || "";
+      if (/penalt/i.test(s)) return "pens";
+      if (/extra time/i.test(s)) return "aet";
+      return "";
+    }
+    // Keep finished matches, tagging each with its edition + stage + ET flag.
     function normalize(payload, edKey) {
       const all = (payload && payload.matches) || [];
       return all
         .filter(m => m.completed && Number.isFinite(m.homeScore) && Number.isFinite(m.awayScore))
-        .map(m => ({ ...m, edition: edKey, stage: stageOf(m, edKey) }));
+        .map(m => ({ ...m, edition: edKey, stage: stageOf(m, edKey), et: extraTime(m) }));
     }
 
     // ---------- stats ----------
@@ -650,7 +665,7 @@
         const li = document.createElement("li");
         li.innerHTML =
           `<span class="home">${esc(m.home)}</span>` +
-          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}</span></span>` +
+          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}${m.et ? " · " + m.et : ""}</span></span>` +
           `<span class="away">${esc(m.away)}</span>`;
         frag.appendChild(li);
       }
@@ -883,10 +898,11 @@
 
     // `cut` = full-tournament completion set (defines the % and as-of date);
     // `matches` = what's shown after the stage filter.
-    function updateAsOfLabel(cut, matches, pct) {
+    function updateAsOfLabel(cut, matches, pct, etDropped) {
       const tag = pct >= 100 ? " (full)" : "";
+      const etNote = etDropped ? " · excl. " + etDropped + " ET/pens" : "";
       if (viewIsAll) {
-        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag;
+        $("asof-label").textContent = pct + "% of each tournament · " + matches.length + " matches" + tag + etNote;
         return;
       }
       let s = pct + "%";
@@ -897,7 +913,7 @@
       s += tag;
       const st = currentStage();
       if (st !== "all") s += " · " + matches.length + " " + st;   // make the stage count explicit
-      $("asof-label").textContent = s;
+      $("asof-label").textContent = s + etNote;
     }
 
     // Apply completion (vs the whole tournament) then the stage filter, and draw. No network.
@@ -907,7 +923,12 @@
       const st = currentStage();
       // Completion is measured against the FULL tournament(s); the stage filter then
       // selects within what's been played — so e.g. 25% + knockout is (correctly) empty.
-      const cut = completionCut(baseMatches, pct);
+      // Optionally drop extra-time / penalty games (their scores are 120-min,
+      // so goals are inflated and shootouts read as draws).
+      const exclEt = $("et").value === "excl";
+      const base = exclEt ? baseMatches.filter(m => !m.et) : baseMatches;
+      const etDropped = exclEt ? baseMatches.filter(m => m.et).length : 0;
+      const cut = completionCut(base, pct);
       let matches = st === "all" ? cut.slice() : cut.filter(m => m.stage === st);
       matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
@@ -941,7 +962,7 @@
 
       renderRankings(matches);
       renderMatches(matches, viewIsAll);
-      updateAsOfLabel(cut, matches, pct);
+      updateAsOfLabel(cut, matches, pct, etDropped);
 
       $("updated").innerHTML = updatedLine + "<br>Checked: " +
         new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -1012,9 +1033,12 @@
     if (savedView) $("view").value = savedView;
     const savedOrient = localStorage.getItem(LS_ORIENT);
     if (savedOrient) $("orient").value = savedOrient;
+    const savedEt = localStorage.getItem(LS_ET);
+    if (savedEt) $("et").value = savedEt;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
+    $("et").addEventListener("change", () => { store(LS_ET, $("et").value); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
