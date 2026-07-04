@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-04T17:30:03Z",
+  "updated": "2026-07-04T18:34:49Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1344,12 +1344,12 @@
       "homeAbbr": "CAN",
       "awayAbbr": "MAR",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "homeScore90": 0,
-      "awayScore90": 0,
+      "awayScore90": 1,
       "decidedBy": "ft",
       "completed": false,
-      "status": "First Half"
+      "status": "Second Half"
     },
     {
       "id": "760503",
