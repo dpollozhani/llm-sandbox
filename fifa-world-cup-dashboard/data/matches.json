@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-04T18:34:49Z",
+  "updated": "2026-07-04T19:53:20Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 90,
-  "finishedMatches": 88,
+  "finishedMatches": 89,
   "matches": [
     {
       "id": "760415",
@@ -1344,12 +1344,12 @@
       "homeAbbr": "CAN",
       "awayAbbr": "MAR",
       "homeScore": 0,
-      "awayScore": 1,
+      "awayScore": 3,
       "homeScore90": 0,
-      "awayScore90": 1,
+      "awayScore90": 3,
       "decidedBy": "ft",
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     },
     {
       "id": "760503",
