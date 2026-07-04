@@ -667,10 +667,19 @@
       }
       const frag = document.createDocumentFragment();
       for (const m of matches.slice(0, 80)) {
+        // Tag ET/pens games; for penalties show the shootout score (winner has the higher).
+        let tag = "";
+        if (m.decidedBy === "pens" && Number.isFinite(m.homeShootout) && Number.isFinite(m.awayShootout)) {
+          tag = " · pens " + m.homeShootout + "–" + m.awayShootout;
+        } else if (m.decidedBy === "aet" && Number.isFinite(m.finalHome)) {
+          tag = " · aet " + m.finalHome + "–" + m.finalAway;   // final (120') score reveals the winner
+        } else if (m.decidedBy && m.decidedBy !== "ft") {
+          tag = " · " + m.decidedBy;
+        }
         const li = document.createElement("li");
         li.innerHTML =
           `<span class="home">${esc(m.home)}</span>` +
-          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}${m.decidedBy && m.decidedBy !== "ft" ? " · " + m.decidedBy : ""}</span></span>` +
+          `<span class="score">${m.homeScore}–${m.awayScore}<span class="date">${esc(fmtDate(m.date, withYear))}${esc(tag)}</span></span>` +
           `<span class="away">${esc(m.away)}</span>`;
         frag.appendChild(li);
       }
@@ -936,7 +945,8 @@
       const base = baseMatches.map(m => {
         const h = use90 && Number.isFinite(m.homeScore90) ? m.homeScore90 : m.homeScore;
         const a = use90 && Number.isFinite(m.awayScore90) ? m.awayScore90 : m.awayScore;
-        return { ...m, homeScore: h, awayScore: a };
+        // keep the final (120') score so the match list can show the AET winner
+        return { ...m, homeScore: h, awayScore: a, finalHome: m.homeScore, finalAway: m.awayScore };
       });
       const nEt = base.filter(m => m.decidedBy && m.decidedBy !== "ft").length;
       const basisNote = use90
