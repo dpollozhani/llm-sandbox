@@ -58,9 +58,11 @@
       font-size: 12px; color: var(--muted);
     }
     .ctl select { font-size: 14px; padding: 8px 12px; }
-    .datectl { display: flex; align-items: center; gap: 10px; margin: -4px 0 14px; }
-    .datectl input[type=range] { flex: 1; accent-color: var(--accent); height: 26px; min-width: 0; }
-    .asof-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    /* Slider on its own row, label wraps beneath — so a changing label (e.g.
+       the score-basis note) never resizes/jumps the slider. */
+    .datectl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: -4px 0 14px; }
+    .datectl input[type=range] { flex: 1 1 100%; accent-color: var(--accent); height: 26px; min-width: 0; }
+    .asof-label { flex-basis: 100%; font-size: 12px; color: var(--muted); }
     .grow { flex: 1 1 auto; }
     .updated { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
 
