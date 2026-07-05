@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-04T22:58:00Z",
+  "updated": "2026-07-05T00:04:55Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,8 +7,8 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 90,
-  "finishedMatches": 89,
+  "totalMatches": 92,
+  "finishedMatches": 90,
   "matches": [
     {
       "id": "760415",
@@ -1363,8 +1363,38 @@
       "homeScore90": 0,
       "awayScore90": 1,
       "decidedBy": "ft",
+      "completed": true,
+      "status": "Full Time"
+    },
+    {
+      "id": "760504",
+      "date": "2026-07-05T20:00Z",
+      "home": "Brazil",
+      "away": "Norway",
+      "homeAbbr": "BRA",
+      "awayAbbr": "NOR",
+      "homeScore": 0,
+      "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
       "completed": false,
-      "status": "Second Half"
+      "status": "Scheduled"
+    },
+    {
+      "id": "760505",
+      "date": "2026-07-06T00:00Z",
+      "home": "Mexico",
+      "away": "England",
+      "homeAbbr": "MEX",
+      "awayAbbr": "ENG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
+      "completed": false,
+      "status": "Scheduled"
     }
   ]
 }
