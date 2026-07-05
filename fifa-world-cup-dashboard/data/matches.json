@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-05T20:56:55Z",
+  "updated": "2026-07-05T22:03:07Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1373,13 +1373,13 @@
       "away": "Norway",
       "homeAbbr": "BRA",
       "awayAbbr": "NOR",
-      "homeScore": 0,
-      "awayScore": 0,
-      "homeScore90": 0,
-      "awayScore90": 0,
+      "homeScore": 1,
+      "awayScore": 2,
+      "homeScore90": 1,
+      "awayScore90": 2,
       "decidedBy": "ft",
       "completed": false,
-      "status": "Halftime"
+      "status": "Second Half"
     },
     {
       "id": "760505",
