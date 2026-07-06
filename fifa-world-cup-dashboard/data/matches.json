@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-05T23:17:31Z",
+  "updated": "2026-07-06T01:14:13Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 92,
+  "totalMatches": 94,
   "finishedMatches": 91,
   "matches": [
     {
@@ -1383,11 +1383,41 @@
     },
     {
       "id": "760505",
-      "date": "2026-07-06T00:00Z",
+      "date": "2026-07-06T01:00Z",
       "home": "Mexico",
       "away": "England",
       "homeAbbr": "MEX",
       "awayAbbr": "ENG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
+      "completed": false,
+      "status": "First Half"
+    },
+    {
+      "id": "760506",
+      "date": "2026-07-06T19:00Z",
+      "home": "Portugal",
+      "away": "Spain",
+      "homeAbbr": "POR",
+      "awayAbbr": "ESP",
+      "homeScore": 0,
+      "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
+      "completed": false,
+      "status": "Scheduled"
+    },
+    {
+      "id": "760507",
+      "date": "2026-07-07T00:00Z",
+      "home": "United States",
+      "away": "Belgium",
+      "homeAbbr": "USA",
+      "awayAbbr": "BEL",
       "homeScore": 0,
       "awayScore": 0,
       "homeScore90": 0,
