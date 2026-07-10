@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-10T20:27:29Z",
+  "updated": "2026-07-10T21:35:30Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 98,
-  "finishedMatches": 97,
+  "finishedMatches": 98,
   "matches": [
     {
       "id": "760415",
@@ -1480,13 +1480,13 @@
       "away": "Belgium",
       "homeAbbr": "ESP",
       "awayAbbr": "BEL",
-      "homeScore": 1,
+      "homeScore": 2,
       "awayScore": 1,
-      "homeScore90": 1,
+      "homeScore90": 2,
       "awayScore90": 1,
       "decidedBy": "ft",
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     }
   ]
 }
