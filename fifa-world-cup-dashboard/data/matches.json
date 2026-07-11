@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-11T22:07:27Z",
+  "updated": "2026-07-11T23:10:23Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1501,7 +1501,7 @@
       "awayScore90": 1,
       "decidedBy": "ft",
       "completed": false,
-      "status": "Halftime"
+      "status": "Overtime"
     },
     {
       "id": "760513",
