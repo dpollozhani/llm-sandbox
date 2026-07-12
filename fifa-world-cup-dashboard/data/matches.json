@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-11T23:10:23Z",
+  "updated": "2026-07-12T00:10:30Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 100,
-  "finishedMatches": 98,
+  "finishedMatches": 99,
   "matches": [
     {
       "id": "760415",
@@ -1496,12 +1496,12 @@
       "homeAbbr": "NOR",
       "awayAbbr": "ENG",
       "homeScore": 1,
-      "awayScore": 1,
+      "awayScore": 2,
       "homeScore90": 1,
       "awayScore90": 1,
-      "decidedBy": "ft",
-      "completed": false,
-      "status": "Overtime"
+      "decidedBy": "aet",
+      "completed": true,
+      "status": "Final Score - After Extra Time"
     },
     {
       "id": "760513",
