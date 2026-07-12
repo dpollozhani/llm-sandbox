@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-12T00:10:30Z",
+  "updated": "2026-07-12T03:56:10Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 100,
-  "finishedMatches": 99,
+  "finishedMatches": 100,
   "matches": [
     {
       "id": "760415",
@@ -1510,13 +1510,13 @@
       "away": "Switzerland",
       "homeAbbr": "ARG",
       "awayAbbr": "SUI",
-      "homeScore": 0,
-      "awayScore": 0,
-      "homeScore90": 0,
-      "awayScore90": 0,
-      "decidedBy": "ft",
-      "completed": false,
-      "status": "Scheduled"
+      "homeScore": 3,
+      "awayScore": 1,
+      "homeScore90": 1,
+      "awayScore90": 1,
+      "decidedBy": "aet",
+      "completed": true,
+      "status": "Final Score - After Extra Time"
     }
   ]
 }
