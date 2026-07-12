@@ -668,7 +668,7 @@
         return;
       }
       const frag = document.createDocumentFragment();
-      for (const m of matches.slice(0, 80)) {
+      for (const m of matches) {
         // Tag ET/pens games; for penalties show the shootout score (winner has the higher).
         let tag = "";
         if (m.decidedBy === "pens" && Number.isFinite(m.homeShootout) && Number.isFinite(m.awayShootout)) {
