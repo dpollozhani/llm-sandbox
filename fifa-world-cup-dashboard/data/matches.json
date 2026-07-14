@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-14T00:07:42Z",
+  "updated": "2026-07-14T20:08:19Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1526,12 +1526,12 @@
       "homeAbbr": "FRA",
       "awayAbbr": "ESP",
       "homeScore": 0,
-      "awayScore": 0,
+      "awayScore": 1,
       "homeScore90": 0,
-      "awayScore90": 0,
+      "awayScore90": 1,
       "decidedBy": "ft",
       "completed": false,
-      "status": "Scheduled"
+      "status": "Second Half"
     }
   ]
 }
