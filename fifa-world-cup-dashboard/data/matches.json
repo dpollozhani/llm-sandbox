@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-14T20:08:19Z",
+  "updated": "2026-07-14T21:14:20Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -8,7 +8,7 @@
     "end": "2026-07-19"
   },
   "totalMatches": 101,
-  "finishedMatches": 100,
+  "finishedMatches": 101,
   "matches": [
     {
       "id": "760415",
@@ -1526,12 +1526,12 @@
       "homeAbbr": "FRA",
       "awayAbbr": "ESP",
       "homeScore": 0,
-      "awayScore": 1,
+      "awayScore": 2,
       "homeScore90": 0,
-      "awayScore90": 1,
+      "awayScore90": 2,
       "decidedBy": "ft",
-      "completed": false,
-      "status": "Second Half"
+      "completed": true,
+      "status": "Full Time"
     }
   ]
 }
