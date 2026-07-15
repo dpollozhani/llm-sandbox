@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-15T19:35:42Z",
+  "updated": "2026-07-15T20:41:30Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1540,13 +1540,13 @@
       "away": "Argentina",
       "homeAbbr": "ENG",
       "awayAbbr": "ARG",
-      "homeScore": 0,
+      "homeScore": 1,
       "awayScore": 0,
-      "homeScore90": 0,
+      "homeScore90": 1,
       "awayScore90": 0,
       "decidedBy": "ft",
       "completed": false,
-      "status": "First Half"
+      "status": "Second Half"
     }
   ]
 }
