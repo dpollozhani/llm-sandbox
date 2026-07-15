@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-15T03:33:05Z",
+  "updated": "2026-07-15T19:35:42Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -1546,7 +1546,7 @@
       "awayScore90": 0,
       "decidedBy": "ft",
       "completed": false,
-      "status": "Scheduled"
+      "status": "First Half"
     }
   ]
 }
