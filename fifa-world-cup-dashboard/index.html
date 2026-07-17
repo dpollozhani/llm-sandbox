@@ -221,6 +221,13 @@
     html[data-theme="xp"] input[type=range] { accent-color: #1c50c8; }
     html[data-theme="xp"] footer { color: #e6eefb; }
     html[data-theme="xp"] a { color: #08319c; }
+    /* re-tint chart accents drawn via CSS classes */
+    html[data-theme="xp"] .cum-line { stroke: #c00000; }
+    html[data-theme="xp"] .cum-dot { fill: #c00000; }
+    html[data-theme="xp"] .cum-label { fill: #800000; }
+    html[data-theme="xp"] .guide, html[data-theme="xp"] .ref-line { stroke: #000080; }
+    html[data-theme="xp"] .guide-label, html[data-theme="xp"] .ref-label { fill: #000080; }
+    html[data-theme="xp"] .avg-dot { stroke: #000; }
   </style>
 </head>
 <body>
@@ -423,6 +430,24 @@
       if (t === "xp") document.documentElement.setAttribute("data-theme", "xp");
       else document.documentElement.removeAttribute("data-theme");
     }
+    // Chart colours per skin. Classic uses the VGA/Win-16 palette (teal, navy,
+    // olive, maroon, green) that reads on the silver window face.
+    const PALETTES = {
+      modern: {
+        goals: "#4cc9f0", scores: "#f7b801", green: "#5ad19b", red: "#ff7a7a", all: "#8ea2d6",
+        out: { win: "#5ad19b", draw: "#4cc9f0", loss: "#ff7a7a", decisive: "#f7b801", other: "#6b7699" },
+        ed: { "2018": "#4cc9f0", "2022": "#f7b801", "2026": "#ff5d8f" },
+        heatGoals: "76,201,240", heatScores: "247,184,1",
+      },
+      xp: {
+        goals: "#008080", scores: "#800000", green: "#008000", red: "#c00000", all: "#606060",
+        out: { win: "#008000", draw: "#000080", loss: "#c00000", decisive: "#808000", other: "#808080" },
+        ed: { "2018": "#000080", "2022": "#808000", "2026": "#008080" },
+        heatGoals: "0,128,128", heatScores: "128,0,128",
+      },
+    };
+    function pal() { return document.documentElement.getAttribute("data-theme") === "xp" ? PALETTES.xp : PALETTES.modern; }
+    function edColor(k) { return pal().ed[k] || "#98a2c8"; }
 
     function currentEdition() {
       const v = $("edition").value;
@@ -527,7 +552,7 @@
       const gap = ((W - 40) - barW * n) / Math.max(1, n + 1);
       const H = top + plotH + bottom;
       const max = Math.max(...entries.map(e => e.value));
-      const color = opts.color || "#4cc9f0";
+      const color = opts.color || pal().goals;
 
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
       svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -635,7 +660,7 @@
 
     function renderGoalsChart(ms, relative) {
       const entries = goalsEntries(ms); const total = ms.length;
-      renderBarChart("chart-goals", entries, { color: "#4cc9f0", total, relative, cumulative: true, guide80: relative });
+      renderBarChart("chart-goals", entries, { color: pal().goals, total, relative, cumulative: true, guide80: relative });
       $("sub-goals").textContent = total
         ? "Total goals per game · 80% of games have ≤ " + goals80(entries, total) + " goals · line = cumulative " + (relative ? "%." : "count.")
         : "How many matches finished with each total number of goals.";
@@ -643,7 +668,7 @@
 
     function renderScoresChart(ms, relative, oriented) {
       const { sorted, total } = scoresSorted(ms, oriented);
-      renderBarChart("chart-scores", scoreBarEntries(sorted), { color: "#f7b801", total, relative, cumulative: true, guide80: relative });
+      renderBarChart("chart-scores", scoreBarEntries(sorted), { color: pal().scores, total, relative, cumulative: true, guide80: relative });
       const lens = oriented ? "favourite→underdog" : "order-independent";
       $("sub-scores").textContent = total
         ? "Scorelines (" + lens + ") · 80% are the " + topK80(sorted, total) + " most common · line = cumulative " + (relative ? "%." : "count.")
@@ -662,12 +687,11 @@
         wrap.innerHTML = `<div class="sm-head">${esc(g.b.name)}<span>gap ${esc(g.b.label)} · n=${total} · 80% ≤ ${esc(goals80(entries, total))} goals</span></div>`;
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "chart");
         wrap.appendChild(svg); cont.appendChild(wrap);
-        renderBarChartEl(svg, entries, { color: "#4cc9f0", total, relative, cumulative: true, guide80: relative, compact: true });
+        renderBarChartEl(svg, entries, { color: pal().goals, total, relative, cumulative: true, guide80: relative, compact: true });
       }
     }
     // Outcome colour for a scoreline bar (gap-split only). Favourite-oriented keys
     // map cleanly to win/draw/loss; order-independent can only tell draw vs decisive.
-    const OUT_COLORS = { win: "#5ad19b", draw: "#4cc9f0", loss: "#ff7a7a", decisive: "#f7b801", other: "#6b7699" };
     function scoreOutcome(label, oriented) {
       if (label === "Other") return "other";
       const p = label.split("–"); const a = +p[0], b = +p[1];
@@ -680,8 +704,8 @@
       const el = $("legend-scores-split");
       const chip = (c, t) => `<span><i style="background:${c}"></i>${t}</span>`;
       el.innerHTML = oriented
-        ? chip(OUT_COLORS.win, "Favourite win") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.loss, "Favourite loss") + chip(OUT_COLORS.other, "Other")
-        : chip(OUT_COLORS.decisive, "Decisive") + chip(OUT_COLORS.draw, "Draw") + chip(OUT_COLORS.other, "Other");
+        ? chip(pal().out.win, "Favourite win") + chip(pal().out.draw, "Draw") + chip(pal().out.loss, "Favourite loss") + chip(pal().out.other, "Other")
+        : chip(pal().out.decisive, "Decisive") + chip(pal().out.draw, "Draw") + chip(pal().out.other, "Other");
     }
     function renderScoresSplit(ms, relative, oriented) {
       $("sub-scores").textContent = "By ranking gap (" + (oriented ? "favourite→underdog" : "order-independent") + ") — bars coloured by outcome so you can see the mix rotate.";
@@ -691,12 +715,12 @@
       if (!groups.length) { cont.innerHTML = `<p class="empty" style="grid-column:1/-1">No ranking data for this filter.</p>`; return; }
       for (const g of groups) {
         const { sorted, total } = scoresSorted(g.list, oriented);
-        const entries = scoreBarEntries(sorted).map(e => ({ ...e, color: OUT_COLORS[scoreOutcome(e.label, oriented)] }));
+        const entries = scoreBarEntries(sorted).map(e => ({ ...e, color: pal().out[scoreOutcome(e.label, oriented)] }));
         const wrap = document.createElement("div"); wrap.className = "sm";
         wrap.innerHTML = `<div class="sm-head">${esc(g.b.name)}<span>gap ${esc(g.b.label)} · n=${total} · 80% = top ${topK80(sorted, total)}</span></div>`;
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "chart");
         wrap.appendChild(svg); cont.appendChild(wrap);
-        renderBarChartEl(svg, entries, { color: "#f7b801", total, relative, cumulative: true, guide80: relative, compact: true });
+        renderBarChartEl(svg, entries, { color: pal().scores, total, relative, cumulative: true, guide80: relative, compact: true });
       }
     }
 
@@ -757,7 +781,7 @@
         });
         return { label: rowLabel(k), n, cells };
       });
-      buildHeatTable("heat-goals", goalCols.map(String), goalRows, "76,201,240");
+      buildHeatTable("heat-goals", goalCols.map(String), goalRows, pal().heatGoals);
 
       // Scorelines: every distinct scoreline as a column, ordered by combined
       // frequency (Pareto order) so each row's cumulative Σ reaches 100%.
@@ -774,7 +798,7 @@
         });
         return { label: rowLabel(k), n: ranked, cells };
       });
-      buildHeatTable("heat-scores", allScores, scoreRows, "247,184,1");
+      buildHeatTable("heat-scores", allScores, scoreRows, pal().heatScores);
     }
 
     function renderMatches(matches, withYear) {
@@ -868,7 +892,7 @@
       const barW = Math.min(72, slot * 0.58);
       const yMax = opts.yMax || (Math.max(...entries.map(e => e.value || 0), 1) * 1.18);
       const yOf = v => top + plotH - (v / yMax) * plotH;
-      const color = opts.color || "#4cc9f0";
+      const color = opts.color || pal().goals;
 
       const parts = [`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`];
       if (opts.ref != null) {
@@ -924,7 +948,7 @@
       const allM = allMargin >= 0 ? "+" + allMargin.toFixed(1) : allMargin.toFixed(1);
       const allPct = total ? 100 * allWins / total : 0;
       entries.push({
-        label: "All", value: allPct, n: total, color: "#8ea2d6",
+        label: "All", value: allPct, n: total, color: pal().all,
         top: total ? Math.round(allPct) + "%" : "",
         foot: total ? total + " games · margin " + allM : "",
       });
@@ -932,7 +956,7 @@
         ? "Higher-ranked team’s win rate, by ranking gap · " + total + " matches."
         : "Higher-ranked team’s win rate, by ranking gap.";
       renderRankBars("chart-rank-outcome", entries, {
-        color: "#5ad19b", yMax: 100, ref: 50, refLabel: "50% coin-flip",
+        color: pal().green, yMax: 100, ref: 50, refLabel: "50% coin-flip",
         separatorBefore: entries.length - 1, empty: "No ranking data for this filter.",
       });
     }
@@ -964,12 +988,11 @@
         ? "Lower-ranked team won, gap ≥ " + UPSET_MIN_GAP + " places · " + totalUp + " upsets."
         : "Lower-ranked team won by a ranking gap of at least " + UPSET_MIN_GAP + " places.";
       renderRankBars("chart-rank-upsets", entries, {
-        color: "#ff7a7a", empty: "No ranking data for this filter.",
+        color: pal().red, empty: "No ranking data for this filter.",
       });
     }
 
     // ---------- ranking vs tournament progress ----------
-    const ED_COLORS = { "2018": "#4cc9f0", "2022": "#f7b801", "2026": "#ff5d8f" };
 
     // Which team advanced from a knockout match (decisive/final score, then shootout).
     function advancer(m) {
@@ -1043,7 +1066,7 @@
 
     function buildProgressLegend(eds, showChamp, showAlive) {
       const el = $("legend-progress");
-      el.innerHTML = eds.map(k => `<span><i style="background:${ED_COLORS[k] || "#98a2c8"}"></i>${esc(EDITIONS[k].label)}</span>`).join("")
+      el.innerHTML = eds.map(k => `<span><i style="background:${edColor(k)}"></i>${esc(EDITIONS[k].label)}</span>`).join("")
         + (showChamp ? `<span><i style="background:#e8ecf8;border-radius:50%"></i>★ champion</span>` : "")
         + (showAlive ? `<span><i style="background:transparent;border:2px solid #98a2c8;border-radius:50%"></i>still competing</span>` : "");
     }
@@ -1075,7 +1098,7 @@
           const pct = n ? 100 * hit / n : 0;
           return { label: t.label, value: pct, n, top: n ? Math.round(pct) + "%" : "", foot: n ? hit + " of " + n : "" };
         });
-        renderRankBars("chart-progress", entries, { color: "#5ad19b", yMax: 100, empty: "No ranking data for this filter." });
+        renderRankBars("chart-progress", entries, { color: pal().green, yMax: 100, empty: "No ranking data for this filter." });
       } else {
         $("tiermilestone-ctl").classList.add("hidden");
         $("legend-progress").classList.remove("hidden");
@@ -1120,14 +1143,14 @@
         const cy = yOf(Math.min(1, Math.max(0, baseV + jit(p.name + p.ed + "y") * rowH * 0.5)));
         if (p.champion) { champs.push([cx, cy, p]); continue; }
         if (p.alive) { alives.push([cx, cy, p]); continue; }
-        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.7"/>`);
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${edColor(p.ed)}" fill-opacity="0.7"/>`);
       }
       // still-competing teams: hollow rings (they may yet go further)
       for (const [cx, cy, p] of alives) {
-        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="none" stroke="${ED_COLORS[p.ed] || "#98a2c8"}" stroke-width="2"/>`);
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="none" stroke="${edColor(p.ed)}" stroke-width="2"/>`);
       }
       for (const [cx, cy, p] of champs) {
-        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="${ED_COLORS[p.ed] || "#98a2c8"}" stroke="#e8ecf8" stroke-width="2"/>`);
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="${edColor(p.ed)}" stroke="#e8ecf8" stroke-width="2"/>`);
         parts.push(`<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" text-anchor="middle" style="font-size:13px" fill="#e8ecf8">★</text>`);
       }
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -1362,7 +1385,7 @@
     $("basis").addEventListener("change", () => { store(LS_BASIS, $("basis").value); render(); });
     $("progressview").addEventListener("change", () => { store(LS_PROGVIEW, $("progressview").value); render(); });
     $("tiermilestone").addEventListener("change", () => { store(LS_MILESTONE, $("tiermilestone").value); render(); });
-    $("theme").addEventListener("change", () => { store(LS_THEME, $("theme").value); applyTheme($("theme").value); });
+    $("theme").addEventListener("change", () => { store(LS_THEME, $("theme").value); applyTheme($("theme").value); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
