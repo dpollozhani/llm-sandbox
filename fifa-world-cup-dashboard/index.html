@@ -272,7 +272,7 @@
       <p class="sub" id="sub-progress">Each dot is a team: seeding (pre-tournament FIFA rank) vs how far it went.</p>
       <div class="sm-legend" id="legend-progress"></div>
       <svg id="chart-progress" class="chart" role="img" aria-label="Seeding versus tournament progress per team"></svg>
-      <p class="note" id="note-progress">Progress is knockout rounds survived (3rd-place playoff excluded), normalised so the champion = 100%. ★ = champion. If ranking predicted results, dots would trend up to the left.</p>
+      <p class="note" id="note-progress">Progress = how far into the fixture list a team lasted (games are indexed by date; a team's last game ÷ the final's index), so the two finalists sit at 100% and group teams around where their last group game falls. ★ = champion. If ranking predicted results, dots would trend up toward the left.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -872,47 +872,33 @@
       return null;
     }
 
-    // Per team: seeding percentile (0 = top seed) and normalised progress (1 = champion).
-    // Editions whose knockout data doesn't reconstruct to a single champion (e.g. an
-    // in-progress or non-standard bracket) are omitted so the chart stays honest.
+    // Per team: seeding percentile (0 = top seed) and progress = how far into the
+    // fixture list it lasted. Index every game by date ascending; a team's progress
+    // is the index of its LAST game / the tournament's last index (the final = 1.0).
+    // Robust to any format (best-thirds, byes) and to live/in-progress data.
     function progressPoints(full) {
       const eds = ALL_KEYS.filter(k => full.some(m => m.edition === k));
-      const pts = [], shown = [], omitted = [];
+      const pts = [], shown = [];
       for (const ed of eds) {
-        const list = full.filter(m => m.edition === ed);
+        const list = full.filter(m => m.edition === ed).slice()
+          .sort((a, b) => (a.date || "").localeCompare(b.date || "") || String(a.id).localeCompare(String(b.id)));
+        if (list.length < 2) continue;
+        const maxIdx = list.length - 1;
+        const lastIdx = {};
+        list.forEach((m, i) => { lastIdx[m.home] = i; lastIdx[m.away] = i; });
+        const champ = advancer(list[maxIdx]);   // winner of the last game
         const ranks = RANKINGS[ed] || {};
-        const teams = new Set();
-        list.forEach(m => { teams.add(m.home); teams.add(m.away); });
-        const ranked = [...teams].filter(t => Number.isFinite(ranks[t])).sort((a, b) => ranks[a] - ranks[b]);
+        const teams = Object.keys(lastIdx);
+        const ranked = teams.filter(t => Number.isFinite(ranks[t])).sort((a, b) => ranks[a] - ranks[b]);
         const N = ranked.length, seed = {};
         ranked.forEach((t, i) => { seed[t] = N > 1 ? i / (N - 1) : 0; });   // 0 = best seed
-        // knockout advances, excluding the 3rd-place playoff (both teams already lost)
-        const ge = EDITIONS[ed].groupEnd;
-        const ko = list.filter(m => (m.date || "").slice(0, 10) > ge)
-          .sort((a, b) => (a.date || "").localeCompare(b.date || "") || String(a.id).localeCompare(String(b.id)));
-        const lost = new Set(), adv = {}, reached = new Set();
-        let final = null;
-        for (const m of ko) {
-          reached.add(m.home); reached.add(m.away);
-          const w = advancer(m); if (!w) continue;
-          const l = w === m.home ? m.away : m.home;
-          if (!(lost.has(m.home) && lost.has(m.away))) { adv[w] = (adv[w] || 0) + 1; final = m; }
-          lost.add(l);
-        }
-        const champ = final ? advancer(final) : null;
-        const R = champ ? (adv[champ] || 0) : 0;
-        // clean bracket = exactly one team reaches the deepest run (the champion)
-        const atTop = champ ? [...teams].filter(t => t !== champ && (adv[t] || 0) >= R).length : 1;
-        if (!champ || R < 2 || atTop !== 0) { omitted.push(ed); continue; }
-        const denom = R + 1;
         for (const t of teams) {
           if (!(t in seed)) continue;
-          const yRaw = reached.has(t) ? (adv[t] || 0) + 1 : 0;
-          pts.push({ ed, name: t, x: seed[t], y: yRaw / denom, champion: t === champ });
+          pts.push({ ed, name: t, x: seed[t], y: lastIdx[t] / maxIdx, champion: t === champ });
         }
         shown.push(ed);
       }
-      return { pts, eds: shown, omitted };
+      return { pts, eds: shown };
     }
 
     function buildProgressLegend(eds) {
@@ -924,24 +910,24 @@
     function renderProgress(full) {
       const svg = $("chart-progress");
       if (!RANKINGS) { svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">Rankings unavailable.</text>`; return; }
-      const { pts, eds, omitted } = progressPoints(full);
+      const { pts, eds } = progressPoints(full);
       buildProgressLegend(eds);
-      const omitNote = omitted.length ? " " + omitted.map(k => EDITIONS[k].label).join(", ") + " omitted (bracket not yet a clean single-elimination)." : "";
-      $("sub-progress").textContent = "Each dot is a team: seeding (pre-tournament FIFA rank) vs how far it went." + omitNote;
+      $("sub-progress").textContent = "Each dot is a team: seeding (pre-tournament FIFA rank) vs how far it lasted — the share of the tournament's fixtures played by the time it went out (the final = 100%).";
       svg.innerHTML = "";
-      if (!pts.length) { svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">${omitted.length ? "No clean-bracket edition to show yet." : "No data for this filter."}</text>`; return; }
+      if (!pts.length) { svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No data for this filter.</text>`; return; }
       const W = 700, left = 40, right = 18, top = 16, plotH = 240, bottom = 46, H = top + plotH + bottom;
+      // zoom the y-axis to the data (every team plays the group, so nothing sits low)
+      const yLo = Math.max(0, Math.min(...pts.map(p => p.y)) - 0.04), yHi = 1;
       const xOf = v => left + v * (W - left - right);
-      const yOf = v => top + plotH - v * plotH;
+      const yOf = v => top + plotH - ((v - yLo) / ((yHi - yLo) || 1)) * plotH;
       const parts = [];
       parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
       parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
-      // y guide bands (approx stages for a 32-team bracket)
-      const bands = [[0, "Group"], [0.2, "R16"], [0.4, "QF"], [0.6, "SF"], [0.8, "Final"], [1, "Winner"]];
-      for (const [v, lab] of bands) {
-        const y = yOf(v);
+      // y guides: share of fixtures survived (100% = reached the final)
+      for (let i = 0; i <= 4; i++) {
+        const v = yLo + (yHi - yLo) * i / 4, y = yOf(v);
         parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
-        parts.push(`<text class="axis-label" x="${left - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${lab}</text>`);
+        parts.push(`<text class="axis-label" x="${left - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${v >= 0.999 ? "Final" : Math.round(v * 100) + "%"}</text>`);
       }
       parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 34).toFixed(1)}" text-anchor="middle">Top seed → bottom seed (by FIFA rank)</text>`);
       // points (jittered), champions drawn last on top with a ring + star
