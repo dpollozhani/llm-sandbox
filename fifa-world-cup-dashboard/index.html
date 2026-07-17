@@ -308,10 +308,18 @@
     // Tournament editions -> data file. 2026 keeps its original filename.
     // groupEnd = last day of the group stage; matches after it are knockout.
     const EDITIONS = {
-      "2026": { file: "matches.json", label: "2026", live: true, groupEnd: "2026-06-27" },
-      "2022": { file: "2022.json", label: "2022", live: false, groupEnd: "2022-12-02" },
-      "2018": { file: "2018.json", label: "2018", live: false, groupEnd: "2018-06-28" },
+      "2026": { file: "matches.json", label: "2026", end: "2026-07-19", groupEnd: "2026-06-27" },
+      "2022": { file: "2022.json", label: "2022", end: "2022-12-18", groupEnd: "2022-12-02" },
+      "2018": { file: "2018.json", label: "2018", end: "2018-07-15", groupEnd: "2018-06-28" },
     };
+    // An edition is "in progress" until its end date has passed (client's local date),
+    // so the live flag / champion suppression clear themselves once the final is done.
+    function isLive(edKey) {
+      const ed = EDITIONS[edKey];
+      if (!ed || !ed.end) return false;
+      const today = new Date().toISOString().slice(0, 10);
+      return today <= ed.end;
+    }
     const ALL_KEYS = ["2018", "2022", "2026"];
     const LS_EDITION = "wc-dashboard-edition";
     const LS_STAGE = "wc-dashboard-stage";
@@ -909,13 +917,13 @@
         const vals = Object.values(games);
         const minG = Math.min(...vals), maxG = Math.max(...vals), span = (maxG - minG) || 1;
         // No champion for a live/in-progress edition — the final hasn't been played.
-        const champ = EDITIONS[ed].live ? null : advancer(list[list.length - 1]);
+        const champ = isLive(ed) ? null : advancer(list[list.length - 1]);
         const ranks = RANKINGS[ed] || {};
         for (const t of Object.keys(games)) {
           const rank = ranks[t];
           if (!Number.isFinite(rank)) continue;
           const progress = Math.min(1, Math.max(0, (games[t] - minG) / span));
-          pts.push({ ed, name: t, rank, progress, champion: t === champ, live: !!EDITIONS[ed].live });
+          pts.push({ ed, name: t, rank, progress, champion: t === champ, live: isLive(ed) });
         }
         shown.push(ed);
       }
@@ -941,7 +949,8 @@
       if (!RANKINGS) { $("legend-progress").classList.add("hidden"); svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">Rankings unavailable.</text>`; return; }
       const { pts, eds } = progressPoints(full);
       const mode = $("progressview").value;      // "tiers" | "teams"
-      const liveNote = pts.some(p => p.live) ? " 2026 is in progress." : "";
+      const liveEds = [...new Set(pts.filter(p => p.live).map(p => EDITIONS[p.ed].label))];
+      const liveNote = liveEds.length ? " " + liveEds.join(", ") + " in progress (no champion yet)." : "";
       if (!pts.length) { $("legend-progress").classList.add("hidden"); svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No data for this filter.</text>`; return; }
       if (mode === "tiers") {
         $("legend-progress").classList.add("hidden");
@@ -1184,7 +1193,7 @@
           const ed = EDITIONS[key];
           const r = await fetchEdition(key);
           matches = r.matches;
-          $("subtitle").textContent = "Accumulated results · " + ed.label + (ed.live ? " · live" : "");
+          $("subtitle").textContent = "Accumulated results · " + ed.label + (isLive(key) ? " · live" : "");
           updatedLine = "Data: " + esc(fmtUpdated(r.payload.updated));
         }
         baseMatches = matches;
