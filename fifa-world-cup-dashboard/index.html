@@ -155,6 +155,72 @@
     .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 18px 0; }
     footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 20px; line-height: 1.6; }
     a { color: var(--accent); }
+
+    /* ===================== Windows XP / 2000 skin ===================== */
+    html[data-theme="xp"] {
+      --bg: #3a6ea5; --panel: #ece9d8; --panel-2: #ffffff; --ink: #0b0b0b;
+      --muted: #3a3a3a; --accent: #0a246a; --accent-2: #c56a00; --line: #aca899; --radius: 0px;
+    }
+    html[data-theme="xp"] body {
+      background: #3a6ea5;
+      font-family: Tahoma, "MS Sans Serif", Verdana, Geneva, sans-serif;
+      color: #0b0b0b;
+    }
+    /* raised 3D chrome shared by windows + toolbars */
+    html[data-theme="xp"] header.app,
+    html[data-theme="xp"] .panel,
+    html[data-theme="xp"] .toolbar,
+    html[data-theme="xp"] .controls,
+    html[data-theme="xp"] .viewbar,
+    html[data-theme="xp"] .datectl {
+      background: #ece9d8; border: 2px solid; border-color: #ffffff #808080 #808080 #ffffff;
+      box-shadow: 1px 1px 0 #000; border-radius: 0;
+    }
+    html[data-theme="xp"] .toolbar,
+    html[data-theme="xp"] .controls,
+    html[data-theme="xp"] .viewbar,
+    html[data-theme="xp"] .datectl { padding: 8px 10px; }
+    html[data-theme="xp"] header.app { padding: 0; overflow: hidden; gap: 0; }
+    html[data-theme="xp"] header.app .logo {
+      border-radius: 0; box-shadow: none; margin: 6px; width: 34px; height: 34px;
+      background: linear-gradient(135deg, #2a58c0, #8fb7ff);
+    }
+    html[data-theme="xp"] header.app > div { padding: 6px 8px; }
+    html[data-theme="xp"] header.app h1 { color: #0a246a; }
+    /* window title bars from each panel heading */
+    html[data-theme="xp"] .panel { padding: 0 12px 12px; }
+    html[data-theme="xp"] .panel h2 {
+      margin: 0 -12px 10px; padding: 4px 8px;
+      background: linear-gradient(180deg, #3b82f0 0%, #1c50c8 100%);
+      color: #fff; font-weight: 700; font-size: 13px;
+    }
+    html[data-theme="xp"] .panel .sub, html[data-theme="xp"] .note { color: #3a3a3a; }
+    /* classic raised buttons + sunken inputs */
+    html[data-theme="xp"] button {
+      background: #ece9d8; color: #000; border: 2px solid; border-color: #ffffff #808080 #808080 #ffffff;
+      border-radius: 0; font-weight: 400; padding: 4px 14px; box-shadow: 1px 1px 0 #000;
+    }
+    html[data-theme="xp"] button:active { border-color: #808080 #ffffff #ffffff #808080; box-shadow: none; transform: none; }
+    html[data-theme="xp"] select {
+      background: #fff; color: #000; border: 2px solid; border-color: #808080 #ffffff #ffffff #808080;
+      border-radius: 0; font-weight: 400;
+    }
+    html[data-theme="xp"] .card {
+      background: #fff; border: 2px solid; border-color: #808080 #ffffff #ffffff #808080; border-radius: 0;
+    }
+    html[data-theme="xp"] .card .k { color: #3a3a3a; }
+    html[data-theme="xp"] .card .v { color: #0a246a; }
+    html[data-theme="xp"] .viewbar-title { color: #0a246a; }
+    html[data-theme="xp"] .updated, html[data-theme="xp"] .asof-label { color: #3a3a3a; }
+    html[data-theme="xp"] .status.info { background: #ffffe1; color: #000; border: 1px solid #808080; box-shadow: 1px 1px 0 #000; }
+    html[data-theme="xp"] .status.err { background: #ffd7d7; color: #7a0000; border: 1px solid #a00000; }
+    html[data-theme="xp"] .matches li { border-bottom: 1px solid #c8c4b7; }
+    html[data-theme="xp"] .matches .score {
+      background: #fff; border: 2px solid; border-color: #808080 #fff #fff #808080; border-radius: 0;
+    }
+    html[data-theme="xp"] input[type=range] { accent-color: #1c50c8; }
+    html[data-theme="xp"] footer { color: #e6eefb; }
+    html[data-theme="xp"] a { color: #08319c; }
   </style>
 </head>
 <body>
@@ -191,6 +257,12 @@
         <select id="basis" aria-label="Score basis">
           <option value="90">90 min</option>
           <option value="final">Final (incl. ET)</option>
+        </select>
+      </label>
+      <label class="ctl">Skin
+        <select id="theme" aria-label="Skin">
+          <option value="modern">Modern</option>
+          <option value="xp">Windows XP</option>
         </select>
       </label>
     </div>
@@ -286,7 +358,7 @@
       </label>
       <div class="sm-legend hidden" id="legend-progress"></div>
       <svg id="chart-progress" class="chart" role="img" aria-label="Tournament progress by ranking"></svg>
-      <p class="note" id="note-progress">Rows are the stage each team reached (48-team cups add a Round of 32), derived from knockout games played (3rd-place playoff excluded). ★ = champion; a hollow ring = still competing. In-progress editions show no champion, and teams sit at the furthest round they've played so far.</p>
+      <p class="note hidden" id="note-progress">★ champion · hollow ring = still competing.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -346,6 +418,11 @@
     const LS_BASIS = "wc-dashboard-basis";
     const LS_PROGVIEW = "wc-dashboard-progview";
     const LS_MILESTONE = "wc-dashboard-milestone";
+    const LS_THEME = "wc-dashboard-theme";
+    function applyTheme(t) {
+      if (t === "xp") document.documentElement.setAttribute("data-theme", "xp");
+      else document.documentElement.removeAttribute("data-theme");
+    }
 
     function currentEdition() {
       const v = $("edition").value;
@@ -991,6 +1068,7 @@
           final: "reached the final",
         };
         $("sub-progress").textContent = "Share of each FIFA-ranking tier that " + MS[ms] + "." + liveNote;
+        $("note-progress").classList.add("hidden");
         const entries = RANK_TIERS.map(t => {
           const sub = pts.filter(p => p.rank >= t.lo && p.rank <= t.hi);
           const n = sub.length, hit = sub.filter(p => p[ms]).length;
@@ -1003,6 +1081,8 @@
         $("legend-progress").classList.remove("hidden");
         buildProgressLegend(eds, pts.some(p => p.champion), pts.some(p => p.alive));
         $("sub-progress").textContent = "Each dot is a team: FIFA ranking (1 = best, on the left) vs the stage it reached." + liveNote;
+        $("note-progress").classList.remove("hidden");
+        $("note-progress").textContent = "★ champion · hollow ring = still competing.";
         renderProgressScatter(svg, pts);
       }
     }
@@ -1274,12 +1354,15 @@
     if (savedProgView) $("progressview").value = savedProgView;
     const savedMilestone = localStorage.getItem(LS_MILESTONE);
     if (savedMilestone) $("tiermilestone").value = savedMilestone;
+    const savedTheme = localStorage.getItem(LS_THEME);
+    if (savedTheme) { $("theme").value = savedTheme; applyTheme(savedTheme); }
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("basis").addEventListener("change", () => { store(LS_BASIS, $("basis").value); render(); });
     $("progressview").addEventListener("change", () => { store(LS_PROGVIEW, $("progressview").value); render(); });
     $("tiermilestone").addEventListener("change", () => { store(LS_MILESTONE, $("tiermilestone").value); render(); });
+    $("theme").addEventListener("change", () => { store(LS_THEME, $("theme").value); applyTheme($("theme").value); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
