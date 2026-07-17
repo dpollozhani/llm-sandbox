@@ -103,7 +103,7 @@
     .sm { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 6px; }
     .sm-head { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
     .sm-head span { display: block; font-weight: 600; color: var(--muted); font-size: 11px; margin-top: 1px; }
-    #orient-ctl { margin: 0 0 12px; }
+    #orient-ctl, #progressview-ctl { margin: 0 0 12px; }
     .sm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
     .sm-legend span { display: inline-flex; align-items: center; gap: 6px; }
     .sm-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
@@ -269,10 +269,16 @@
 
     <section class="panel" id="panel-progress">
       <h2>Ranking vs how far teams go</h2>
-      <p class="sub" id="sub-progress">Each dot is a team: seeding (pre-tournament FIFA rank) vs how far it went.</p>
-      <div class="sm-legend" id="legend-progress"></div>
-      <svg id="chart-progress" class="chart" role="img" aria-label="Seeding versus tournament progress per team"></svg>
-      <p class="note" id="note-progress">Progress = knockout rounds survived, measured by games played (3rd-place playoff excluded) and normalised so a group exit = 0 and the two finalists = 100%. Teams knocked out in the same round share a level, whichever day they went out. ★ = champion. If ranking predicted results, dots would trend up toward the left.</p>
+      <p class="sub" id="sub-progress">How far teams get, by ranking.</p>
+      <label class="ctl" id="progressview-ctl">View
+        <select id="progressview" aria-label="Progress view">
+          <option value="tiers">By ranking tier</option>
+          <option value="teams">Per team</option>
+        </select>
+      </label>
+      <div class="sm-legend hidden" id="legend-progress"></div>
+      <svg id="chart-progress" class="chart" role="img" aria-label="Tournament progress by ranking"></svg>
+      <p class="note" id="note-progress">Progress = knockout rounds survived, from games played (3rd-place playoff excluded) and normalised so a group exit = 0 and the two finalists = 100%. Teams out in the same round share a level, whichever day they went out. In-progress editions have no champion.</p>
     </section>
 
     <section class="panel" id="panel-rank-upsets">
@@ -313,6 +319,7 @@
     const LS_VIEW = "wc-dashboard-view";
     const LS_ORIENT = "wc-dashboard-orient";
     const LS_BASIS = "wc-dashboard-basis";
+    const LS_PROGVIEW = "wc-dashboard-progview";
 
     function currentEdition() {
       const v = $("edition").value;
@@ -901,56 +908,83 @@
         }
         const vals = Object.values(games);
         const minG = Math.min(...vals), maxG = Math.max(...vals), span = (maxG - minG) || 1;
-        const champ = advancer(list[list.length - 1]);   // winner of the last game
+        // No champion for a live/in-progress edition — the final hasn't been played.
+        const champ = EDITIONS[ed].live ? null : advancer(list[list.length - 1]);
         const ranks = RANKINGS[ed] || {};
-        const teams = Object.keys(games);
-        const ranked = teams.filter(t => Number.isFinite(ranks[t])).sort((a, b) => ranks[a] - ranks[b]);
-        const N = ranked.length, seed = {};
-        ranked.forEach((t, i) => { seed[t] = N > 1 ? i / (N - 1) : 0; });   // 0 = best seed
-        for (const t of teams) {
-          if (!(t in seed)) continue;
-          const y = Math.min(1, Math.max(0, (games[t] - minG) / span));
-          pts.push({ ed, name: t, x: seed[t], y, champion: t === champ });
+        for (const t of Object.keys(games)) {
+          const rank = ranks[t];
+          if (!Number.isFinite(rank)) continue;
+          const progress = Math.min(1, Math.max(0, (games[t] - minG) / span));
+          pts.push({ ed, name: t, rank, progress, champion: t === champ, live: !!EDITIONS[ed].live });
         }
         shown.push(ed);
       }
       return { pts, eds: shown };
     }
 
-    function buildProgressLegend(eds) {
+    // Average progress by FIFA-ranking tier (the clearest read of "does rank predict a run").
+    const RANK_TIERS = [
+      { label: "Top 10", lo: 1, hi: 10 },
+      { label: "11–20", lo: 11, hi: 20 },
+      { label: "21–40", lo: 21, hi: 40 },
+      { label: "41+", lo: 41, hi: Infinity },
+    ];
+
+    function buildProgressLegend(eds, showChamp) {
       const el = $("legend-progress");
       el.innerHTML = eds.map(k => `<span><i style="background:${ED_COLORS[k] || "#98a2c8"}"></i>${esc(EDITIONS[k].label)}</span>`).join("")
-        + `<span><i style="background:#e8ecf8;border-radius:50%"></i>★ champion</span>`;
+        + (showChamp ? `<span><i style="background:#e8ecf8;border-radius:50%"></i>★ champion</span>` : "");
     }
 
     function renderProgress(full) {
       const svg = $("chart-progress");
-      if (!RANKINGS) { svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">Rankings unavailable.</text>`; return; }
+      if (!RANKINGS) { $("legend-progress").classList.add("hidden"); svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">Rankings unavailable.</text>`; return; }
       const { pts, eds } = progressPoints(full);
-      buildProgressLegend(eds);
-      $("sub-progress").textContent = "Each dot is a team: seeding (pre-tournament FIFA rank) vs how far it lasted — knockout rounds survived (0 = out in the group, 100% = reached the final).";
+      const mode = $("progressview").value;      // "tiers" | "teams"
+      const liveNote = pts.some(p => p.live) ? " 2026 is in progress." : "";
+      if (!pts.length) { $("legend-progress").classList.add("hidden"); svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No data for this filter.</text>`; return; }
+      if (mode === "tiers") {
+        $("legend-progress").classList.add("hidden");
+        $("sub-progress").textContent = "Average tournament progress by FIFA-ranking tier — knockout rounds survived (0 = out in the group, 100% = reached the final)." + liveNote;
+        const entries = RANK_TIERS.map(t => {
+          const sub = pts.filter(p => p.rank >= t.lo && p.rank <= t.hi);
+          const n = sub.length, avg = n ? sub.reduce((s, p) => s + p.progress, 0) / n : 0;
+          return { label: t.label, value: avg * 100, n, top: n ? Math.round(avg * 100) + "%" : "", foot: n ? n + " teams" : "" };
+        });
+        renderRankBars("chart-progress", entries, { color: "#5ad19b", yMax: 100, empty: "No ranking data for this filter." });
+      } else {
+        $("legend-progress").classList.remove("hidden");
+        buildProgressLegend(eds, pts.some(p => p.champion));
+        $("sub-progress").textContent = "Each dot is a team: FIFA ranking (1 = best, on the left) vs knockout rounds survived (0 = out in the group, 100% = reached the final)." + liveNote;
+        renderProgressScatter(svg, pts);
+      }
+    }
+
+    function renderProgressScatter(svg, pts) {
       svg.innerHTML = "";
-      if (!pts.length) { svg.removeAttribute("viewBox"); svg.style.height = "64px"; svg.innerHTML = `<text x="50%" y="36" text-anchor="middle" class="axis-label">No data for this filter.</text>`; return; }
       const W = 700, left = 40, right = 18, top = 16, plotH = 240, bottom = 46, H = top + plotH + bottom;
-      const xOf = v => left + v * (W - left - right);
-      const yOf = v => top + plotH - v * plotH;   // progress already spans 0..1
+      const maxRank = Math.max(10, ...pts.map(p => p.rank));
+      const xOf = r => left + ((r - 1) / ((maxRank - 1) || 1)) * (W - left - right);
+      const yOf = v => top + plotH - v * plotH;   // progress spans 0..1
       const parts = [];
       parts.push(`<line class="tick" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>`);
       parts.push(`<line class="tick" x1="${left}" y1="${top + plotH}" x2="${W - right}" y2="${top + plotH}"/>`);
-      // y guides: rounds survived (0 = group, 1 = final)
-      for (let i = 0; i <= 4; i++) {
+      for (let i = 0; i <= 4; i++) {   // y guides: rounds survived
         const v = i / 4, y = yOf(v);
         parts.push(`<line class="grid" x1="${left}" y1="${y.toFixed(1)}" x2="${W - right}" y2="${y.toFixed(1)}"/>`);
         const lab = v <= 0.001 ? "Group" : v >= 0.999 ? "Final" : Math.round(v * 100) + "%";
         parts.push(`<text class="axis-label" x="${left - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${lab}</text>`);
       }
-      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 34).toFixed(1)}" text-anchor="middle">Top seed → bottom seed (by FIFA rank)</text>`);
-      // points (jittered), champions drawn last on top with a ring + star
+      for (let t = 0; t <= 4; t++) {   // x ticks: FIFA rank
+        const r = 1 + (maxRank - 1) * t / 4;
+        parts.push(`<text class="axis-label" x="${xOf(r).toFixed(1)}" y="${(top + plotH + 18).toFixed(1)}" text-anchor="middle">${Math.round(r)}</text>`);
+      }
+      parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 38).toFixed(1)}" text-anchor="middle">FIFA ranking (1 = best) →</text>`);
       const jit = key => (hashp(key) - 0.5);
       const champs = [];
       for (const p of pts) {
-        const cx = xOf(Math.min(1, Math.max(0, p.x + jit(p.name + p.ed + "x") * 0.02)));
-        const cy = yOf(Math.min(1, Math.max(0, p.y + jit(p.name + p.ed + "y") * 0.03)));
+        const cx = xOf(p.rank) + jit(p.name + p.ed + "x") * 8;
+        const cy = yOf(Math.min(1, Math.max(0, p.progress + jit(p.name + p.ed + "y") * 0.03)));
         if (p.champion) { champs.push([cx, cy, p]); continue; }
         parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.7"/>`);
       }
@@ -1178,10 +1212,13 @@
     if (savedOrient) $("orient").value = savedOrient;
     const savedBasis = localStorage.getItem(LS_BASIS);
     if (savedBasis) $("basis").value = savedBasis;
+    const savedProgView = localStorage.getItem(LS_PROGVIEW);
+    if (savedProgView) $("progressview").value = savedProgView;
 
     $("edition").addEventListener("change", () => { store(LS_EDITION, currentEdition()); load(); });
     $("stage").addEventListener("change", () => { store(LS_STAGE, currentStage()); render(); });
     $("basis").addEventListener("change", () => { store(LS_BASIS, $("basis").value); render(); });
+    $("progressview").addEventListener("change", () => { store(LS_PROGVIEW, $("progressview").value); render(); });
     $("freq").addEventListener("change", () => { store(LS_FREQ, $("freq").value); render(); });
     $("view").addEventListener("change", () => { store(LS_VIEW, $("view").value); render(); });
     $("orient").addEventListener("change", () => { store(LS_ORIENT, $("orient").value); render(); });
