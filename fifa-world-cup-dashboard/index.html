@@ -935,6 +935,8 @@
           const progress = Math.min(1, Math.max(0, (g - minG) / span));
           pts.push({
             ed, name: t, rank, progress, champion: t === champ, live: isLive(ed),
+            // still competing: live edition, reached the knockout, not yet knocked out
+            alive: isLive(ed) && g > minG && !lost.has(t),
             // milestones by games survived (rounds count down from the final: F, SF, QF)
             knockout: g > minG, quarters: g >= maxG - 2, semis: g >= maxG - 1, final: g >= maxG,
           });
@@ -952,10 +954,11 @@
       { label: "41+", lo: 41, hi: Infinity },
     ];
 
-    function buildProgressLegend(eds, showChamp) {
+    function buildProgressLegend(eds, showChamp, showAlive) {
       const el = $("legend-progress");
       el.innerHTML = eds.map(k => `<span><i style="background:${ED_COLORS[k] || "#98a2c8"}"></i>${esc(EDITIONS[k].label)}</span>`).join("")
-        + (showChamp ? `<span><i style="background:#e8ecf8;border-radius:50%"></i>★ champion</span>` : "");
+        + (showChamp ? `<span><i style="background:#e8ecf8;border-radius:50%"></i>★ champion</span>` : "")
+        + (showAlive ? `<span><i style="background:transparent;border:2px solid #98a2c8;border-radius:50%"></i>still competing</span>` : "");
     }
 
     function renderProgress(full) {
@@ -988,7 +991,7 @@
       } else {
         $("tiermilestone-ctl").classList.add("hidden");
         $("legend-progress").classList.remove("hidden");
-        buildProgressLegend(eds, pts.some(p => p.champion));
+        buildProgressLegend(eds, pts.some(p => p.champion), pts.some(p => p.alive));
         $("sub-progress").textContent = "Each dot is a team: FIFA ranking (1 = best, on the left) vs knockout rounds survived (0 = out in the group, 100% = reached the final)." + liveNote;
         renderProgressScatter(svg, pts);
       }
@@ -1015,12 +1018,17 @@
       }
       parts.push(`<text class="axis-title" x="${(left + (W - right)) / 2}" y="${(top + plotH + 38).toFixed(1)}" text-anchor="middle">FIFA ranking (1 = best) →</text>`);
       const jit = key => (hashp(key) - 0.5);
-      const champs = [];
+      const champs = [], alives = [];
       for (const p of pts) {
         const cx = xOf(p.rank) + jit(p.name + p.ed + "x") * 8;
         const cy = yOf(Math.min(1, Math.max(0, p.progress + jit(p.name + p.ed + "y") * 0.03)));
         if (p.champion) { champs.push([cx, cy, p]); continue; }
+        if (p.alive) { alives.push([cx, cy, p]); continue; }
         parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${ED_COLORS[p.ed] || "#98a2c8"}" fill-opacity="0.7"/>`);
+      }
+      // still-competing teams: hollow rings (they may yet go further)
+      for (const [cx, cy, p] of alives) {
+        parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="none" stroke="${ED_COLORS[p.ed] || "#98a2c8"}" stroke-width="2"/>`);
       }
       for (const [cx, cy, p] of champs) {
         parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="6.5" fill="${ED_COLORS[p.ed] || "#98a2c8"}" stroke="#e8ecf8" stroke-width="2"/>`);
