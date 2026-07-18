@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-15T21:39:14Z",
+  "updated": "2026-07-18T01:05:25Z",
   "source": "ESPN (site.api.espn.com)",
   "edition": "2026",
   "league": "fifa.world",
@@ -7,7 +7,7 @@
     "start": "2026-06-11",
     "end": "2026-07-19"
   },
-  "totalMatches": 102,
+  "totalMatches": 103,
   "finishedMatches": 102,
   "matches": [
     {
@@ -1547,6 +1547,21 @@
       "decidedBy": "ft",
       "completed": true,
       "status": "Full Time"
+    },
+    {
+      "id": "760516",
+      "date": "2026-07-18T21:00Z",
+      "home": "France",
+      "away": "England",
+      "homeAbbr": "FRA",
+      "awayAbbr": "ENG",
+      "homeScore": 0,
+      "awayScore": 0,
+      "homeScore90": 0,
+      "awayScore90": 0,
+      "decidedBy": "ft",
+      "completed": false,
+      "status": "Scheduled"
     }
   ]
 }
