@@ -7,8 +7,9 @@ name: Update World Cup data
 # not trigger other workflows, so this job deploys Pages itself rather than
 # relying on pages.yml.
 on:
-  schedule:
-    - cron: "*/15 * * * *"   # every 15 min (GitHub may delay during peak load)
+  # Scheduled auto-scrape PAUSED. Re-enable by uncommenting the schedule below.
+  # schedule:
+  #   - cron: "*/15 * * * *"   # every 15 min (GitHub may delay during peak load)
   workflow_dispatch:
 
 permissions:
