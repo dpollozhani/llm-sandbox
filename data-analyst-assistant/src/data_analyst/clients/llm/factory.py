@@ -9,10 +9,14 @@ specific multi-step scenario for the subgraph or endpoint under test.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from langchain.chat_models import init_chat_model
+from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from data_analyst.clients.llm.azure_openai import build_azure_chat_openai
@@ -32,6 +36,28 @@ class FakeToolCallingChatModel(FakeMessagesListChatModel):
         # Requires `schema` to be constructible with no arguments, i.e. every
         # field has a default - true for this project's routing schemas.
         return RunnableLambda(lambda *_args, **_kwargs: schema())
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        # FakeMessagesListChatModel returns the *same* message object (by
+        # reference) every time a response is reused - e.g. the demo model's
+        # single canned reply, invoked again on turn two of the same
+        # conversation. LangGraph's `add_messages` reducer assigns that
+        # object an `id` and mutates it in place the first time it's added
+        # to a thread's history; handing back the identical object (with
+        # that same id already set) on a later turn makes `add_messages`
+        # treat it as an *update* to the earlier message instead of a new
+        # one, so nothing gets appended - the human message ends up last,
+        # and callers that read `messages[-1]` see their own message echoed
+        # back. Returning a fresh copy with no id every call avoids that.
+        result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        fresh = [g.message.model_copy(update={"id": None}) for g in result.generations]
+        return ChatResult(generations=[ChatGeneration(message=m) for m in fresh])
 
 
 def build_demo_chat_model() -> FakeToolCallingChatModel:

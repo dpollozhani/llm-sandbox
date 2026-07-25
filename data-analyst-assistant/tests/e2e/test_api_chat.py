@@ -51,6 +51,26 @@ def test_demo_mode_answers_without_any_scripting():
     assert body["reply"]
 
 
+def test_demo_mode_gives_the_same_canned_reply_on_a_second_turn():
+    """Regression test: the demo model's single canned response is the same
+    message object reused on every call. A prior version of
+    FakeToolCallingChatModel returned that object as-is, and LangGraph's
+    add_messages reducer assigns it an id and mutates it in place on first
+    use - so reusing the identical (already-id'd) object on a later turn of
+    the same thread got treated as an update to the earlier message instead
+    of a new one, leaving the just-sent human message last. The API then
+    read that back as "the reply", i.e. the assistant appeared to echo
+    whatever the user just typed on every turn after the first.
+    """
+    with TestClient(app) as client:
+        first = client.post("/chat", json={"message": "hello, what can you do?"})
+        thread_id = first.json()["thread_id"]
+        second = client.post("/chat", json={"message": "banana banana banana", "thread_id": thread_id})
+
+    assert second.json()["reply"] == first.json()["reply"]
+    assert second.json()["reply"] != "banana banana banana"
+
+
 def test_full_flow_delegates_through_both_specialists():
     llm = ScriptedRoutingModel(
         responses=[
