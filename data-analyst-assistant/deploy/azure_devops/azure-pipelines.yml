@@ -1,0 +1,40 @@
+# Simplified CI pipeline: install, lint-by-import, test, build & push the
+# container image. Swap the container registry / App Service deploy steps
+# for your own subscription details before using this for real.
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: data-analyst-assistant
+
+stages:
+  - stage: Test
+    jobs:
+      - job: RunTests
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.11"
+          - script: pip install -e ".[dev]"
+            displayName: Install dependencies
+          - script: pytest tests/unit tests/integration -q
+            displayName: Run unit + integration tests
+
+  - stage: Build
+    dependsOn: Test
+    jobs:
+      - job: BuildImage
+        steps:
+          - task: Docker@2
+            inputs:
+              command: build
+              Dockerfile: deploy/docker/Dockerfile
+              repository: $(imageName)
+              tags: |
+                $(Build.BuildId)
+                latest

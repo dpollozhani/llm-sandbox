@@ -1,0 +1,35 @@
+"""Structured shapes for the datasource agent's tool results."""
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class SemanticModelInfo(BaseModel):
+    model_name: str
+    dataset_id: str
+    tables: list[str]
+
+
+class DaxQueryResult(BaseModel):
+    sandbox_ref: str
+    row_count: int
+    preview: list[dict]
+
+
+class WorkspaceInfo(BaseModel):
+    workspace_id: str
+    workspace_name: str
+    datasets: list[dict]
+
+
+class RefreshHistoryEntry(BaseModel):
+    request_id: str
+    status: str
+    start_time: str
+    end_time: str
+
+
+class RefreshResult(BaseModel):
+    status: str
+    dataset_id: str
+    detail: dict | None = None

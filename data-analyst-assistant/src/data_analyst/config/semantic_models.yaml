@@ -1,0 +1,17 @@
+# Declarative metadata describing the (mocked) Power BI estate. A real
+# deployment would sync this from the Power BI REST API / a metadata store;
+# here it's just what the mock clients use to answer list_* calls.
+workspaces:
+  - workspace_id: ws-001
+    workspace_name: Retail Analytics
+    datasets:
+      - dataset_id: ds-001
+        dataset_name: Sales Analytics
+
+semantic_models:
+  - model_name: Sales Analytics
+    dataset_id: ds-001
+    tables:
+      - Sales
+      - Products
+      - Regions
