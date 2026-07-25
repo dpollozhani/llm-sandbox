@@ -1,7 +1,7 @@
 """Orchestrator: a supervisor loop that delegates to the datasource/analysis
 specialists and answers once it has enough information.
 
-    START -> supervisor -> {datasource, analysis} -> supervisor -> ... -> respond -> END
+    START -> supervisor -> {datasource, analysis} -> supervisor -> ... -> {respond, clarify} -> END
 
 This graph is compiled with a checkpointer so a `thread_id` scopes a
 resumable, multi-turn conversation (see app/lifespan.py). Both specialists
@@ -23,6 +23,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from data_analyst.agents.orchestrator.nodes import (
     build_analysis_node,
+    build_clarify_node,
     build_datasource_node,
     build_respond_node,
     build_supervisor_node,
@@ -38,15 +39,17 @@ def build_orchestrator_graph(
     graph.add_node("datasource", build_datasource_node(llm))
     graph.add_node("analysis", build_analysis_node(llm))
     graph.add_node("respond", build_respond_node(llm))
+    graph.add_node("clarify", build_clarify_node(llm))
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
         "supervisor",
         lambda state: state["next"],
-        {"datasource": "datasource", "analysis": "analysis", "respond": "respond"},
+        {"datasource": "datasource", "analysis": "analysis", "respond": "respond", "clarify": "clarify"},
     )
     graph.add_edge("datasource", "supervisor")
     graph.add_edge("analysis", "supervisor")
     graph.add_edge("respond", END)
+    graph.add_edge("clarify", END)
 
     return graph.compile(checkpointer=checkpointer or InMemorySaver())

@@ -2,10 +2,17 @@
 
 A simplified, multi-agent rebuild of a data-analyst assistant (Power BI +
 code execution) using only **LangChain** (tools, chat model abstraction) and
-**LangGraph** (agent loops, checkpointed memory), served over **FastAPI** -
-built to see what that stack looks like in practice instead of the Azure AI
-SDK's Agents Service. The Power BI agent is read-only (metadata + DAX
-queries only, no write/admin actions). See
+**LangGraph** (agent loops, checkpointed memory, session-scoped state), served
+over **FastAPI** - built to see what that stack looks like in practice
+instead of the Azure AI SDK's Agents Service.
+
+The Power BI agent is read-only (metadata + structured queries only, no
+write/admin actions), and every query is a validated, structurally-built
+`SUMMARIZECOLUMNS(...)` call - never free-form DAX text from the model. The
+supervisor can ask a clarifying question instead of guessing when it isn't
+confident how to build a query or perform an analysis. Data already fetched
+in a conversation is cached per-session and reused by follow-up questions
+instead of triggering a new fetch. See
 [`docs/decisions/0001-langchain-langgraph.md`](docs/decisions/0001-langchain-langgraph.md)
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
@@ -39,11 +46,11 @@ the same flow end-to-end with a scripted model and needs no API key.
 src/data_analyst/
   app/           FastAPI: api.py (routes), lifespan.py (builds the graph once), dependencies.py
   agents/
-    orchestrator/  supervisor loop: routes to a specialist or responds
-    datasource/    Power BI specialist (PBI MCP + PBI REST tools)
+    orchestrator/  supervisor loop: routes to a specialist, responds, or asks for clarification
+    datasource/    Power BI specialist (PBI MCP + PBI REST tools, structured DAX queries only)
     analysis/      Python sandbox specialist
-    common/        shared state shape + models used across all three
-  clients/       Power BI (mocked), sandbox (mocked), and LLM provider clients
+    common/        shared state shape (messages + session_id) + models used across all three
+  clients/       Power BI (mocked, incl. the DAX query builder/validator), sandbox (mocked, session-bound), and LLM provider clients
   config/        env-driven settings + the (mocked) Power BI catalog
   telemetry/     logging/tracing/metrics stand-ins
   utils/         small shared helpers
@@ -62,17 +69,20 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 15 tests run offline with scripted fake models - no API key or network
+All 35 tests run offline with scripted fake models - no API key or network
 needed.
 
 ## What's simplified vs. a real deployment
 
 - Power BI MCP/REST calls are mocked in `clients/powerbi/` against
-  `config/semantic_models.yaml` and a handful of in-memory fake tables; real
-  DAX execution and MCP transport aren't implemented.
+  `config/semantic_models.yaml` and a handful of in-memory fake tables; the
+  DAX query engine (`clients/powerbi/dax.py`) is a small pandas-based
+  stand-in, not a real semantic model, and MCP transport isn't implemented.
 - The sandbox (`clients/sandbox/`) really does `exec()` pandas code, but in
   a minimally-restricted namespace rather than a network-isolated worker -
   don't point it at untrusted input as-is.
-- Session state (`InMemorySaver` in `app/lifespan.py`) is process-local;
-  swap in a Postgres/Redis-backed checkpointer for anything that needs to
-  survive a restart or run across multiple instances.
+- Both `InMemorySaver` (conversation state, `app/lifespan.py`) and the
+  session-bound data store (`clients/sandbox/client.py`) are process-local;
+  swap in a Postgres/Redis-backed checkpointer and a shared cache/object
+  store, respectively, for anything that needs to survive a restart or run
+  across multiple instances.

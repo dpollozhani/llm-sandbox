@@ -1,24 +1,29 @@
 """Analysis agent: the Python sandbox tool, plus the graph nodes that use it."""
 from __future__ import annotations
 
+from typing import Annotated
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.analysis.chains import build_agent_chain
 from data_analyst.agents.analysis.state import AnalysisState
-from data_analyst.clients.sandbox.client import sandbox_client
+from data_analyst.clients.sandbox.client import get_sandbox_client
 
 
 @tool
-def python_sandbox_execute(code: str, sandbox_ref: str | None = None) -> dict:
+def python_sandbox_execute(
+    code: str, state: Annotated[AnalysisState, InjectedState], sandbox_ref: str | None = None
+) -> dict:
     """Execute Python/pandas code in an isolated sandbox.
 
     If `sandbox_ref` is given, the staged DataFrame is bound to the local
     variable `df` before running `code`. Assign to a variable named `result`
     to return a value; anything printed is captured as stdout.
     """
-    result = sandbox_client.execute(code, sandbox_ref)
+    store = get_sandbox_client(state["session_id"])
+    result = store.execute(code, sandbox_ref)
     return result.model_dump()
 
 

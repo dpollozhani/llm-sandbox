@@ -2,11 +2,14 @@
 
 Each HTTP request is stateless; conversations are resumed by passing back the
 `thread_id` returned from a previous call, which the checkpointer uses to
-keep the message history for that conversation.
+keep the message history for that conversation, and which also scopes the
+session-bound data store (see clients/sandbox/client.py) so a follow-up
+question can reuse already-fetched data.
 """
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import Depends, FastAPI
 from langchain_core.messages import HumanMessage
@@ -26,7 +29,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     thread_id: str
-    status: str
+    status: Literal["completed", "clarification_needed"]
     reply: str | None = None
 
 
@@ -40,7 +43,8 @@ async def chat(body: ChatRequest, graph: CompiledStateGraph = Depends(get_graph)
     thread_id = body.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=body.message)], "turns": 0},
+        {"messages": [HumanMessage(content=body.message)], "turns": 0, "session_id": thread_id},
         config=config,
     )
-    return ChatResponse(thread_id=thread_id, status="completed", reply=result["messages"][-1].content)
+    status = "clarification_needed" if result.get("next") == "clarify" else "completed"
+    return ChatResponse(thread_id=thread_id, status=status, reply=result["messages"][-1].content)

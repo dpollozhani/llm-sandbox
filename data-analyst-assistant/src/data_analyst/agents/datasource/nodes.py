@@ -1,17 +1,20 @@
 """Datasource agent: read-only PBI MCP + PBI REST tools, plus the graph nodes
 that use them. No tool here mutates anything in Power BI - metadata lookups
-and DAX queries only."""
+and structured DAX queries only."""
 from __future__ import annotations
+
+from typing import Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
+from data_analyst.clients.powerbi.dax import DaxFilter, DaxMeasure, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
-from data_analyst.clients.sandbox.client import sandbox_client
+from data_analyst.clients.sandbox.client import get_sandbox_client
 
 _mcp_client = PBIMcpClient()
 _rest_client = PBIRestClient()
@@ -36,15 +39,61 @@ def pbi_rest_get_refresh_history(dataset_id: str) -> list[dict]:
 
 
 @tool
-def pbi_rest_run_dax_query(model_name: str, dax_query: str) -> dict:
-    """Run a DAX query against a Power BI semantic model via the PBI REST API.
+def pbi_rest_run_dax_query(
+    model_name: str,
+    table: str,
+    group_by: list[str],
+    filters: list[DaxFilter],
+    measures: list[DaxMeasure],
+    state: Annotated[DatasourceState, InjectedState],
+) -> dict:
+    """Run a structured query against a Power BI semantic model via the PBI REST API.
+
+    The query is always built as a single SUMMARIZECOLUMNS(...) call from
+    `group_by` columns, `filters`, and `measures` - never free-form DAX text
+    - and is validated before being sent. Pass empty lists for anything not
+    needed, but at least one of `group_by` or `measures` is required.
+
+    If this exact query (same table/columns/filters/measures) was already run
+    earlier in this conversation, the cached result is reused instead of
+    issuing a new query - check the `reused` field in the response.
 
     Returns a preview of the resulting rows plus a `sandbox_ref` that the
     analysis agent can use to load the full result as a DataFrame.
     """
-    df = _rest_client.run_dax_query(model_name, dax_query)
-    ref = sandbox_client.stage(df)
-    return {"sandbox_ref": ref, "row_count": len(df), "preview": df.head(5).to_dict(orient="records")}
+    try:
+        spec = DaxQuerySpec(
+            model_name=model_name, table=table, group_by=group_by, filters=filters, measures=measures
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    store = get_sandbox_client(state["session_id"])
+    cache_key = spec.cache_key()
+    cached_ref = store.find_cached(cache_key)
+    if cached_ref is not None:
+        df = store.peek(cached_ref)
+        return {
+            "sandbox_ref": cached_ref,
+            "row_count": len(df),
+            "preview": df.head(5).to_dict(orient="records"),
+            "reused": True,
+        }
+
+    try:
+        dax_query, df = _rest_client.run_dax_query(spec)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    ref = store.stage(df)
+    store.remember(cache_key, ref)
+    return {
+        "sandbox_ref": ref,
+        "row_count": len(df),
+        "preview": df.head(5).to_dict(orient="records"),
+        "reused": False,
+        "dax_query": dax_query,
+    }
 
 
 TOOLS = [

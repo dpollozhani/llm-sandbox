@@ -1,14 +1,16 @@
+import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
-from data_analyst.clients.sandbox.client import sandbox_client
+from data_analyst.clients.sandbox.client import get_sandbox_client
 
 
 def test_sandbox_execute_uses_staged_dataframe():
-    import pandas as pd
-
-    ref = sandbox_client.stage(pd.DataFrame([{"Region": "North", "Revenue": 10.0}, {"Region": "South", "Revenue": 5.0}]))
+    session_id = "sess-analysis-1"
+    ref = get_sandbox_client(session_id).stage(
+        pd.DataFrame([{"Region": "North", "Revenue": 10.0}, {"Region": "South", "Revenue": 5.0}])
+    )
 
     llm = FakeToolCallingChatModel(
         responses=[
@@ -27,8 +29,28 @@ def test_sandbox_execute_uses_staged_dataframe():
     )
     graph = build_analysis_graph(llm)
 
-    result = graph.invoke({"messages": [HumanMessage(content="sum revenue")]})
+    result = graph.invoke({"messages": [HumanMessage(content="sum revenue")], "session_id": session_id})
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert '"result": 15.0' in tool_messages[0].content
     assert result["messages"][-1].content == "Total revenue is 15."
+
+
+def test_sandbox_execute_ref_is_scoped_to_its_own_session():
+    ref = get_sandbox_client("sess-analysis-owner").stage(pd.DataFrame([{"x": 1}]))
+
+    llm = FakeToolCallingChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "python_sandbox_execute", "args": {"code": "result = 1", "sandbox_ref": ref}, "id": "c1"}],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    graph = build_analysis_graph(llm)
+
+    result = graph.invoke({"messages": [HumanMessage(content="use it")], "session_id": "sess-analysis-other"})
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert "unknown sandbox_ref" in tool_messages[0].content.lower()

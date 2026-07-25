@@ -14,6 +14,10 @@ class DaxQueryResult(BaseModel):
     sandbox_ref: str
     row_count: int
     preview: list[dict]
+    dax_query: str
+    reused: bool
+    """True if this result was served from the session's data store instead
+    of issuing a new query - see `clients/sandbox/client.py`."""
 
 
 class WorkspaceInfo(BaseModel):

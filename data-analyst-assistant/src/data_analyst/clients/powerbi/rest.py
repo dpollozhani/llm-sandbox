@@ -7,13 +7,16 @@ A real client would call `https://api.powerbi.com/v1.0/myorg/...`; here it
 reads workspace/dataset metadata from the catalog config, refresh history
 from an in-memory fixture, and "executes" DAX queries (mirroring the real
 REST API's dataset "Execute Queries" endpoint) against a handful of fake
-tables.
+tables. Queries are always structured `SUMMARIZECOLUMNS(...)` calls built
+and validated from a `DaxQuerySpec` (see `dax.py`) - never free-form DAX
+text handed in directly.
 """
 from __future__ import annotations
 
 import pandas as pd
 
 from data_analyst.clients.powerbi.auth import get_bearer_token
+from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_summarizecolumns, execute_query, validate_dax_query
 from data_analyst.config.settings import PowerBiCatalog, get_catalog
 from data_analyst.telemetry.tracing import trace_span
 
@@ -79,22 +82,21 @@ class PBIRestClient:
             get_bearer_token()
             return list(_REFRESH_HISTORY.get(dataset_id, []))
 
-    def run_dax_query(self, model_name: str, dax_query: str) -> pd.DataFrame:
-        with trace_span("pbi_rest.run_dax_query", model_name=model_name):
-            get_bearer_token()
-            model = self._catalog.find_model(model_name)
-            if model is None:
-                raise ValueError(f"Unknown semantic model '{model_name}'")
-            table_name = self._guess_table(dax_query, model.tables)
-            if table_name not in _TABLES:
-                raise ValueError(f"Unknown table '{table_name}' in model '{model_name}'")
-            return _TABLES[table_name]
+    def run_dax_query(self, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
+        """Build, validate, and "execute" a structured DAX query.
 
-    @staticmethod
-    def _guess_table(dax_query: str, candidate_tables: list[str]) -> str:
-        """Stand-in for actually parsing/running DAX: pick whichever known
-        table name appears in the query text, defaulting to the first one."""
-        for name in candidate_tables:
-            if name.lower() in dax_query.lower():
-                return name
-        return candidate_tables[0]
+        Returns the resolved DAX text (for transparency in the tool result)
+        and the resulting DataFrame. Raises ValueError if the model/table is
+        unknown or the built query fails validation.
+        """
+        with trace_span("pbi_rest.run_dax_query", model_name=spec.model_name, table=spec.table):
+            get_bearer_token()
+            model = self._catalog.find_model(spec.model_name)
+            if model is None:
+                raise ValueError(f"Unknown semantic model '{spec.model_name}'")
+            if spec.table not in _TABLES:
+                raise ValueError(f"Unknown table '{spec.table}' in model '{spec.model_name}'")
+
+            dax_query = build_summarizecolumns(spec)
+            validate_dax_query(dax_query, spec, known_columns=set(_TABLES[spec.table].columns))
+            return dax_query, execute_query(_TABLES[spec.table], spec)

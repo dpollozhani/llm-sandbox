@@ -1,23 +1,22 @@
 """Tests the orchestrator's node-level wiring in isolation: that delegating to
-a specialist seeds a fresh child conversation from the latest task (not the
-orchestrator's full history) and folds the specialist's answer back in as a
-single labeled message.
+a specialist seeds a fresh child conversation from the user's actual latest
+question (not the orchestrator's full history, and not whatever message
+happens to be last after an earlier specialist already ran this turn), folds
+the specialist's answer back in as a single labeled message, and records
+`data_context` so a later specialist/turn can reuse already-fetched data.
 """
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from data_analyst.agents.orchestrator.nodes import build_datasource_node
+from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
 
 def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
     llm = FakeToolCallingChatModel(
         responses=[
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}],
-            ),
+            AIMessage(content="", tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}]),
             AIMessage(content="There is one semantic model: Sales Analytics."),
         ]
     )
@@ -30,6 +29,8 @@ def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
         ],
         "turns": 1,
         "next": "datasource",
+        "session_id": "sess-node-1",
+        "data_context": None,
     }
     update = node(state)
 
@@ -37,3 +38,43 @@ def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
     folded = update["messages"][0]
     assert isinstance(folded, AIMessage)
     assert folded.content == "[datasource] There is one semantic model: Sales Analytics."
+    assert update["data_context"] == "There is one semantic model: Sales Analytics."
+
+
+def test_specialist_uses_latest_human_message_not_a_prior_specialists_fold():
+    """Simulates the supervisor delegating to a second specialist within the
+    same turn: by then, state["messages"][-1] is the first specialist's own
+    folded-back summary, not the user's question - the second specialist must
+    still see the real question."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Reused prior data as requested.")])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [
+            HumanMessage(content="what's the average revenue by region?"),
+            AIMessage(content="[datasource] Fetched revenue by region, sandbox_ref=df_1."),
+        ],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-2",
+        "data_context": "Fetched revenue by region, sandbox_ref=df_1.",
+    }
+    update = node(state)
+
+    assert update["messages"][0].content == "[analysis] Reused prior data as requested."
+
+
+def test_analysis_node_does_not_overwrite_data_context():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Computed the average.")])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="what's the average?")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-3",
+        "data_context": "Fetched revenue by region, sandbox_ref=df_1.",
+    }
+    update = node(state)
+
+    assert "data_context" not in update

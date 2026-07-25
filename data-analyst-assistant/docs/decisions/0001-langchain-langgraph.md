@@ -29,6 +29,9 @@ responds directly), each specialist being its own small ReAct-style loop
 | Custom code for "pause and ask a human before doing X" | `langgraph.types.interrupt()` inside the tool function itself, resumed with `Command(resume=...)` - propagates up through nested/subgraph calls to whichever graph is holding the checkpoint |
 | MCP tool integration via Azure AI Foundry's MCP tool type | Same MCP server could be wrapped with `langchain-mcp-adapters` to auto-generate `@tool`-compatible functions from the server's tool list; here it's mocked directly in `clients/powerbi/mcp.py` |
 | Streaming agent updates via SDK event handlers | `graph.stream(...)` / `graph.astream(...)`, with `stream_mode="values"` for incremental state or `"updates"` for per-node diffs |
+| Constraining a function tool's arguments to a safe, structured shape (custom JSON-schema validation in your function body) | Pydantic models as tool parameter types (`clients/powerbi/dax.py::DaxFilter`/`DaxMeasure`), which LangChain turns into the tool's JSON schema automatically - the model can only submit `group_by`/`filters`/`measures`, never a raw query string, and the built query is validated again server-side (`validate_dax_query`) before use |
+| Passing request-scoped context (user id, session) into a function tool (typically a custom parameter or thread-local) | `langgraph.prebuilt.InjectedState` - a tool parameter annotated `Annotated[StateT, InjectedState]` that LangGraph fills in from the graph's state and removes from the schema the model sees (`tool.tool_call_schema` vs. `tool.args_schema`) |
+| An agent asking a clarifying question (custom logic, e.g. a special function tool or a specific instruction in the system prompt) | A fourth `Route` option (`"clarify"`) the supervisor can pick like any other, routed to its own node/prompt - just another edge in the graph, not a special case |
 
 The biggest structural difference: Azure AI Agents Service treats the agent
 as a managed server-side resource you configure and poll. LangGraph makes
@@ -53,3 +56,6 @@ living inside a managed run object.
 - The Python sandbox and Power BI clients are mocked; swapping in the real
   MCP/REST/sandbox integrations only touches `src/data_analyst/clients/`,
   none of the agent or graph code.
+- The session-bound data store (`clients/sandbox/client.py`) is, like
+  `InMemorySaver`, process-local and lost on restart - the same "swap for a
+  shared backing store in production" caveat applies to both.
