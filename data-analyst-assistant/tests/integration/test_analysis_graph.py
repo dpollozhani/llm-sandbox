@@ -6,7 +6,7 @@ from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.clients.sandbox.client import get_sandbox_client
 
 
-def test_sandbox_execute_uses_staged_dataframe():
+async def test_sandbox_execute_uses_staged_dataframe():
     session_id = "sess-analysis-1"
     ref = get_sandbox_client(session_id).stage(
         pd.DataFrame([{"Region": "North", "Revenue": 10.0}, {"Region": "South", "Revenue": 5.0}])
@@ -29,14 +29,14 @@ def test_sandbox_execute_uses_staged_dataframe():
     )
     graph = build_analysis_graph(llm)
 
-    result = graph.invoke({"messages": [HumanMessage(content="sum revenue")], "session_id": session_id})
+    result = await graph.ainvoke({"messages": [HumanMessage(content="sum revenue")], "session_id": session_id})
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert '"result": 15.0' in tool_messages[0].content
     assert result["messages"][-1].content == "Total revenue is 15."
 
 
-def test_sandbox_execute_ref_is_scoped_to_its_own_session():
+async def test_sandbox_execute_ref_is_scoped_to_its_own_session():
     ref = get_sandbox_client("sess-analysis-owner").stage(pd.DataFrame([{"x": 1}]))
 
     llm = FakeToolCallingChatModel(
@@ -50,7 +50,24 @@ def test_sandbox_execute_ref_is_scoped_to_its_own_session():
     )
     graph = build_analysis_graph(llm)
 
-    result = graph.invoke({"messages": [HumanMessage(content="use it")], "session_id": "sess-analysis-other"})
+    result = await graph.ainvoke({"messages": [HumanMessage(content="use it")], "session_id": "sess-analysis-other"})
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert "unknown sandbox_ref" in tool_messages[0].content.lower()
+
+
+async def test_can_ask_for_clarification_instead_of_guessing():
+    clarify_call = {"name": "request_clarification", "args": {"question": "Which metric do you want analyzed?"}, "id": "c1"}
+    llm = FakeToolCallingChatModel(
+        responses=[
+            AIMessage(content="", tool_calls=[clarify_call]),
+            AIMessage(content="Which metric do you want analyzed?"),
+        ]
+    )
+    graph = build_analysis_graph(llm)
+
+    result = await graph.ainvoke({"messages": [HumanMessage(content="analyze it")], "session_id": "sess-analysis-clarify"})
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert tool_messages[0].name == "request_clarification"
+    assert result["messages"][-1].content == "Which metric do you want analyzed?"

@@ -72,25 +72,28 @@ class PBIRestClient:
     def __init__(self, catalog: PowerBiCatalog | None = None) -> None:
         self._catalog = catalog or get_catalog()
 
-    def list_workspaces(self) -> list[dict]:
+    async def list_workspaces(self) -> list[dict]:
         with trace_span("pbi_rest.list_workspaces"):
-            get_bearer_token()
+            await get_bearer_token()
             return [w.model_dump() for w in self._catalog.workspaces]
 
-    def get_refresh_history(self, dataset_id: str) -> list[dict]:
+    async def get_refresh_history(self, dataset_id: str) -> list[dict]:
         with trace_span("pbi_rest.get_refresh_history", dataset_id=dataset_id):
-            get_bearer_token()
+            await get_bearer_token()
             return list(_REFRESH_HISTORY.get(dataset_id, []))
 
-    def run_dax_query(self, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
+    async def run_dax_query(self, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
         """Build, validate, and "execute" a structured DAX query.
 
         Returns the resolved DAX text (for transparency in the tool result)
         and the resulting DataFrame. Raises ValueError if the model/table is
-        unknown or the built query fails validation.
+        unknown or the built query fails validation. Building/validating/
+        executing the query itself is pure, fast, in-memory work (no real
+        I/O to await), unlike `get_bearer_token` - a real implementation
+        would await an HTTP call here instead.
         """
         with trace_span("pbi_rest.run_dax_query", model_name=spec.model_name, table=spec.table):
-            get_bearer_token()
+            await get_bearer_token()
             model = self._catalog.find_model(spec.model_name)
             if model is None:
                 raise ValueError(f"Unknown semantic model '{spec.model_name}'")

@@ -23,6 +23,12 @@ reuses the cached result (`reused: true` in its response) instead of
 fetching again - you don't need to do anything differently for that, just
 call the tool as usual.
 
+If you get into building the query and still can't tell which table,
+columns, filters, or measures the user means (not just a validation error to
+fix, but genuine ambiguity in the request itself), call
+`request_clarification` with a short, specific question instead of guessing
+- then relay that question as your final answer and stop.
+
 Always discover the relevant semantic model before querying it. When a query
 returns a `sandbox_ref`, mention it in your final summary so the caller can
 hand it to the analysis agent. Do not attempt any data analysis yourself -

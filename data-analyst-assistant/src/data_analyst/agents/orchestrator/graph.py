@@ -2,12 +2,15 @@
 specialists and answers once it has enough information.
 
     START -> supervisor -> {datasource, analysis} -> supervisor -> ... -> {respond, clarify} -> END
+                                  |            |
+                                  +-- END <----+   (a specialist can short-circuit straight to a
+                                                     clarifying question - see nodes.py)
 
 This graph is compiled with a checkpointer so a `thread_id` scopes a
 resumable, multi-turn conversation (see app/lifespan.py). Both specialists
 are read-only in this build (see agents/datasource/nodes.py), so there's
 currently nothing that pauses mid-run - but because a specialist's
-`.invoke()` inside a node function picks up the *ambient* LangChain
+`.ainvoke()` inside a node function picks up the *ambient* LangChain
 `RunnableConfig` (checkpointer + thread_id) when it isn't given its own
 `config=`, a future mutating tool could call `langgraph.types.interrupt()`
 and have it pause (and, on `Command(resume=...)`, resume) this orchestrator
@@ -31,6 +34,18 @@ from data_analyst.agents.orchestrator.nodes import (
 from data_analyst.agents.orchestrator.state import OrchestratorState
 
 
+def _after_specialist(state: OrchestratorState) -> str:
+    # A specialist normally leaves `next` as whatever the supervisor set it
+    # to ("datasource"/"analysis") and loops back for the next routing
+    # decision. It's only ever "clarify" here if `_run_specialist` just set
+    # it because the specialist itself asked a clarifying question (see
+    # nodes.py) - in which case there's nothing left for the supervisor to
+    # decide this turn, so skip straight to END instead of paying for an
+    # extra supervisor call (and the separate "clarify" node, which only
+    # handles the supervisor's *own* upfront clarify decision).
+    return "end" if state.get("next") == "clarify" else "supervisor"
+
+
 def build_orchestrator_graph(
     llm: BaseChatModel, checkpointer: BaseCheckpointSaver | None = None
 ) -> CompiledStateGraph:
@@ -47,8 +62,8 @@ def build_orchestrator_graph(
         lambda state: state["next"],
         {"datasource": "datasource", "analysis": "analysis", "respond": "respond", "clarify": "clarify"},
     )
-    graph.add_edge("datasource", "supervisor")
-    graph.add_edge("analysis", "supervisor")
+    graph.add_conditional_edges("datasource", _after_specialist, {"supervisor": "supervisor", "end": END})
+    graph.add_conditional_edges("analysis", _after_specialist, {"supervisor": "supervisor", "end": END})
     graph.add_edge("respond", END)
     graph.add_edge("clarify", END)
 

@@ -26,16 +26,19 @@ FastAPI (app/api.py)
   `supervisor` for the next decision, up to `MAX_TURNS`.
   - `respond` produces the final answer.
   - `clarify` asks the user a short clarifying question instead - used when
-    the supervisor isn't confident how to build the next query (which
-    table/columns/filters/measures) or how to perform the requested
-    analysis. The API surfaces this as `status: "clarification_needed"`; the
-    user's reply continues the same conversation (same `thread_id`).
+    the supervisor can't even tell which specialist should handle the
+    request. Narrower ambiguity (which table/columns/filters/measures, or
+    which computation) is instead handled by the specialist itself asking -
+    see "Two places a clarifying question can come from" below. Either way
+    the API surfaces it as `status: "clarification_needed"`; the user's
+    reply continues the same conversation (same `thread_id`).
 - **`agents/datasource`** and **`agents/analysis`**: each is an independent,
   small ReAct-style `StateGraph` - an `agent` node bound to a scoped set of
   tools via `bind_tools`, and a `ToolNode`, looping through
   `tools_condition` until the model answers without calling a tool. The
   datasource agent is read-only: metadata lookups and structured queries
-  only, no tool that changes anything in Power BI.
+  only, no tool that changes anything in Power BI. Both specialists also
+  have a `request_clarification` tool (`agents/common/tools.py`).
 - **`agents/common`**: the `ChatState` shape (`messages` + `session_id` with
   LangGraph's `add_messages` reducer) shared by all three graphs, and
   `AgentResult`, the small model a specialist hands back to the
@@ -66,6 +69,38 @@ that specialist's own folded-back summary, not the user's question.
 instead. Alongside it, `_run_specialist` threads `state["data_context"]`
 (see below) into the seed message, so a specialist with no memory of earlier
 turns still knows what data is already available.
+
+## Two places a clarifying question can come from
+
+Asking for clarification isn't only a supervisor-level decision. There are
+two distinct paths, deliberately kept separate because they resolve
+different kinds of uncertainty at different costs:
+
+1. **The supervisor asks upfront** (`Route(next="clarify")`,
+   `build_clarify_node`/`clarify` node): for when the request is so vague
+   the supervisor can't even tell which specialist should handle it. This
+   costs one supervisor call and ends the turn.
+2. **A specialist asks mid-task** (`request_clarification` tool,
+   `agents/common/tools.py`): for narrower ambiguity only visible once a
+   specialist is actually trying to build the query or pick the
+   computation - which the supervisor has no good way to predict before
+   delegating. Requiring the supervisor to anticipate every possible
+   query-building or analysis ambiguity upfront would mean either being
+   overcautious (clarifying when the specialist would have managed fine) or
+   still delegating and hoping - so the specialist is given the tool to
+   bail out itself, exactly when it discovers it needs to.
+
+`_run_specialist` (`agents/orchestrator/nodes.py`) detects the second case
+by checking whether `request_clarification` was called during the
+specialist's run (`_specialist_asked_for_clarification`), and if so sets
+`next="clarify"` itself and returns the specialist's own question directly.
+`agents/orchestrator/graph.py`'s conditional edges out of `datasource`/
+`analysis` check that: normally they loop back to `supervisor`, but if
+`next` is now `"clarify"`, they go straight to `END` instead. This is the
+cheaper path precisely because it skips the extra supervisor call *and* the
+separate `clarify` node entirely - one specialist invocation, one reply -
+rather than always paying for a full supervisor round-trip regardless of
+where the ambiguity was actually discovered.
 
 ## Structured, validated DAX queries
 
@@ -120,17 +155,16 @@ this build that changes state in Power BI (or elsewhere), so there's
 nothing that needs a human-in-the-loop approval gate.
 
 That said, the orchestrator's checkpointing already supports one for free.
-A node function's call to `child_graph.invoke(seed)` (no `config=` passed)
+A node function's call to `child_graph.ainvoke(seed)` (no `config=` passed)
 picks up LangChain's *ambient* `RunnableConfig` - including the
 orchestrator's checkpointer and `thread_id` - so a future mutating tool
 could call `langgraph.types.interrupt()` and have the pause bubble up
 through the child graph, through `_run_specialist`
-(`agents/orchestrator/nodes.py`), and out of
-`orchestrator.invoke()`/`ainvoke()` as `result["__interrupt__"]`, with no
-extra plumbing to bridge parent and child. Two things to get right if you
-add one:
+(`agents/orchestrator/nodes.py`), and out of `orchestrator.ainvoke()` as
+`result["__interrupt__"]`, with no extra plumbing to bridge parent and
+child. Two things to get right if you add one:
 
-1. **Never wrap a specialist's `.invoke()` call in a broad `except
+1. **Never wrap a specialist's `.ainvoke()` call in a broad `except
    Exception`** (or apply `utils/retry.py`'s `@retry` to a node function that
    calls one). `interrupt()` works by raising `GraphInterrupt`, which *is* a
    plain `Exception` subclass - a broad catch would silently swallow the
@@ -143,12 +177,47 @@ add one:
    but any plain Python before the interrupt point inside that task does
    re-run. Keep that code cheap and side-effect-free.
 
+## Async, end to end
+
+Every node function, chain, and tool in this codebase is `async def`, and
+every graph is invoked with `.ainvoke()` - not just `app/api.py`'s endpoint.
+LangGraph requires this consistency: a graph with even one async node
+function raises `TypeError: No synchronous function provided to "..."` if
+you call its sync `.invoke()` - see `tests/` for how that plays out (they're
+all async tests, using `pytest-asyncio`, except `tests/e2e`, which stays
+sync because FastAPI's `TestClient` already bridges sync test code to the
+async ASGI app for you).
+
+Two things worth being precise about:
+
+- **I/O-bound vs. CPU-bound.** The Power BI client methods
+  (`clients/powerbi/mcp.py`, `rest.py`, `auth.py`) are async because a real
+  implementation would `await` a network call there - the mocked bodies
+  just don't have anything to actually await, which is fine; the shape is
+  what matters. The sandbox's code execution (`clients/sandbox/executor.py`)
+  is different: it's genuinely CPU-bound (it runs arbitrary code, which
+  could be slow), so merely marking it `async def` wouldn't help - it would
+  still block the event loop for its duration. `SandboxClient.execute`
+  (`clients/sandbox/client.py`) instead offloads it with
+  `asyncio.to_thread(execute, ...)`, which is the correct pattern for
+  "async-friendly" CPU-bound work: other requests keep being served while
+  it runs. Getting this distinction backwards - `await`ing CPU-bound work
+  directly, or `to_thread`-ing something that's actually I/O-bound - is a
+  common way real async codebases quietly lose their concurrency.
+- **Why it matters here specifically.** FastAPI's whole reason for being
+  async is serving concurrent requests without one blocking another; a
+  sync-underneath implementation wrapped in `async def` just for the
+  endpoint signature would defeat that the moment it talked to a real
+  Power BI/sandbox backend - every request would tie up a thread for the
+  duration of each call instead of yielding the event loop while waiting.
+
 ## What's mocked vs. real
 
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,
-  checkpointing), the FastAPI request/response cycle, the sandbox's
-  `exec()`-based code execution.
+  checkpointing), the async structure throughout (see above), the FastAPI
+  request/response cycle, the sandbox's `exec()`-based code execution.
 - **Mocked**: Power BI MCP/REST calls (`clients/powerbi/`, backed by
   `config/semantic_models.yaml` and in-memory fake tables) and Azure AD auth
-  (`clients/powerbi/auth.py`). Swapping these for real integrations only
-  touches `clients/`, not the agents or graphs.
+  (`clients/powerbi/auth.py`) - async in shape, but with nothing real to
+  await. Swapping these for real integrations only touches `clients/`, not
+  the agents or graphs.

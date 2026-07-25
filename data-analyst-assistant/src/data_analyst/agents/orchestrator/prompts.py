@@ -15,10 +15,13 @@ Given the conversation so far, decide what should happen next:
   computing/summarizing over it
 - route to "respond" once there's enough information to answer the user
   directly
-- route to "clarify" if you're not confident how to build the next query
-  (which table/columns/filters/measures the user means) or how to perform
-  the requested analysis (which computation answers their question) -
-  asking a short, specific clarifying question beats guessing wrong
+- route to "clarify" yourself only when the request is so unclear you can't
+  even tell which specialist should handle it (e.g. no hint of what data or
+  analysis is wanted at all). For narrower uncertainty - which
+  table/columns/filters/measures to query, or which computation answers the
+  question - delegate anyway: both specialists can ask their own
+  clarifying question directly if they get into the task and are still
+  unsure, without an extra round trip through you.
 
 Delegate one step at a time; you'll be asked again after each specialist runs."""
 

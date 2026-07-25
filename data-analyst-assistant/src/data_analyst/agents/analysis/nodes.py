@@ -9,11 +9,12 @@ from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.analysis.chains import build_agent_chain
 from data_analyst.agents.analysis.state import AnalysisState
+from data_analyst.agents.common.tools import request_clarification
 from data_analyst.clients.sandbox.client import get_sandbox_client
 
 
 @tool
-def python_sandbox_execute(
+async def python_sandbox_execute(
     code: str, state: Annotated[AnalysisState, InjectedState], sandbox_ref: str | None = None
 ) -> dict:
     """Execute Python/pandas code in an isolated sandbox.
@@ -23,18 +24,18 @@ def python_sandbox_execute(
     to return a value; anything printed is captured as stdout.
     """
     store = get_sandbox_client(state["session_id"])
-    result = store.execute(code, sandbox_ref)
+    result = await store.execute(code, sandbox_ref)
     return result.model_dump()
 
 
-TOOLS = [python_sandbox_execute]
+TOOLS = [python_sandbox_execute, request_clarification]
 
 
 def build_agent_node(llm: BaseChatModel):
     chain = build_agent_chain(llm, TOOLS)
 
-    def agent_node(state: AnalysisState):
-        response = chain.invoke(state["messages"])
+    async def agent_node(state: AnalysisState):
+        response = await chain.ainvoke(state["messages"])
         return {"messages": [response]}
 
     return agent_node

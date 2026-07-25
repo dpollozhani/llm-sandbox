@@ -93,6 +93,34 @@ def test_supervisor_asks_for_clarification_when_uncertain():
     assert body["reply"] == "Which region and time period do you mean?"
 
 
+def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
+    """A single scripted route is enough: if the orchestrator needed a second
+    supervisor decision after the datasource specialist ran, this would raise
+    IndexError instead of returning - proving the specialist's own
+    clarifying question short-circuits straight to the reply."""
+    clarify_call = {"name": "request_clarification", "args": {"question": "Which time period do you mean?"}, "id": "c1"}
+    llm = ScriptedRoutingModel(
+        responses=[
+            AIMessage(content="", tool_calls=[clarify_call]),
+            AIMessage(content="Which time period do you mean?"),
+        ],
+        routes=[{"next": "datasource"}],
+    )
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat", json={"message": "how much revenue did we make"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "clarification_needed"
+    assert body["reply"] == "Which time period do you mean?"
+
+
 def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
     dax_call = {
         "name": "pbi_rest_run_dax_query",

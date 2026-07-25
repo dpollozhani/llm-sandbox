@@ -27,24 +27,24 @@ class Route(BaseModel):
 def build_supervisor_chain(llm: BaseChatModel) -> Runnable:
     router = llm.with_structured_output(Route)
 
-    def _invoke(messages: list[AnyMessage], data_context: str | None) -> Route:
+    async def _invoke(args: dict) -> Route:
         prompt = SUPERVISOR_SYSTEM_PROMPT
-        if data_context:
+        if data_context := args.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {data_context}"
-        return router.invoke([SystemMessage(content=prompt), *messages])
+        return await router.ainvoke([SystemMessage(content=prompt), *args["messages"]])
 
-    return RunnableLambda(lambda args: _invoke(args["messages"], args.get("data_context")))
+    return RunnableLambda(_invoke)
 
 
 def build_respond_chain(llm: BaseChatModel) -> Runnable:
-    def _invoke(messages: list[AnyMessage]):
-        return llm.invoke([SystemMessage(content=RESPOND_SYSTEM_PROMPT), *messages])
+    async def _invoke(messages: list[AnyMessage]):
+        return await llm.ainvoke([SystemMessage(content=RESPOND_SYSTEM_PROMPT), *messages])
 
     return RunnableLambda(_invoke)
 
 
 def build_clarify_chain(llm: BaseChatModel) -> Runnable:
-    def _invoke(messages: list[AnyMessage]):
-        return llm.invoke([SystemMessage(content=CLARIFY_SYSTEM_PROMPT), *messages])
+    async def _invoke(messages: list[AnyMessage]):
+        return await llm.ainvoke([SystemMessage(content=CLARIFY_SYSTEM_PROMPT), *messages])
 
     return RunnableLambda(_invoke)

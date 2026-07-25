@@ -8,4 +8,5 @@ def test_datasource_has_no_mutating_tools():
         "pbi_rest_list_workspaces",
         "pbi_rest_get_refresh_history",
         "pbi_rest_run_dax_query",
+        "request_clarification",
     }

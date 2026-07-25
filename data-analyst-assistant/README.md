@@ -8,11 +8,15 @@ instead of the Azure AI SDK's Agents Service.
 
 The Power BI agent is read-only (metadata + structured queries only, no
 write/admin actions), and every query is a validated, structurally-built
-`SUMMARIZECOLUMNS(...)` call - never free-form DAX text from the model. The
-supervisor can ask a clarifying question instead of guessing when it isn't
-confident how to build a query or perform an analysis. Data already fetched
-in a conversation is cached per-session and reused by follow-up questions
-instead of triggering a new fetch. See
+`SUMMARIZECOLUMNS(...)` call - never free-form DAX text from the model. Both
+the supervisor and the specialist agents can ask a clarifying question
+instead of guessing - the supervisor for broad "which specialist even
+handles this" uncertainty, a specialist itself for narrower ambiguity (which
+columns/filters, or which computation) it only discovers mid-task, which
+skips an extra supervisor round-trip. Data already fetched in a conversation
+is cached per-session and reused by follow-up questions instead of
+triggering a new fetch. Every node, chain, tool, and client call is async
+end to end, not just the FastAPI endpoint. See
 [`docs/decisions/0001-langchain-langgraph.md`](docs/decisions/0001-langchain-langgraph.md)
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
@@ -69,8 +73,10 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 35 tests run offline with scripted fake models - no API key or network
-needed.
+All 40 tests run offline with scripted fake models - no API key or network
+needed. Everything except `tests/e2e` is `async def` (LangGraph requires
+`.ainvoke()` once any node is async); `tests/e2e` stays sync because
+FastAPI's `TestClient` already bridges to the async app for you.
 
 ## What's simplified vs. a real deployment
 

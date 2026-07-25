@@ -12,7 +12,7 @@ from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 def build_agent_chain(llm: BaseChatModel, tools: list[BaseTool]) -> Runnable:
     llm_with_tools = llm.bind_tools(tools)
 
-    def _invoke(messages: list[AnyMessage]):
-        return llm_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT), *messages])
+    async def _invoke(messages: list[AnyMessage]):
+        return await llm_with_tools.ainvoke([SystemMessage(content=SYSTEM_PROMPT), *messages])
 
     return RunnableLambda(_invoke)

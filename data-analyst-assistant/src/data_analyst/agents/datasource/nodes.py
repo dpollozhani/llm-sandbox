@@ -1,6 +1,11 @@
 """Datasource agent: read-only PBI MCP + PBI REST tools, plus the graph nodes
 that use them. No tool here mutates anything in Power BI - metadata lookups
-and structured DAX queries only."""
+and structured DAX queries only.
+
+Tools are async because a real implementation would await network calls
+here (Power BI MCP/REST, both already async - see clients/powerbi/); the
+mocked bodies just don't have anything to actually await.
+"""
 from __future__ import annotations
 
 from typing import Annotated
@@ -9,6 +14,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
+from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
 from data_analyst.clients.powerbi.dax import DaxFilter, DaxMeasure, DaxQuerySpec
@@ -21,25 +27,25 @@ _rest_client = PBIRestClient()
 
 
 @tool
-def pbi_mcp_list_semantic_models() -> list[dict]:
+async def pbi_mcp_list_semantic_models() -> list[dict]:
     """List semantic models (datasets) reachable through the Power BI MCP server."""
-    return _mcp_client.list_semantic_models()
+    return await _mcp_client.list_semantic_models()
 
 
 @tool
-def pbi_rest_list_workspaces() -> list[dict]:
+async def pbi_rest_list_workspaces() -> list[dict]:
     """List Power BI workspaces and their datasets via the PBI REST API."""
-    return _rest_client.list_workspaces()
+    return await _rest_client.list_workspaces()
 
 
 @tool
-def pbi_rest_get_refresh_history(dataset_id: str) -> list[dict]:
+async def pbi_rest_get_refresh_history(dataset_id: str) -> list[dict]:
     """Get the refresh history for a dataset via the PBI REST API."""
-    return _rest_client.get_refresh_history(dataset_id)
+    return await _rest_client.get_refresh_history(dataset_id)
 
 
 @tool
-def pbi_rest_run_dax_query(
+async def pbi_rest_run_dax_query(
     model_name: str,
     table: str,
     group_by: list[str],
@@ -81,7 +87,7 @@ def pbi_rest_run_dax_query(
         }
 
     try:
-        dax_query, df = _rest_client.run_dax_query(spec)
+        dax_query, df = await _rest_client.run_dax_query(spec)
     except ValueError as exc:
         return {"error": str(exc)}
 
@@ -101,14 +107,15 @@ TOOLS = [
     pbi_rest_list_workspaces,
     pbi_rest_get_refresh_history,
     pbi_rest_run_dax_query,
+    request_clarification,
 ]
 
 
 def build_agent_node(llm: BaseChatModel):
     chain = build_agent_chain(llm, TOOLS)
 
-    def agent_node(state: DatasourceState):
-        response = chain.invoke(state["messages"])
+    async def agent_node(state: DatasourceState):
+        response = await chain.ainvoke(state["messages"])
         return {"messages": [response]}
 
     return agent_node

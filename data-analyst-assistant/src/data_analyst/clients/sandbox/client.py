@@ -13,6 +13,7 @@ already-fetched data, but sessions never see each other's data.
 """
 from __future__ import annotations
 
+import asyncio
 import itertools
 
 import pandas as pd
@@ -43,14 +44,23 @@ class SandboxClient:
     def remember(self, cache_key: str, sandbox_ref: str) -> None:
         self._query_cache[cache_key] = sandbox_ref
 
-    def execute(self, code: str, sandbox_ref: str | None = None) -> ExecutionResult:
+    async def execute(self, code: str, sandbox_ref: str | None = None) -> ExecutionResult:
+        """Run `code` against the staged DataFrame (if any).
+
+        `execute()` (executor.py) is CPU-bound - it runs arbitrary code, so
+        it could take a while - not I/O-bound, so `await`ing it directly
+        here would still block the event loop for its duration. Offloading
+        it to a thread via `asyncio.to_thread` is the correct way to make a
+        CPU-bound call "async-friendly": other requests keep being served
+        while this one runs.
+        """
         with trace_span("sandbox.execute", sandbox_ref=sandbox_ref):
             dataframe = None
             if sandbox_ref is not None:
                 if sandbox_ref not in self._store:
                     return ExecutionResult(error=f"Unknown sandbox_ref '{sandbox_ref}'")
                 dataframe = self._store[sandbox_ref]
-            return execute(code, dataframe)
+            return await asyncio.to_thread(execute, code, dataframe)
 
 
 _sessions: dict[str, SandboxClient] = {}
