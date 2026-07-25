@@ -7,9 +7,9 @@ API's "Execute Queries" endpoint), not through MCP.
 """
 from __future__ import annotations
 
-from ...config.settings import PowerBiCatalog, get_catalog
-from ...telemetry.tracing import trace_span
-from .auth import get_bearer_token
+from data_analyst.clients.powerbi.auth import get_bearer_token
+from data_analyst.config.settings import PowerBiCatalog, get_catalog
+from data_analyst.telemetry.tracing import trace_span
 
 
 class PBIMcpClient:

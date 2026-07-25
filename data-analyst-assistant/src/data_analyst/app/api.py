@@ -13,8 +13,8 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from .dependencies import get_graph
-from .lifespan import lifespan
+from data_analyst.app.dependencies import get_graph
+from data_analyst.app.lifespan import lifespan
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..common.state import ChatState
+from data_analyst.agents.common.state import ChatState
 
 
 class DatasourceState(ChatState):

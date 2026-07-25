@@ -21,8 +21,13 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from .nodes import build_analysis_node, build_datasource_node, build_respond_node, build_supervisor_node
-from .state import OrchestratorState
+from data_analyst.agents.orchestrator.nodes import (
+    build_analysis_node,
+    build_datasource_node,
+    build_respond_node,
+    build_supervisor_node,
+)
+from data_analyst.agents.orchestrator.state import OrchestratorState
 
 
 def build_orchestrator_graph(

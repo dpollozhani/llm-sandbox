@@ -7,11 +7,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
 
-from ...clients.powerbi.mcp import PBIMcpClient
-from ...clients.powerbi.rest import PBIRestClient
-from ...clients.sandbox.client import sandbox_client
-from .chains import build_agent_chain
-from .state import DatasourceState
+from data_analyst.agents.datasource.chains import build_agent_chain
+from data_analyst.agents.datasource.state import DatasourceState
+from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.rest import PBIRestClient
+from data_analyst.clients.sandbox.client import sandbox_client
 
 _mcp_client = PBIMcpClient()
 _rest_client = PBIRestClient()

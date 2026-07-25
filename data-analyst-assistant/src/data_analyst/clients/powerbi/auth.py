@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 
-from ...utils.retry import retry
+from data_analyst.utils.retry import retry
 
 _TOKEN_TTL_SECONDS = 3600
 

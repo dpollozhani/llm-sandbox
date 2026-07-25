@@ -7,8 +7,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
 
-from .nodes import build_agent_node, build_tool_node
-from .state import AnalysisState
+from data_analyst.agents.analysis.nodes import build_agent_node, build_tool_node
+from data_analyst.agents.analysis.state import AnalysisState
 
 
 def build_analysis_graph(

@@ -5,9 +5,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
 
-from ...clients.sandbox.client import sandbox_client
-from .chains import build_agent_chain
-from .state import AnalysisState
+from data_analyst.agents.analysis.chains import build_agent_chain
+from data_analyst.agents.analysis.state import AnalysisState
+from data_analyst.clients.sandbox.client import sandbox_client
 
 
 @tool

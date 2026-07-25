@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Request
 from langgraph.graph.state import CompiledStateGraph
 
-from ..config.settings import Settings
+from data_analyst.config.settings import Settings
 
 
 def get_graph(request: Request) -> CompiledStateGraph:

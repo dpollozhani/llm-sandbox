@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from langchain_openai import AzureChatOpenAI
 
-from ...config.settings import Settings
+from data_analyst.config.settings import Settings
 
 
 def build_azure_chat_openai(settings: Settings) -> AzureChatOpenAI:

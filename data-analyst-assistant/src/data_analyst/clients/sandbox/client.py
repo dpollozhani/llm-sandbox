@@ -12,8 +12,8 @@ import itertools
 
 import pandas as pd
 
-from ...telemetry.tracing import trace_span
-from .executor import ExecutionResult, execute
+from data_analyst.clients.sandbox.executor import ExecutionResult, execute
+from data_analyst.telemetry.tracing import trace_span
 
 _ref_counter = itertools.count(1)
 

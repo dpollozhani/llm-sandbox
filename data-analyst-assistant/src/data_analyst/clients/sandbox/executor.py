@@ -9,7 +9,7 @@ import io
 import pandas as pd
 from pydantic import BaseModel
 
-from ...utils.dataframe import to_records
+from data_analyst.utils.dataframe import to_records
 
 
 class ExecutionResult(BaseModel):

@@ -6,11 +6,11 @@ from __future__ import annotations
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from ..analysis.graph import build_analysis_graph
-from ..common.models import AgentResult
-from ..datasource.graph import build_datasource_graph
-from .chains import build_respond_chain, build_supervisor_chain
-from .state import OrchestratorState
+from data_analyst.agents.analysis.graph import build_analysis_graph
+from data_analyst.agents.common.models import AgentResult
+from data_analyst.agents.datasource.graph import build_datasource_graph
+from data_analyst.agents.orchestrator.chains import build_respond_chain, build_supervisor_chain
+from data_analyst.agents.orchestrator.state import OrchestratorState
 
 MAX_TURNS = 6
 

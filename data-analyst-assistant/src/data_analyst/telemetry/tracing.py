@@ -8,7 +8,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from .logging import get_logger
+from data_analyst.telemetry.logging import get_logger
 
 _logger = get_logger("telemetry.tracing")
 

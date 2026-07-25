@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ...config.settings import PowerBiCatalog, get_catalog
-from ...telemetry.tracing import trace_span
-from .auth import get_bearer_token
+from data_analyst.clients.powerbi.auth import get_bearer_token
+from data_analyst.config.settings import PowerBiCatalog, get_catalog
+from data_analyst.telemetry.tracing import trace_span
 
 _REFRESH_HISTORY: dict[str, list[dict]] = {
     "ds-001": [

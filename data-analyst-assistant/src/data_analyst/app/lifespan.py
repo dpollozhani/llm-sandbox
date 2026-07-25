@@ -8,10 +8,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
 
-from ..agents.orchestrator.graph import build_orchestrator_graph
-from ..clients.llm.factory import get_chat_model
-from ..config.settings import get_settings
-from ..telemetry.logging import configure_logging
+from data_analyst.agents.orchestrator.graph import build_orchestrator_graph
+from data_analyst.clients.llm.factory import get_chat_model
+from data_analyst.config.settings import get_settings
+from data_analyst.telemetry.logging import configure_logging
 
 
 @asynccontextmanager

@@ -15,8 +15,8 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 
-from ...config.settings import Settings
-from .azure_openai import build_azure_chat_openai
+from data_analyst.clients.llm.azure_openai import build_azure_chat_openai
+from data_analyst.config.settings import Settings
 
 
 class FakeToolCallingChatModel(FakeMessagesListChatModel):

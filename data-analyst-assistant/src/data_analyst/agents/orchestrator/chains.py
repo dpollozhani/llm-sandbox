@@ -8,7 +8,7 @@ from langchain_core.messages import AnyMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel
 
-from .prompts import RESPOND_SYSTEM_PROMPT, SUPERVISOR_SYSTEM_PROMPT
+from data_analyst.agents.orchestrator.prompts import RESPOND_SYSTEM_PROMPT, SUPERVISOR_SYSTEM_PROMPT
 
 
 class Route(BaseModel):

@@ -6,7 +6,7 @@ from langchain_core.messages import AnyMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.tools import BaseTool
 
-from .prompts import SYSTEM_PROMPT
+from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 
 
 def build_agent_chain(llm: BaseChatModel, tools: list[BaseTool]) -> Runnable:
