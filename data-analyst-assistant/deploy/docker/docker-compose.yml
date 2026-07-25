@@ -1,0 +1,11 @@
+services:
+  data-analyst-assistant:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../.env
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-demo}
