@@ -3,13 +3,15 @@ specialists and answers once it has enough information.
 
     START -> supervisor -> {datasource, analysis} -> supervisor -> ... -> respond -> END
 
-Only this graph is compiled with a checkpointer. Because a specialist's
+This graph is compiled with a checkpointer so a `thread_id` scopes a
+resumable, multi-turn conversation (see app/lifespan.py). Both specialists
+are read-only in this build (see agents/datasource/nodes.py), so there's
+currently nothing that pauses mid-run - but because a specialist's
 `.invoke()` inside a node function picks up the *ambient* LangChain
 `RunnableConfig` (checkpointer + thread_id) when it isn't given its own
-`config=`, an `interrupt()` raised deep inside the datasource specialist's
-`pbi_rest_trigger_dataset_refresh` tool still pauses (and, on
-`Command(resume=...)`, resumes) this orchestrator run - no extra plumbing
-needed to bridge parent and child.
+`config=`, a future mutating tool could call `langgraph.types.interrupt()`
+and have it pause (and, on `Command(resume=...)`, resume) this orchestrator
+run with no extra plumbing to bridge parent and child.
 """
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Datasource subgraph: a small ReAct-style loop scoped to the PBI MCP/REST tools."""
+"""Datasource subgraph: a small ReAct-style loop scoped to the read-only PBI MCP/REST tools."""
 from __future__ import annotations
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -23,8 +23,7 @@ def build_datasource_graph(
     graph.add_edge("tools", "agent")
 
     # No checkpointer by default: see agents/orchestrator/graph.py for how this
-    # subgraph is wired into the orchestrator so an `interrupt()` in
-    # pbi_rest_trigger_dataset_refresh pauses the whole run. Pass a
+    # subgraph is invoked from within an orchestrator node. Pass a
     # checkpointer explicitly to run and test this subgraph standalone (see
     # tests/integration).
     return graph.compile(checkpointer=checkpointer)

@@ -17,7 +17,8 @@ folding is manual rather than a native LangGraph subgraph node.
 
 ## Datasource (`agents/datasource/`)
 
-Power BI specialist. Tools (`nodes.py`):
+Power BI specialist, **read-only by design**: metadata lookups and DAX
+queries only, nothing that changes state in Power BI. Tools (`nodes.py`):
 
 | Tool | Backing client | Notes |
 |---|---|---|
@@ -25,12 +26,13 @@ Power BI specialist. Tools (`nodes.py`):
 | `pbi_mcp_run_dax_query` | `clients/powerbi/mcp.py` | stages the result into the sandbox (`clients/sandbox/client.py`) and returns a `sandbox_ref` |
 | `pbi_rest_list_workspaces` | `clients/powerbi/rest.py` | |
 | `pbi_rest_get_refresh_history` | `clients/powerbi/rest.py` | |
-| `pbi_rest_trigger_dataset_refresh` | `clients/powerbi/rest.py` | mutating - calls `interrupt()` for approval before executing |
 
 `models.py` defines the structured shapes these tools conceptually return
 (`SemanticModelInfo`, `DaxQueryResult`, `WorkspaceInfo`,
-`RefreshHistoryEntry`, `RefreshResult`); the tools themselves return plain
-dicts at the LangChain tool boundary.
+`RefreshHistoryEntry`); the tools themselves return plain dicts at the
+LangChain tool boundary. `clients/powerbi/rest.py` has no write/admin method
+(e.g. triggering a refresh) at all - this isn't just a tool that's
+unexposed, the capability doesn't exist in the client layer either.
 
 ## Analysis (`agents/analysis/`)
 
@@ -42,8 +44,6 @@ by `sandbox_ref`) via `clients/sandbox/client.py`. `models.py` defines
 ## Common (`agents/common/`)
 
 - `state.py::ChatState` - the `messages` shape every agent graph shares.
-- `models.py::ApprovalRequest` - the payload shape surfaced through
-  `interrupt()`.
 - `models.py::AgentResult` - what a specialist hands back to the
   orchestrator (`agent` name + `summary` text).
 
@@ -60,6 +60,7 @@ by `sandbox_ref`) via `clients/sandbox/client.py`. `models.py` defines
    `SUPERVISOR_SYSTEM_PROMPT` (`agents/orchestrator/prompts.py`) so the
    router knows when to pick it.
 3. Any tool that mutates something outside the conversation should call
-   `interrupt()` before acting, following
-   `pbi_rest_trigger_dataset_refresh` - see the propagation rules in
-   `docs/architecture.md`.
+   `langgraph.types.interrupt()` for human approval before acting - see
+   "No mutating actions (by design)" in `docs/architecture.md` for how that
+   propagates through the orchestrator, and note that no tool in this
+   codebase currently does this (the datasource agent is read-only).

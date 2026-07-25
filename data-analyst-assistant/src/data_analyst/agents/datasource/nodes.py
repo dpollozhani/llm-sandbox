@@ -1,10 +1,11 @@
-"""Datasource agent: PBI MCP + PBI REST tools, plus the graph nodes that use them."""
+"""Datasource agent: read-only PBI MCP + PBI REST tools, plus the graph nodes
+that use them. No tool here mutates anything in Power BI - metadata lookups
+and DAX queries only."""
 from __future__ import annotations
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
-from langgraph.types import interrupt
 
 from ...clients.powerbi.mcp import PBIMcpClient
 from ...clients.powerbi.rest import PBIRestClient
@@ -46,32 +47,11 @@ def pbi_rest_get_refresh_history(dataset_id: str) -> list[dict]:
     return _rest_client.get_refresh_history(dataset_id)
 
 
-@tool
-def pbi_rest_trigger_dataset_refresh(dataset_id: str) -> dict:
-    """Trigger an on-demand refresh of a Power BI dataset via the PBI REST API.
-
-    This mutates a shared resource, so it pauses the graph and asks a human
-    to approve before actually "calling" the REST API.
-    """
-    approved = interrupt(
-        {
-            "type": "approval_required",
-            "action": "pbi_rest_trigger_dataset_refresh",
-            "resource_id": dataset_id,
-            "message": f"Approve triggering a refresh for dataset '{dataset_id}'?",
-        }
-    )
-    if not approved:
-        return {"status": "cancelled", "dataset_id": dataset_id}
-    return {"status": "completed", "dataset_id": dataset_id, "detail": _rest_client.trigger_refresh(dataset_id)}
-
-
 TOOLS = [
     pbi_mcp_list_semantic_models,
     pbi_mcp_run_dax_query,
     pbi_rest_list_workspaces,
     pbi_rest_get_refresh_history,
-    pbi_rest_trigger_dataset_refresh,
 ]
 
 

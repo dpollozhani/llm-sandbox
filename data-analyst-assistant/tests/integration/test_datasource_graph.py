@@ -1,6 +1,4 @@
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command
 
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
@@ -32,44 +30,20 @@ def test_run_dax_query_stages_a_sandbox_ref():
     assert result["messages"][-1].content == "Fetched the Sales table."
 
 
-def test_trigger_refresh_pauses_for_approval_and_resumes():
+def test_get_refresh_history_is_read_only_no_trigger_tool_available():
     llm = FakeToolCallingChatModel(
         responses=[
             AIMessage(
                 content="",
-                tool_calls=[{"name": "pbi_rest_trigger_dataset_refresh", "args": {"dataset_id": "ds-001"}, "id": "c1"}],
+                tool_calls=[{"name": "pbi_rest_get_refresh_history", "args": {"dataset_id": "ds-001"}, "id": "c1"}],
             ),
-            AIMessage(content="Refresh triggered."),
+            AIMessage(content="The dataset last refreshed successfully."),
         ]
     )
-    graph = build_datasource_graph(llm, checkpointer=InMemorySaver())
-    config = {"configurable": {"thread_id": "test-thread"}}
+    graph = build_datasource_graph(llm)
 
-    paused = graph.invoke({"messages": [HumanMessage(content="refresh please")]}, config=config)
-    assert paused.get("__interrupt__")
-    payload = paused["__interrupt__"][0].value
-    assert payload["resource_id"] == "ds-001"
+    result = graph.invoke({"messages": [HumanMessage(content="when did the dataset last refresh?")]})
 
-    resumed = graph.invoke(Command(resume=True), config=config)
-    tool_messages = [m for m in resumed["messages"] if m.type == "tool"]
-    assert '"status": "completed"' in tool_messages[-1].content
-
-
-def test_trigger_refresh_can_be_rejected():
-    llm = FakeToolCallingChatModel(
-        responses=[
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "pbi_rest_trigger_dataset_refresh", "args": {"dataset_id": "ds-001"}, "id": "c1"}],
-            ),
-            AIMessage(content="Okay, not refreshing."),
-        ]
-    )
-    graph = build_datasource_graph(llm, checkpointer=InMemorySaver())
-    config = {"configurable": {"thread_id": "test-thread-reject"}}
-
-    graph.invoke({"messages": [HumanMessage(content="refresh please")]}, config=config)
-    resumed = graph.invoke(Command(resume=False), config=config)
-
-    tool_messages = [m for m in resumed["messages"] if m.type == "tool"]
-    assert '"status": "cancelled"' in tool_messages[-1].content
+    tool_names = {tc["name"] for m in result["messages"] if m.type == "ai" for tc in (m.tool_calls or [])}
+    assert "pbi_rest_trigger_dataset_refresh" not in tool_names
+    assert result["messages"][-1].content == "The dataset last refreshed successfully."

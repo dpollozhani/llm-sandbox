@@ -2,9 +2,10 @@
 
 A simplified, multi-agent rebuild of a data-analyst assistant (Power BI +
 code execution) using only **LangChain** (tools, chat model abstraction) and
-**LangGraph** (agent loops, checkpointed memory, human-in-the-loop), served
-over **FastAPI** - built to see what that stack looks like in practice
-instead of the Azure AI SDK's Agents Service. See
+**LangGraph** (agent loops, checkpointed memory), served over **FastAPI** -
+built to see what that stack looks like in practice instead of the Azure AI
+SDK's Agents Service. The Power BI agent is read-only (metadata + DAX
+queries only, no write/admin actions). See
 [`docs/decisions/0001-langchain-langgraph.md`](docs/decisions/0001-langchain-langgraph.md)
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
@@ -27,10 +28,10 @@ curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
   -d '{"message": "what can you do?"}'
 ```
 
-To see the full multi-agent flow (routing, tool calls, the dataset-refresh
-approval pause), set `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=azure_openai`
-in `.env` with a real key - or read `tests/e2e/test_api_chat.py`, which
-drives the same flow end-to-end with a scripted model and needs no API key.
+To see the full multi-agent flow (routing, tool calls across both
+specialists), set `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=azure_openai` in
+`.env` with a real key - or read `tests/e2e/test_api_chat.py`, which drives
+the same flow end-to-end with a scripted model and needs no API key.
 
 ## Layout
 
@@ -49,7 +50,7 @@ src/data_analyst/
 tests/
   unit/          client layer only (no LangGraph)
   integration/   one subgraph / one orchestrator node at a time, scripted models
-  e2e/           the real FastAPI app end-to-end, including the approval pause
+  e2e/           the real FastAPI app end-to-end, across both specialists
 deploy/          Dockerfile + docker-compose, an Azure DevOps pipeline
 infrastructure/  illustrative Bicep/Terraform for a Container App + Azure OpenAI
 docs/            architecture, per-agent reference, decision records

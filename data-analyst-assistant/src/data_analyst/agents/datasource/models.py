@@ -27,9 +27,3 @@ class RefreshHistoryEntry(BaseModel):
     status: str
     start_time: str
     end_time: str
-
-
-class RefreshResult(BaseModel):
-    status: str
-    dataset_id: str
-    detail: dict | None = None

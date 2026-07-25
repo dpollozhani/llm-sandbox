@@ -19,10 +19,8 @@ def test_run_dax_query_unknown_model_raises():
         PBIMcpClient().run_dax_query("Nonexistent Model", "EVALUATE Sales")
 
 
-def test_trigger_refresh_appends_history_entry():
+def test_get_refresh_history_is_read_only():
     rest = PBIRestClient()
-    before = len(rest.get_refresh_history("ds-001"))
-    rest.trigger_refresh("ds-001")
-    after = rest.get_refresh_history("ds-001")
-    assert len(after) == before + 1
-    assert after[0]["status"] == "Completed"
+    assert not hasattr(rest, "trigger_refresh")
+    history = rest.get_refresh_history("ds-001")
+    assert history[0]["status"] == "Completed"

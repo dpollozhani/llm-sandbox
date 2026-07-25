@@ -23,10 +23,12 @@ FastAPI (app/api.py)
 - **`agents/datasource`** and **`agents/analysis`**: each is an independent,
   small ReAct-style `StateGraph` - an `agent` node bound to a scoped set of
   tools via `bind_tools`, and a `ToolNode`, looping through
-  `tools_condition` until the model answers without calling a tool.
+  `tools_condition` until the model answers without calling a tool. The
+  datasource agent is read-only: metadata lookups and DAX queries only, no
+  tool that changes anything in Power BI.
 - **`agents/common`**: the `ChatState` shape (`messages` with LangGraph's
-  `add_messages` reducer) shared by all three graphs, and the small models
-  (`ApprovalRequest`, `AgentResult`) exchanged between them.
+  `add_messages` reducer) shared by all three graphs, and `AgentResult`, the
+  small model a specialist hands back to the orchestrator.
 - **`clients/`**: everything that would talk to a real system in
   production - Power BI (MCP + REST + auth), the code sandbox, and the LLM
   provider. Agent code never imports a provider SDK directly; it only calls
@@ -45,48 +47,42 @@ transcript back - the opposite of "delegate one scoped task, get back one
 summary." Manual invocation from a plain node function is what makes that
 translation possible.
 
-## How the human-approval interrupt propagates
+## No mutating actions (by design)
 
-`agents/datasource/nodes.py`'s `pbi_rest_trigger_dataset_refresh` tool calls
-`langgraph.types.interrupt()` before "calling" the REST API. Only the
-**orchestrator** graph is compiled with a checkpointer
-(`agents/orchestrator/graph.py`); the datasource/analysis subgraphs are not.
-That's enough for the pause to work correctly: a node function's call to
-`child_graph.invoke(seed)` (no `config=` passed) picks up LangChain's
-*ambient* `RunnableConfig` - including the orchestrator's checkpointer and
-`thread_id` - so the interrupt bubbles up through the child graph, through
-`_run_specialist`, and out of `orchestrator.invoke()`/`ainvoke()` as
-`result["__interrupt__"]`, exactly as if it had been raised directly inside
-the orchestrator.
+The datasource agent only reads: semantic model/table discovery, DAX
+queries, workspace listing, refresh history. There's no tool anywhere in
+this build that changes state in Power BI (or elsewhere), so there's
+nothing that needs a human-in-the-loop approval gate.
 
-Two correctness rules fall out of this:
+That said, the orchestrator's checkpointing already supports one for free.
+A node function's call to `child_graph.invoke(seed)` (no `config=` passed)
+picks up LangChain's *ambient* `RunnableConfig` - including the
+orchestrator's checkpointer and `thread_id` - so a future mutating tool
+could call `langgraph.types.interrupt()` and have the pause bubble up
+through the child graph, through `_run_specialist`
+(`agents/orchestrator/nodes.py`), and out of
+`orchestrator.invoke()`/`ainvoke()` as `result["__interrupt__"]`, with no
+extra plumbing to bridge parent and child. Two things to get right if you
+add one:
 
 1. **Never wrap a specialist's `.invoke()` call in a broad `except
    Exception`** (or apply `utils/retry.py`'s `@retry` to a node function that
    calls one). `interrupt()` works by raising `GraphInterrupt`, which *is* a
-   plain `Exception` subclass - a broad catch silently swallows the pause.
+   plain `Exception` subclass - a broad catch would silently swallow the
+   pause.
 2. **The orchestrator node function reruns from its own top on resume.** From
    the parent graph's point of view, `_run_specialist` is one atomic task;
    when you resume with `Command(resume=...)`, LangGraph re-enters that node
    function from scratch. The child graph's own already-completed steps are
-   *not* redone (this is tracked transparently via the same ambient
-   checkpointer), but any plain Python before the interrupt point inside that
-   task does re-run. Keep that code cheap and side-effect-free.
-
-## FastAPI pause/resume
-
-`app/api.py`'s `POST /chat` returns `status: "approval_required"` plus the
-interrupt payload instead of a reply when the graph pauses. The caller
-resumes via `POST /chat/{thread_id}/approve`, which first calls
-`graph.aget_state(config)` to validate the thread is actually paused
-(`404` if the thread is unknown, `409` if it isn't currently awaiting
-approval) before resuming with `Command(resume=body.approved)`.
+   *not* redone (tracked transparently via the same ambient checkpointer),
+   but any plain Python before the interrupt point inside that task does
+   re-run. Keep that code cheap and side-effect-free.
 
 ## What's mocked vs. real
 
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,
-  checkpointing, interrupts), the FastAPI request/response cycle, the
-  sandbox's `exec()`-based code execution.
+  checkpointing), the FastAPI request/response cycle, the sandbox's
+  `exec()`-based code execution.
 - **Mocked**: Power BI MCP/REST calls (`clients/powerbi/`, backed by
   `config/semantic_models.yaml` and in-memory fake tables) and Azure AD auth
   (`clients/powerbi/auth.py`). Swapping these for real integrations only

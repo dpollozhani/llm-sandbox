@@ -1,8 +1,10 @@
-"""Mocked Power BI REST API client (workspaces, datasets, refresh operations).
+"""Mocked Power BI REST API client - read-only (workspace/dataset metadata,
+refresh history). No write/admin operations (e.g. triggering a refresh) are
+exposed here; the datasource agent is intentionally read-only.
 
 A real client would call `https://api.powerbi.com/v1.0/myorg/...`; here it
-reads workspace/dataset metadata from the catalog config and keeps refresh
-history in memory.
+reads workspace/dataset metadata from the catalog config and refresh history
+from an in-memory fixture.
 """
 from __future__ import annotations
 
@@ -41,16 +43,3 @@ class PBIRestClient:
         with trace_span("pbi_rest.get_refresh_history", dataset_id=dataset_id):
             get_bearer_token()
             return list(_REFRESH_HISTORY.get(dataset_id, []))
-
-    def trigger_refresh(self, dataset_id: str) -> dict:
-        with trace_span("pbi_rest.trigger_refresh", dataset_id=dataset_id):
-            get_bearer_token()
-            history = _REFRESH_HISTORY.setdefault(dataset_id, [])
-            entry = {
-                "request_id": f"r-{len(history) + 1}",
-                "status": "Completed",
-                "start_time": "2026-07-25T00:00:00Z",
-                "end_time": "2026-07-25T00:03:00Z",
-            }
-            history.insert(0, entry)
-            return entry

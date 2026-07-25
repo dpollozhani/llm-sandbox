@@ -4,15 +4,6 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-class ApprovalRequest(BaseModel):
-    """Payload surfaced through `langgraph.types.interrupt()` for any tool
-    that mutates a shared resource, e.g. triggering a Power BI refresh."""
-
-    action: str
-    resource_id: str
-    message: str
-
-
 class AgentResult(BaseModel):
     """What a specialist subgraph (datasource/analysis) hands back to the
     orchestrator: enough to keep the conversation going without re-exposing

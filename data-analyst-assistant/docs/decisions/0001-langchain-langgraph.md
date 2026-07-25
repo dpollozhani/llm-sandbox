@@ -43,8 +43,13 @@ living inside a managed run object.
   independently testable - see `tests/unit` and `tests/integration`.
 - `InMemorySaver` is process-local, fine for this demo and for local
   development, but a production deployment needs a persistent checkpointer
-  (Postgres/Redis-backed) so approvals and conversations survive restarts
-  and work across multiple app instances.
+  (Postgres/Redis-backed) so conversations survive restarts and work across
+  multiple app instances.
+- The datasource agent is read-only (metadata + DAX queries only, no PBI
+  REST write/admin calls), so the `interrupt()`-based human-approval row
+  above describes a capability the stack has, not one this codebase
+  currently exercises - see "No mutating actions (by design)" in
+  `docs/architecture.md`.
 - The Python sandbox and Power BI clients are mocked; swapping in the real
   MCP/REST/sandbox integrations only touches `src/data_analyst/clients/`,
   none of the agent or graph code.

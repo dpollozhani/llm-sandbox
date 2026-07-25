@@ -1,12 +1,5 @@
 """Orchestrator nodes: a routing supervisor plus wrappers that seed a fresh
 specialist subgraph from the current task and fold its answer back in.
-
-IMPORTANT: `interrupt()` (used by the datasource agent's dataset-refresh
-approval) raises `GraphInterrupt`, which is a plain `Exception` subclass.
-Never wrap a specialist's `.invoke()` call below in a broad `except
-Exception`, and never apply `utils/retry.py`'s `@retry` to these node
-functions - either would silently swallow the pause instead of letting it
-bubble up to the orchestrator's own checkpointer.
 """
 from __future__ import annotations
 
