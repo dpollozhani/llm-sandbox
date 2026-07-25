@@ -1,0 +1,38 @@
+# Render Blueprint for data-analyst-assistant. Connect this repo on
+# https://dashboard.render.com/blueprints (or use the "Deploy to Render"
+# button in data-analyst-assistant/README.md) and Render auto-detects this
+# file at the repo root.
+#
+# `rootDir` scopes the service to the subdirectory in this monorepo;
+# `dockerfilePath`/`dockerContext` are then relative to it - matching
+# deploy/docker/docker-compose.yml's `context: ../..` (i.e. the
+# data-analyst-assistant/ directory).
+services:
+  - type: web
+    name: data-analyst-assistant
+    env: docker
+    plan: free
+    rootDir: data-analyst-assistant
+    dockerfilePath: ./deploy/docker/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: LLM_PROVIDER
+        value: demo
+      - key: LOG_LEVEL
+        value: INFO
+      # Set these in the Render dashboard (Environment tab) if you switch
+      # LLM_PROVIDER away from "demo" - `sync: false` keeps them out of this
+      # committed file.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-5
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_API_VERSION
+        value: "2024-10-21"
+      - key: AZURE_OPENAI_DEPLOYMENT
+        value: gpt-4o

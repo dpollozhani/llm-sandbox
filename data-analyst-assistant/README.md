@@ -46,12 +46,34 @@ Then try it any of three ways:
     -d '{"message": "what can you do?"}'
   ```
 
-To try it from your phone, it needs to be reachable on your network, not
-just `localhost` on your laptop: run
+To try it from your phone without deploying anywhere: run
 `uvicorn data_analyst.app.api:app --host 0.0.0.0` and open
-`http://<your-laptop's-LAN-IP>:8000/` from your phone on the same Wi-Fi, or
-build/deploy the image in `deploy/docker/` (Dockerfile already set up) to
-get a real public URL.
+`http://<your-laptop's-LAN-IP>:8000/` from your phone on the same Wi-Fi.
+
+## Deploy (Render)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dpollozhani/llm-sandbox)
+
+For a real public URL (e.g. to open from your phone off Wi-Fi), this repo
+has a Render Blueprint (`/render.yaml` at the repo root - this is a
+monorepo, so it points at `data-analyst-assistant/` via `rootDir`) that
+builds `deploy/docker/Dockerfile` and defaults to `LLM_PROVIDER=demo`.
+
+- **Button above**: works once `render.yaml` is on the repo's default
+  branch (Render's Blueprint button deploys from the default branch, not
+  an arbitrary one) - merge this first, or use the manual path below to
+  deploy this branch directly.
+- **Manual (works right now, any branch)**: Render dashboard -> New -> Web
+  Service -> connect `dpollozhani/llm-sandbox`, pick this branch -> Runtime
+  "Docker" -> Root Directory `data-analyst-assistant` -> Dockerfile Path
+  `./deploy/docker/Dockerfile` -> Docker Build Context Directory `.` ->
+  Health Check Path `/health` -> free plan.
+
+Either way, the free plan spins the instance down after ~15 minutes of
+inactivity (30-60s cold start on the next request) and defaults to demo
+mode - set `LLM_PROVIDER` (and the matching `ANTHROPIC_API_KEY` or
+`AZURE_OPENAI_*` vars) in the service's Environment tab for the real
+multi-agent flow.
 
 To see the full multi-agent flow (routing, tool calls across both
 specialists), set `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=azure_openai` in
