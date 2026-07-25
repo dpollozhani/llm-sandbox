@@ -11,7 +11,7 @@ def test_run_dax_query_stages_a_sandbox_ref():
                 content="",
                 tool_calls=[
                     {
-                        "name": "pbi_mcp_run_dax_query",
+                        "name": "pbi_rest_run_dax_query",
                         "args": {"model_name": "Sales Analytics", "dax_query": "EVALUATE Sales"},
                         "id": "c1",
                     }

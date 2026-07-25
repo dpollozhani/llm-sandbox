@@ -24,18 +24,6 @@ def pbi_mcp_list_semantic_models() -> list[dict]:
 
 
 @tool
-def pbi_mcp_run_dax_query(model_name: str, dax_query: str) -> dict:
-    """Run a DAX query against a Power BI semantic model via the MCP server.
-
-    Returns a preview of the resulting rows plus a `sandbox_ref` that the
-    analysis agent can use to load the full result as a DataFrame.
-    """
-    df = _mcp_client.run_dax_query(model_name, dax_query)
-    ref = sandbox_client.stage(df)
-    return {"sandbox_ref": ref, "row_count": len(df), "preview": df.head(5).to_dict(orient="records")}
-
-
-@tool
 def pbi_rest_list_workspaces() -> list[dict]:
     """List Power BI workspaces and their datasets via the PBI REST API."""
     return _rest_client.list_workspaces()
@@ -47,11 +35,23 @@ def pbi_rest_get_refresh_history(dataset_id: str) -> list[dict]:
     return _rest_client.get_refresh_history(dataset_id)
 
 
+@tool
+def pbi_rest_run_dax_query(model_name: str, dax_query: str) -> dict:
+    """Run a DAX query against a Power BI semantic model via the PBI REST API.
+
+    Returns a preview of the resulting rows plus a `sandbox_ref` that the
+    analysis agent can use to load the full result as a DataFrame.
+    """
+    df = _rest_client.run_dax_query(model_name, dax_query)
+    ref = sandbox_client.stage(df)
+    return {"sandbox_ref": ref, "row_count": len(df), "preview": df.head(5).to_dict(orient="records")}
+
+
 TOOLS = [
     pbi_mcp_list_semantic_models,
-    pbi_mcp_run_dax_query,
     pbi_rest_list_workspaces,
     pbi_rest_get_refresh_history,
+    pbi_rest_run_dax_query,
 ]
 
 

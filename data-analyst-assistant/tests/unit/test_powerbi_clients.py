@@ -10,13 +10,17 @@ def test_list_semantic_models_reads_catalog():
 
 
 def test_run_dax_query_matches_table_from_query_text():
-    df = PBIMcpClient().run_dax_query("Sales Analytics", "EVALUATE Products")
+    df = PBIRestClient().run_dax_query("Sales Analytics", "EVALUATE Products")
     assert "Category" in df.columns
 
 
 def test_run_dax_query_unknown_model_raises():
     with pytest.raises(ValueError):
-        PBIMcpClient().run_dax_query("Nonexistent Model", "EVALUATE Sales")
+        PBIRestClient().run_dax_query("Nonexistent Model", "EVALUATE Sales")
+
+
+def test_mcp_client_has_no_query_execution():
+    assert not hasattr(PBIMcpClient(), "run_dax_query")
 
 
 def test_get_refresh_history_is_read_only():

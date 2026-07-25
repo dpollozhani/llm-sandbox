@@ -62,7 +62,7 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 14 tests run offline with scripted fake models - no API key or network
+All 15 tests run offline with scripted fake models - no API key or network
 needed.
 
 ## What's simplified vs. a real deployment

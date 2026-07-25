@@ -18,14 +18,17 @@ folding is manual rather than a native LangGraph subgraph node.
 ## Datasource (`agents/datasource/`)
 
 Power BI specialist, **read-only by design**: metadata lookups and DAX
-queries only, nothing that changes state in Power BI. Tools (`nodes.py`):
+queries only, nothing that changes state in Power BI. Query execution goes
+through the REST client (mirroring the real Power BI REST API's "Execute
+Queries" endpoint), not MCP - the MCP client is discovery/metadata only.
+Tools (`nodes.py`):
 
 | Tool | Backing client | Notes |
 |---|---|---|
 | `pbi_mcp_list_semantic_models` | `clients/powerbi/mcp.py` | reads `config/semantic_models.yaml` |
-| `pbi_mcp_run_dax_query` | `clients/powerbi/mcp.py` | stages the result into the sandbox (`clients/sandbox/client.py`) and returns a `sandbox_ref` |
 | `pbi_rest_list_workspaces` | `clients/powerbi/rest.py` | |
 | `pbi_rest_get_refresh_history` | `clients/powerbi/rest.py` | |
+| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` | stages the result into the sandbox (`clients/sandbox/client.py`) and returns a `sandbox_ref` |
 
 `models.py` defines the structured shapes these tools conceptually return
 (`SemanticModelInfo`, `DaxQueryResult`, `WorkspaceInfo`,
