@@ -34,10 +34,24 @@ cp .env.example .env   # defaults to LLM_PROVIDER=demo, no keys needed
 uvicorn data_analyst.app.api:app --reload
 ```
 
-```bash
-curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
-  -d '{"message": "what can you do?"}'
-```
+Then try it any of three ways:
+
+- **Browser**: open <http://localhost:8000/> - a minimal, mobile-friendly
+  chat page (`app/web.py`, no build step, no extra dependency).
+- **Terminal**: `python cli.py` - a small interactive chat client
+  (stdlib-only).
+- **curl**:
+  ```bash
+  curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
+    -d '{"message": "what can you do?"}'
+  ```
+
+To try it from your phone, it needs to be reachable on your network, not
+just `localhost` on your laptop: run
+`uvicorn data_analyst.app.api:app --host 0.0.0.0` and open
+`http://<your-laptop's-LAN-IP>:8000/` from your phone on the same Wi-Fi, or
+build/deploy the image in `deploy/docker/` (Dockerfile already set up) to
+get a real public URL.
 
 To see the full multi-agent flow (routing, tool calls across both
 specialists), set `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=azure_openai` in
@@ -73,7 +87,7 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 40 tests run offline with scripted fake models - no API key or network
+All 41 tests run offline with scripted fake models - no API key or network
 needed. Everything except `tests/e2e` is `async def` (LangGraph requires
 `.ainvoke()` once any node is async); `tests/e2e` stays sync because
 FastAPI's `TestClient` already bridges to the async app for you.

@@ -12,12 +12,14 @@ import uuid
 from typing import Literal
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import HTMLResponse
 from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
 from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
+from data_analyst.app.web import CHAT_PAGE_HTML
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
 
@@ -31,6 +33,13 @@ class ChatResponse(BaseModel):
     thread_id: str
     status: Literal["completed", "clarification_needed"]
     reply: str | None = None
+
+
+@app.get("/", response_class=HTMLResponse)
+async def chat_page() -> str:
+    """A minimal browser chat UI (see app/web.py) for trying the assistant
+    by hand - the same /chat endpoint any other client would use."""
+    return CHAT_PAGE_HTML
 
 
 @app.get("/health")

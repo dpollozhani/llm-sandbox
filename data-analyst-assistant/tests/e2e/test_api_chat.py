@@ -31,6 +31,16 @@ class ScriptedRoutingModel(FakeToolCallingChatModel):
         return RunnableLambda(_invoke)
 
 
+def test_chat_page_is_served_at_root():
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Data Analyst Assistant" in response.text
+    assert "/chat" in response.text
+
+
 def test_demo_mode_answers_without_any_scripting():
     with TestClient(app) as client:
         response = client.post("/chat", json={"message": "hello, what can you do?"})
