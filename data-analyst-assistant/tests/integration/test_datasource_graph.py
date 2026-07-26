@@ -33,6 +33,22 @@ class _FakeRestClient:
         return dax_query, pd.DataFrame([{"Region": "North", "Total Revenue": 18225}])
 
 
+class _FailingRestClient:
+    """Simulates a connection/protocol failure below the ValueError level -
+    e.g. the mcp SDK/httpx's background tasks (anyio task groups) raising
+    something other than ValueError, which used to escape the tool
+    uncaught and crash the whole graph run instead of returning a normal
+    {"error": ...} tool result."""
+
+    async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("boom")])
+
+
+class _FailingMcpClient:
+    async def get_semantic_metadata(self, access_token: str, model_name: str):
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("boom")])
+
+
 def _graph(llm):
     return build_datasource_graph(llm, rest_client=_FakeRestClient())
 
@@ -112,6 +128,33 @@ async def test_run_dax_query_without_a_signed_in_token_returns_error_not_raise()
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert "sign" in tool_messages[0].content.lower()
+
+
+async def test_run_dax_query_network_failure_returns_error_not_raise():
+    llm = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[_DAX_TOOL_CALL]), AIMessage(content="Something went wrong.")]
+    )
+    graph = build_datasource_graph(llm, rest_client=_FailingRestClient())
+
+    result = await graph.ainvoke(_state("sess-dax-network-fail", [HumanMessage(content="revenue by region")]))
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert "boom" in tool_messages[0].content
+    assert result["messages"][-1].content == "Something went wrong."
+
+
+async def test_get_semantic_metadata_network_failure_returns_error_not_raise():
+    call = {"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}
+    llm = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[call]), AIMessage(content="Something went wrong.")]
+    )
+    graph = build_datasource_graph(llm, mcp_client=_FailingMcpClient())
+
+    result = await graph.ainvoke(_state("sess-mcp-network-fail", [HumanMessage(content="show schema")]))
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert "boom" in tool_messages[0].content
+    assert result["messages"][-1].content == "Something went wrong."
 
 
 async def test_can_ask_for_clarification_instead_of_guessing():

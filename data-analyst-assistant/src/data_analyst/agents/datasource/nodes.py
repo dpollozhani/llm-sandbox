@@ -29,6 +29,17 @@ from data_analyst.config.settings import PowerBiCatalog
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
 
+def _describe(exc: BaseException) -> str:
+    """A real message for `exc`, unwrapping `ExceptionGroup`s (the `mcp`
+    SDK's transport, and httpx, both run background tasks in an anyio task
+    group - a connection/protocol failure there surfaces as a bare
+    "unhandled errors in a TaskGroup (N sub-exceptions)" otherwise, with the
+    actual cause hidden a level down)."""
+    if isinstance(exc, ExceptionGroup):
+        return "; ".join(_describe(e) for e in exc.exceptions)
+    return str(exc) or repr(exc)
+
+
 def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None) -> list[BaseTool]:
     """Builds the datasource agent's tools bound to `mcp_client`/`rest_client`
     (real clients by default; tests inject fakes here instead of reaching
@@ -47,8 +58,8 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
             return {"error": _NOT_SIGNED_IN}
         try:
             return await mcp.get_semantic_metadata(token, model_name)
-        except ValueError as exc:
-            return {"error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
+            return {"error": f"GetSemanticMetadata call failed: {_describe(exc)}"}
 
     @tool
     async def pbi_rest_run_dax_query(
@@ -99,8 +110,8 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
         try:
             dax_query, df = await rest.run_dax_query(token, spec)
-        except ValueError as exc:
-            return {"error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
+            return {"error": f"Power BI query failed: {_describe(exc)}"}
 
         ref = store.stage(df)
         store.remember(cache_key, ref)
