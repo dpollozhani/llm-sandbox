@@ -16,7 +16,10 @@ columns/filters, or which computation) it only discovers mid-task, which
 skips an extra supervisor round-trip. Data already fetched in a conversation
 is cached per-session and reused by follow-up questions instead of
 triggering a new fetch. Every node, chain, tool, and client call is async
-end to end, not just the FastAPI endpoint. See
+end to end, not just the FastAPI endpoint - which is also what makes
+`POST /chat/stream` possible: live status updates ("Querying Power BI...")
+and the final answer typed out token by token over Server-Sent Events,
+without changing a single chain. See
 [`docs/decisions/0001-langchain-langgraph.md`](docs/decisions/0001-langchain-langgraph.md)
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
@@ -37,12 +40,19 @@ uvicorn data_analyst.app.api:app --reload
 Then try it any of three ways:
 
 - **Browser**: open <http://localhost:8000/> - a minimal, mobile-friendly
-  chat page (`app/web.py`, no build step, no extra dependency).
+  chat page (`app/web.py`, no build step, no extra dependency) that streams
+  live status and the answer token by token via `POST /chat/stream`.
 - **Terminal**: `python cli.py` - a small interactive chat client
-  (stdlib-only).
-- **curl**:
+  (stdlib-only), streaming by default; `--no-stream` for plain
+  request/response.
+- **curl** (plain, non-streaming):
   ```bash
   curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
+    -d '{"message": "what can you do?"}'
+  ```
+  or watch the raw event stream directly:
+  ```bash
+  curl -N localhost:8000/chat/stream -X POST -H 'content-type: application/json' \
     -d '{"message": "what can you do?"}'
   ```
 
@@ -84,7 +94,7 @@ the same flow end-to-end with a scripted model and needs no API key.
 
 ```
 src/data_analyst/
-  app/           FastAPI: api.py (routes), lifespan.py (builds the graph once), dependencies.py
+  app/           FastAPI: api.py (routes incl. /chat/stream SSE, via astream_events), lifespan.py (builds the graph once), dependencies.py
   agents/
     orchestrator/  supervisor loop: routes to a specialist, responds, or asks for clarification
     datasource/    Power BI specialist (PBI MCP + PBI REST tools, structured DAX queries only)
@@ -109,7 +119,7 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 41 tests run offline with scripted fake models - no API key or network
+All 45 tests run offline with scripted fake models - no API key or network
 needed. Everything except `tests/e2e` is `async def` (LangGraph requires
 `.ainvoke()` once any node is async); `tests/e2e` stays sync because
 FastAPI's `TestClient` already bridges to the async app for you.

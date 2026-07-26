@@ -1,7 +1,11 @@
 """A minimal, dependency-free browser chat UI for manually trying out the
 assistant - one self-contained HTML page (inline CSS/JS, no build step, no
-static file serving) mounted at `GET /` in api.py. Talks to the same
-`POST /chat` JSON endpoint any other client would use.
+static file serving) mounted at `GET /` in api.py. Streams from
+`POST /chat/stream` (Server-Sent Events) rather than the plain JSON
+`POST /chat`, so the UI can show live status ("Querying Power BI...") and
+type out the final answer token by token - the browser's native
+`EventSource` only supports GET with no body, so this reads the streamed
+response by hand (`fetch` + `ReadableStream`) instead.
 """
 from __future__ import annotations
 
@@ -31,9 +35,9 @@ CHAT_PAGE_HTML = """<!doctype html>
   .msg { max-width: 85%; padding: 0.6rem 0.85rem; border-radius: 1rem; white-space: pre-wrap; word-wrap: break-word; }
   .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 0.25rem; }
   .assistant { align-self: flex-start; background: #fff; border: 1px solid #e2e2e2; border-bottom-left-radius: 0.25rem; }
+  .assistant.pending { color: #666; font-style: italic; }
   .assistant.clarifying { border-color: #d97706; background: #fffbeb; }
   .assistant.error { border-color: #dc2626; background: #fef2f2; }
-  .meta { align-self: flex-start; font-size: 0.75rem; opacity: 0.55; padding: 0 0.2rem; }
   form {
     flex: none; display: flex; gap: 0.5rem; padding: 0.75rem;
     background: #fff; border-top: 1px solid #e2e2e2;
@@ -78,6 +82,30 @@ CHAT_PAGE_HTML = """<!doctype html>
     return el;
   }
 
+  // Parses a `text/event-stream` body by hand: EventSource can't be used
+  // since it's GET-only with no request body, and this endpoint needs a
+  // JSON POST body (message + thread_id).
+  async function* readEvents(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf("\\n\\n")) !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        for (const line of rawEvent.split("\\n")) {
+          if (line.startsWith("data: ")) {
+            yield JSON.parse(line.slice("data: ".length));
+          }
+        }
+      }
+    }
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const message = input.value.trim();
@@ -87,10 +115,11 @@ CHAT_PAGE_HTML = """<!doctype html>
     input.value = "";
     input.disabled = true;
     sendBtn.disabled = true;
-    const pending = addMessage("...", "assistant");
+    const pending = addMessage("...", "assistant pending");
+    let streaming = false;
 
     try {
-      const response = await fetch("/chat", {
+      const response = await fetch("/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, thread_id: threadId }),
@@ -98,11 +127,30 @@ CHAT_PAGE_HTML = """<!doctype html>
       if (!response.ok) {
         throw new Error("HTTP " + response.status);
       }
-      const data = await response.json();
-      threadId = data.thread_id;
-      threadLabel.textContent = "thread " + threadId.slice(0, 8);
-      pending.textContent = data.reply;
-      pending.className = "msg assistant" + (data.status === "clarification_needed" ? " clarifying" : "");
+
+      for await (const evt of readEvents(response)) {
+        if (evt.type === "status") {
+          if (!streaming) pending.textContent = evt.message;
+        } else if (evt.type === "tool") {
+          if (!streaming) pending.textContent = "Calling " + evt.name + "...";
+        } else if (evt.type === "token") {
+          if (!streaming) {
+            streaming = true;
+            pending.textContent = "";
+            pending.className = "msg assistant";
+          }
+          pending.textContent += evt.content;
+          log.scrollTop = log.scrollHeight;
+        } else if (evt.type === "done") {
+          threadId = evt.thread_id;
+          threadLabel.textContent = "thread " + threadId.slice(0, 8);
+          pending.textContent = evt.reply;
+          pending.className = "msg assistant" + (evt.status === "clarification_needed" ? " clarifying" : "");
+        } else if (evt.type === "error") {
+          pending.textContent = "Error: " + evt.message;
+          pending.className = "msg assistant error";
+        }
+      }
     } catch (err) {
       pending.textContent = "Error: " + err.message;
       pending.className = "msg assistant error";

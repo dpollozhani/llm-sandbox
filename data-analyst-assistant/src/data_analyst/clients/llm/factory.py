@@ -9,14 +9,15 @@ specific multi-step scenario for the subgraph or endpoint under test.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from langchain.chat_models import init_chat_model
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from data_analyst.clients.llm.azure_openai import build_azure_chat_openai
@@ -58,6 +59,28 @@ class FakeToolCallingChatModel(FakeMessagesListChatModel):
         result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         fresh = [g.message.model_copy(update={"id": None}) for g in result.generations]
         return ChatResult(generations=[ChatGeneration(message=m) for m in fresh])
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        # FakeMessagesListChatModel has no real `_stream`, so anything using
+        # this model (including LLM_PROVIDER=demo) would otherwise show up as
+        # a single all-at-once chunk under app/api.py's /chat/stream, rather
+        # than the token-by-token updates a real provider produces. A tool
+        # call is scripted as one complete decision, not something to
+        # simulate token-by-token, so it's still emitted as a single chunk.
+        message = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs).generations[0].message
+        if message.tool_calls:
+            yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, tool_calls=message.tool_calls))
+            return
+        words = message.content.split(" ")
+        for i, word in enumerate(words):
+            piece = word if i == len(words) - 1 else f"{word} "
+            yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
 
 
 def build_demo_chat_model() -> FakeToolCallingChatModel:

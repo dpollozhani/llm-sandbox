@@ -4,6 +4,8 @@ HTTP, plus the demo-mode default path with no scripting required.
 """
 from __future__ import annotations
 
+import json
+
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from fastapi.testclient import TestClient
@@ -29,6 +31,19 @@ class ScriptedRoutingModel(FakeToolCallingChatModel):
             return schema(**route)
 
         return RunnableLambda(_invoke)
+
+
+def _stream_events(client: TestClient, body: dict) -> list[dict]:
+    """Collects every SSE `data:` payload from POST /chat/stream into a list,
+    in arrival order - mirrors how app/web.py's JS parses the same stream."""
+    events = []
+    with client.stream("POST", "/chat/stream", json=body) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        for line in response.iter_lines():
+            if line.startswith("data: "):
+                events.append(json.loads(line[len("data: ") :]))
+    return events
 
 
 def test_chat_page_is_served_at_root():
@@ -209,3 +224,74 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
     assert first.json()["reply"] == "Total revenue across regions is 18225."
     assert second.json()["thread_id"] == thread_id
     assert second.json()["reply"] == "On average, about 4556 per region."
+
+
+def test_stream_demo_mode_emits_status_tokens_and_a_matching_done_event():
+    with TestClient(app) as client:
+        events = _stream_events(client, {"message": "hello, what can you do?"})
+
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "start"
+    assert "status" in kinds
+    assert "token" in kinds  # FakeToolCallingChatModel._stream tokenizes the canned reply
+    assert kinds[-1] == "done"
+
+    done = events[-1]
+    streamed_reply = "".join(e["content"] for e in events if e["type"] == "token")
+    assert done["status"] == "completed"
+    assert done["reply"] == streamed_reply
+
+
+def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
+    llm = ScriptedRoutingModel(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}]),
+            AIMessage(content="There is one semantic model: Sales Analytics."),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "python_sandbox_execute", "args": {"code": "result = 1 + 1"}, "id": "c2"}],
+            ),
+            AIMessage(content="Computed 1 + 1 = 2."),
+            AIMessage(content="You have one semantic model available, and 1 + 1 is 2."),
+        ],
+        routes=[{"next": "datasource"}, {"next": "analysis"}, {"next": "respond"}],
+    )
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            events = _stream_events(client, {"message": "what data is available, and what's 1 + 1?"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    status_nodes = [e["node"] for e in events if e["type"] == "status"]
+    assert status_nodes == ["supervisor", "datasource", "supervisor", "analysis", "supervisor", "respond"]
+
+    tool_names = [e["name"] for e in events if e["type"] == "tool"]
+    assert tool_names == ["pbi_mcp_list_semantic_models", "python_sandbox_execute"]
+
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["status"] == "completed"
+    assert done["reply"] == "You have one semantic model available, and 1 + 1 is 2."
+
+
+def test_stream_clarify_path_reports_clarification_needed():
+    llm = ScriptedRoutingModel(
+        responses=[AIMessage(content="Which region and time period do you mean?")],
+        routes=[{"next": "clarify", "reason": "ambiguous request"}],
+    )
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            events = _stream_events(client, {"message": "how are we doing?"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert [e["node"] for e in events if e["type"] == "status"] == ["supervisor", "clarify"]
+    done = events[-1]
+    assert done["status"] == "clarification_needed"
+    assert done["reply"] == "Which region and time period do you mean?"
