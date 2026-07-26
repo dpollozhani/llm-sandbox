@@ -30,12 +30,15 @@ protect here, a public client is simpler and one less thing to configure/
 rotate.
 
 This does require the Entra ID app registration's `ENTRA_REDIRECT_URI` to be
-registered under a public-client platform - either **"Single-page
-application"** or **"Mobile and desktop applications"** both work - not
-"Web": Entra classifies a "Web" redirect URI as belonging to a confidential
-client and will reject a secret-less token exchange against it
-(`AADSTS7000218`) regardless of what MSAL class the code uses. "Allow public
-client flows" also needs to be enabled (already required for `cli.py`'s
+registered under the **"Mobile and desktop applications"** platform -
+specifically not "Web" (Entra classifies a "Web" redirect URI as belonging
+to a confidential client and rejects a secret-less token exchange against
+it, `AADSTS7000218`) and not "Single-page application" either, even though
+that's also nominally a public-client platform: Entra requires an SPA
+redirect URI's code to be redeemed via a genuine cross-origin browser
+`fetch()` (with an `Origin` header) and rejects a plain server-side POST
+like `redeem_code` makes here (`AADSTS9002327`). "Allow public client
+flows" also needs to be enabled (already required for `cli.py`'s
 device-code flow).
 
 `TokenBroker` wraps one user's MSAL token cache and mints access tokens from

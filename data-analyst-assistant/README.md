@@ -50,10 +50,12 @@ You'll need one Entra ID (Azure AD) app registration with:
 - **Allow public client flows** enabled - this app is a public client (PKCE)
   everywhere, no client secret to configure or rotate
 - `http://localhost:8000/auth/callback` registered as a redirect URI under
-  a public-client platform - **"Single-page application"** or **"Mobile and
-  desktop applications"** both work - not "Web": Entra treats a "Web"
-  redirect URI as confidential-client-only and will reject a secret-less
-  token exchange against it
+  the **"Mobile and desktop applications"** platform - not "Web" (Entra
+  treats that as confidential-client-only and rejects a secret-less token
+  exchange, `AADSTS7000218`), and not "Single-page application" either
+  (Entra requires an SPA redirect URI's code to be redeemed via a
+  cross-origin browser `fetch()`, which rejects our server-side exchange
+  with `AADSTS9002327`)
 - delegated API permissions for the Power BI Service, and for the remote
   Power BI MCP server if you use it - with admin consent granted
 
@@ -117,11 +119,12 @@ Environment tab** - there's no default provider or Power BI sign-in to fall
 back to. Set `ENTRA_REDIRECT_URI` to this service's public URL +
 `/auth/callback` (e.g.
 `https://data-analyst-assistant.onrender.com/auth/callback`) and register
-that exact URI, under a public-client platform ("Single-page application"
-or "Mobile and desktop applications"), on the Entra ID app registration
-too. The free plan also spins the instance
-down after ~15 minutes of inactivity (30-60s cold start on the next
-request).
+that exact URI, under the "Mobile and desktop applications" platform (not
+"Web", not "Single-page application" - see
+[`clients/powerbi/auth.py`](src/data_analyst/clients/powerbi/auth.py)'s
+module docstring for why), on the Entra ID app registration too. The free
+plan also spins the instance down after ~15 minutes of inactivity (30-60s
+cold start on the next request).
 
 If you just want to see the full multi-agent flow (routing, tool calls
 across both specialists) without a Power BI tenant or LLM provider at all,
