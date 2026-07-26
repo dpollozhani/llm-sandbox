@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 
-from data_analyst.clients.powerbi.dax import DaxQuerySpec
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.config.settings import PowerBiCatalog, SemanticModelConfig
@@ -84,7 +84,7 @@ async def test_run_dax_query_executes_and_parses_the_response():
         assert body["queries"][0]["query"].startswith("EVALUATE SUMMARIZECOLUMNS(")
         return httpx.Response(200, json=_EXECUTE_QUERIES_RESPONSE)
 
-    spec = DaxQuerySpec(model_name="Test Model", table="Products", group_by=["Category"])
+    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Products", column="Category")])
     dax_query, df = await _rest_client(handler).run_dax_query("tok-123", spec)
 
     assert dax_query.startswith("EVALUATE SUMMARIZECOLUMNS(")
@@ -95,7 +95,7 @@ async def test_run_dax_query_unknown_model_raises_without_any_http_call():
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("should not have made an HTTP call for an unknown model")
 
-    spec = DaxQuerySpec(model_name="Nonexistent Model", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="Nonexistent Model", group_by=[DaxColumn(table="Sales", column="Region")])
     with pytest.raises(ValueError, match="Unknown semantic model"):
         await _rest_client(handler).run_dax_query("tok-123", spec)
 
@@ -104,7 +104,7 @@ async def test_run_dax_query_surfaces_power_bi_error_response():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, text="Column 'Bogus' does not exist")
 
-    spec = DaxQuerySpec(model_name="Test Model", table="Sales", group_by=["Bogus"])
+    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])
     with pytest.raises(ValueError, match="Bogus"):
         await _rest_client(handler).run_dax_query("tok-123", spec)
 

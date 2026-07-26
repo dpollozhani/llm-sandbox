@@ -20,7 +20,7 @@ from langgraph.prebuilt import InjectedState, ToolNode
 from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
-from data_analyst.clients.powerbi.dax import DaxFilter, DaxMeasure, DaxQuerySpec
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
@@ -64,8 +64,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
     @tool
     async def pbi_rest_run_dax_query(
         model_name: str,
-        table: str,
-        group_by: list[str],
+        group_by: list[DaxColumn],
         filters: list[DaxFilter],
         measures: list[DaxMeasure],
         state: Annotated[DatasourceState, InjectedState],
@@ -79,7 +78,14 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         single SUMMARIZECOLUMNS(...) call; with none (a grand total, not
         broken out by anything), it's a ROW(...) call instead.
 
-        If this exact query (same table/columns/filters/measures) was already
+        Each `group_by`/`filters` entry, and an ad-hoc `measures` aggregation,
+        names its own table - a group-by column and an aggregated measure can
+        come from different, related tables in the same query (e.g. group by
+        a dimension table's column while summing a fact table's column), the
+        same way a real star-schema model works. Don't force everything onto
+        one table.
+
+        If this exact query (same columns/filters/measures) was already
         run earlier in this conversation, the cached result is reused instead
         of issuing a new query - check the `reused` field in the response.
 
@@ -91,9 +97,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
             return {"error": _NOT_SIGNED_IN}
 
         try:
-            spec = DaxQuerySpec(
-                model_name=model_name, table=table, group_by=group_by, filters=filters, measures=measures
-            )
+            spec = DaxQuerySpec(model_name=model_name, group_by=group_by, filters=filters, measures=measures)
         except ValueError as exc:
             return {"error": str(exc)}
 

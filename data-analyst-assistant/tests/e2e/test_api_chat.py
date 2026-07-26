@@ -255,10 +255,9 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
         "name": "pbi_rest_run_dax_query",
         "args": {
             "model_name": "Sales Analytics",
-            "table": "Sales",
-            "group_by": ["Region"],
+            "group_by": [{"table": "Sales", "column": "Region"}],
             "filters": [],
-            "measures": [{"name": "Total Revenue", "aggregation": "SUM", "column": "Revenue"}],
+            "measures": [{"name": "Total Revenue", "aggregation": "SUM", "table": "Sales", "column": "Revenue"}],
         },
         "id": "c1",
     }

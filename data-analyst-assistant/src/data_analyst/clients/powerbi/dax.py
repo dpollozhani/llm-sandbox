@@ -2,6 +2,18 @@
 built from structured group-by columns, filters, and measures - never
 free-form DAX text from the model - as one of two query shapes:
 
+Each column reference (`DaxColumn`, `DaxFilter`, an ad-hoc `DaxMeasure`
+aggregation) names its own table - there is deliberately no single
+spec-level "the table" for a query. `SUMMARIZECOLUMNS` naturally mixes
+columns from different, related tables in one query (e.g. group by a
+dimension table's column while summing a fact table's column - completely
+normal for a star-schema model); an earlier version of this module forced
+every column onto one `spec.table`, which meant a query needing columns
+from two tables had no correct way to express that and instead produced
+invalid, doubly-qualified column references like `'Facts'[dimItemMaster[Article key]]`
+(confirmed in production - the model kept trying workarounds for a table
+mismatch the schema itself forced, until it hit LangGraph's recursion limit).
+
 - with at least one `group_by` column: `EVALUATE SUMMARIZECOLUMNS(...)`,
   filters folded in as `FILTER(ALL(...), ...)` table arguments.
 - with none (a grand total, not broken out by anything):
@@ -32,7 +44,13 @@ FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
 Aggregation = Literal["SUM", "AVERAGE", "COUNT", "MIN", "MAX"]
 
 
+class DaxColumn(BaseModel):
+    table: str = Field(description="The table this column belongs to.")
+    column: str = Field(description="The column name only - no table prefix, no brackets.")
+
+
 class DaxFilter(BaseModel):
+    table: str = Field(description="The table `column` belongs to.")
     column: str = Field(description="Column to filter on, e.g. 'Region'.")
     operator: FilterOperator = Field(description="Comparison operator.")
     value: str | float | int | list[str | float | int] = Field(
@@ -44,26 +62,26 @@ class DaxMeasure(BaseModel):
     """Either a reference to a measure that already exists in the model
     (give `name` only - schemas commonly ship these, e.g. under a
     "_Measures" table - and it's addressed directly, never re-aggregated),
-    or an ad-hoc aggregation over a raw column (`aggregation` + `column`,
-    with `name` as the output label)."""
+    or an ad-hoc aggregation over a raw column (`aggregation` + `table` +
+    `column`, with `name` as the output label)."""
 
     name: str = Field(description="An existing model measure's name, or an output label for the aggregation below.")
     aggregation: Aggregation | None = Field(
-        default=None, description="Omit to reference an existing model measure by `name`; set to aggregate `column`."
+        default=None, description="Omit to reference an existing model measure by `name`; set to aggregate `table`/`column`."
     )
+    table: str | None = Field(default=None, description="Table `column` belongs to. Required only if `aggregation` is set.")
     column: str | None = Field(default=None, description="Column to aggregate. Required only if `aggregation` is set.")
 
     @model_validator(mode="after")
-    def _check_aggregation_needs_column(self) -> "DaxMeasure":
-        if self.aggregation is not None and self.column is None:
-            raise ValueError("`column` is required when `aggregation` is set")
+    def _check_aggregation_needs_table_and_column(self) -> "DaxMeasure":
+        if self.aggregation is not None and (self.table is None or self.column is None):
+            raise ValueError("`table` and `column` are required when `aggregation` is set")
         return self
 
 
 class DaxQuerySpec(BaseModel):
     model_name: str
-    table: str
-    group_by: list[str] = Field(default_factory=list, description="Columns to group by.")
+    group_by: list[DaxColumn] = Field(default_factory=list, description="Columns to group by.")
     filters: list[DaxFilter] = Field(default_factory=list)
     measures: list[DaxMeasure] = Field(default_factory=list)
 
@@ -72,10 +90,9 @@ class DaxQuerySpec(BaseModel):
         incidental list ordering - used to detect "we already fetched this"."""
         payload = {
             "model_name": self.model_name,
-            "table": self.table,
-            "group_by": sorted(self.group_by),
-            "filters": sorted((f.column, f.operator, str(f.value)) for f in self.filters),
-            "measures": sorted((m.name, m.aggregation, m.column) for m in self.measures),
+            "group_by": sorted((c.table, c.column) for c in self.group_by),
+            "filters": sorted((f.table, f.column, f.operator, str(f.value)) for f in self.filters),
+            "measures": sorted((m.name, m.aggregation, m.table, m.column) for m in self.measures),
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -103,12 +120,12 @@ def _filter_parts(spec: DaxQuerySpec) -> list[str]:
     parts = []
     for f in spec.filters:
         keyword = "IN" if f.operator == "IN" else f.operator
-        parts.append(f"FILTER(ALL('{spec.table}'), '{spec.table}'[{f.column}] {keyword} {_literal(f.value)})")
+        parts.append(f"FILTER(ALL('{f.table}'), '{f.table}'[{f.column}] {keyword} {_literal(f.value)})")
     return parts
 
 
 def _measure_expr(spec: DaxQuerySpec, m: DaxMeasure) -> str:
-    expr = _bracketed(m.name) if m.aggregation is None else f"{m.aggregation}('{spec.table}'[{m.column}])"
+    expr = _bracketed(m.name) if m.aggregation is None else f"{m.aggregation}('{m.table}'[{m.column}])"
     if spec.group_by:
         return expr  # a group-by column is already in scope to filter by; SUMMARIZECOLUMNS's own filter-table args apply
     filters = _filter_parts(spec)
@@ -126,7 +143,7 @@ def build_dax_query(spec: DaxQuerySpec) -> str:
     measure_parts = [f'"{m.name}", {_measure_expr(spec, m)}' for m in spec.measures]
 
     if spec.group_by:
-        parts = [f"'{spec.table}'[{col}]" for col in spec.group_by] + _filter_parts(spec) + measure_parts
+        parts = [f"'{c.table}'[{c.column}]" for c in spec.group_by] + _filter_parts(spec) + measure_parts
         inner = ",\n    ".join(parts)
         return f"EVALUATE SUMMARIZECOLUMNS(\n    {inner}\n)"
 
@@ -177,12 +194,12 @@ def parse_execute_queries_response(response: dict, spec: DaxQuerySpec) -> pd.Dat
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Unexpected executeQueries response shape: {response!r}") from exc
 
-    wanted = [*spec.group_by, *(m.name for m in spec.measures)]
+    wanted = [*(c.column for c in spec.group_by), *(m.name for m in spec.measures)]
     if not rows:
         return pd.DataFrame(columns=wanted)
 
     keys = list(rows[0].keys())
-    rename = {_result_key(keys, col, table=spec.table): col for col in spec.group_by}
+    rename = {_result_key(keys, c.column, table=c.table): c.column for c in spec.group_by}
     rename.update({_result_key(keys, m.name): m.name for m in spec.measures})
 
     return pd.DataFrame(rows).rename(columns=rename)[wanted]

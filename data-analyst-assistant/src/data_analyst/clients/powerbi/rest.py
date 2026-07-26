@@ -62,7 +62,7 @@ class PBIRestClient:
         this client can't validate those without a live schema lookup, so
         Power BI's own error is what the agent sees and can react to).
         """
-        with trace_span("pbi_rest.run_dax_query", model_name=spec.model_name, table=spec.table):
+        with trace_span("pbi_rest.run_dax_query", model_name=spec.model_name):
             model = self._catalog.find_model(spec.model_name)
             if model is None:
                 raise ValueError(f"Unknown semantic model '{spec.model_name}'")

@@ -1,6 +1,7 @@
 import pytest
 
 from data_analyst.clients.powerbi.dax import (
+    DaxColumn,
     DaxFilter,
     DaxMeasure,
     DaxQuerySpec,
@@ -13,10 +14,9 @@ from data_analyst.clients.powerbi.dax import (
 def test_build_dax_query_shape():
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region"],
-        filters=[DaxFilter(column="Region", operator="!=", value="South")],
-        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
+        group_by=[DaxColumn(table="Sales", column="Region")],
+        filters=[DaxFilter(table="Sales", column="Region", operator="!=", value="South")],
+        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", table="Sales", column="Revenue")],
     )
     dax = build_dax_query(spec)
     assert dax.startswith("EVALUATE SUMMARIZECOLUMNS(")
@@ -24,6 +24,24 @@ def test_build_dax_query_shape():
     assert "'Sales'[Region]" in dax
     assert 'FILTER(ALL(\'Sales\'), \'Sales\'[Region] != "South")' in dax
     assert '"Total Revenue", SUM(\'Sales\'[Revenue])' in dax
+
+
+def test_build_dax_query_mixes_columns_from_different_related_tables():
+    """The real bug this guards against: a group-by column and an
+    aggregated measure column can (and often do) belong to different,
+    related tables in a star-schema model - e.g. grouping by a dimension
+    table's column while summing a fact table's column. An earlier design
+    forced every column onto one spec-level table, which had no correct way
+    to express this and produced invalid, doubly-qualified references like
+    'Facts'[dimItemMaster[Article key]] in production."""
+    spec = DaxQuerySpec(
+        model_name="m",
+        group_by=[DaxColumn(table="dimItemMaster", column="BRIC")],
+        measures=[DaxMeasure(name="On-hand sum", aggregation="SUM", table="Facts", column="Actual stock quantity")],
+    )
+    dax = build_dax_query(spec)
+    assert "'dimItemMaster'[BRIC]" in dax
+    assert '"On-hand sum", SUM(\'Facts\'[Actual stock quantity])' in dax
 
 
 def test_build_dax_query_references_an_existing_model_measure_directly():
@@ -34,17 +52,18 @@ def test_build_dax_query_references_an_existing_model_measure_directly():
     executeQueries rejected with a 400 in production)."""
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region"],
+        group_by=[DaxColumn(table="Sales", column="Region")],
         measures=[DaxMeasure(name="Inventory on-hand")],
     )
     dax = build_dax_query(spec)
     assert '"Inventory on-hand", [Inventory on-hand]' in dax
 
 
-def test_measure_with_aggregation_requires_column():
-    with pytest.raises(ValueError, match="column"):
+def test_measure_with_aggregation_requires_table_and_column():
+    with pytest.raises(ValueError, match="table"):
         DaxMeasure(name="Total Revenue", aggregation="SUM")
+    with pytest.raises(ValueError, match="column"):
+        DaxMeasure(name="Total Revenue", aggregation="SUM", table="Sales")
 
 
 def test_build_dax_query_does_not_double_bracket_an_already_bracketed_measure_name():
@@ -54,8 +73,7 @@ def test_build_dax_query_does_not_double_bracket_an_already_bracketed_measure_na
     Power BI would reject."""
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region"],
+        group_by=[DaxColumn(table="Sales", column="Region")],
         measures=[DaxMeasure(name="[Inventory on-hand]")],
     )
     dax = build_dax_query(spec)
@@ -64,20 +82,20 @@ def test_build_dax_query_does_not_double_bracket_an_already_bracketed_measure_na
 
 
 def test_validate_rejects_non_summarizecolumns_text():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
         validate_dax_query("EVALUATE Sales", spec)
 
 
 def test_validate_rejects_empty_selection():
-    spec = DaxQuerySpec(model_name="m", table="Sales")
+    spec = DaxQuerySpec(model_name="m")
     dax = build_dax_query(spec)
     with pytest.raises(ValueError, match="at least one"):
         validate_dax_query(dax, spec)
 
 
 def test_validate_accepts_a_well_formed_query():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     dax = build_dax_query(spec)
     validate_dax_query(dax, spec)  # doesn't raise
 
@@ -88,7 +106,7 @@ def test_build_dax_query_uses_row_for_a_grand_total_with_no_group_by():
     inventory on-hand across everything", the exact case that 400'd in
     production) must use EVALUATE ROW(...) instead, DAX's own idiom for a
     single ungrouped row of measures."""
-    spec = DaxQuerySpec(model_name="m", table="Sales", measures=[DaxMeasure(name="Inventory on-hand")])
+    spec = DaxQuerySpec(model_name="m", measures=[DaxMeasure(name="Inventory on-hand")])
     dax = build_dax_query(spec)
     assert dax.startswith("EVALUATE ROW(")
     assert "SUMMARIZECOLUMNS" not in dax
@@ -102,9 +120,8 @@ def test_build_dax_query_wraps_filtered_grand_total_measures_in_calculate():
     into each measure's own expression via CALCULATE instead."""
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        filters=[DaxFilter(column="Region", operator="=", value="North")],
-        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
+        filters=[DaxFilter(table="Sales", column="Region", operator="=", value="North")],
+        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", table="Sales", column="Revenue")],
     )
     dax = build_dax_query(spec)
     assert dax.startswith("EVALUATE ROW(")
@@ -113,13 +130,13 @@ def test_build_dax_query_wraps_filtered_grand_total_measures_in_calculate():
 
 
 def test_validate_rejects_row_text_when_group_by_is_present():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
         validate_dax_query("EVALUATE ROW(\n    \"x\", 1\n)", spec)
 
 
 def test_validate_rejects_summarizecolumns_text_when_group_by_is_absent():
-    spec = DaxQuerySpec(model_name="m", table="Sales", measures=[DaxMeasure(name="Total")])
+    spec = DaxQuerySpec(model_name="m", measures=[DaxMeasure(name="Total")])
     with pytest.raises(ValueError, match="ROW"):
         validate_dax_query('EVALUATE SUMMARIZECOLUMNS(\n    "Total", [Total]\n)', spec)
 
@@ -127,9 +144,8 @@ def test_validate_rejects_summarizecolumns_text_when_group_by_is_absent():
 def test_parse_execute_queries_response_renames_group_by_and_measures():
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region"],
-        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
+        group_by=[DaxColumn(table="Sales", column="Region")],
+        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", table="Sales", column="Revenue")],
     )
     response = {
         "results": [
@@ -154,7 +170,7 @@ def test_parse_execute_queries_response_renames_group_by_and_measures():
 
 
 def test_parse_execute_queries_response_handles_quoted_table_column_headers():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     response = {"results": [{"tables": [{"rows": [{"'Sales'[Region]": "North"}]}]}]}
     df = parse_execute_queries_response(response, spec)
     assert df.to_dict(orient="records") == [{"Region": "North"}]
@@ -163,9 +179,8 @@ def test_parse_execute_queries_response_handles_quoted_table_column_headers():
 def test_parse_execute_queries_response_empty_rows_returns_empty_frame_with_expected_columns():
     spec = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region"],
-        measures=[DaxMeasure(name="Total", aggregation="SUM", column="Revenue")],
+        group_by=[DaxColumn(table="Sales", column="Region")],
+        measures=[DaxMeasure(name="Total", aggregation="SUM", table="Sales", column="Revenue")],
     )
     response = {"results": [{"tables": [{"rows": []}]}]}
     df = parse_execute_queries_response(response, spec)
@@ -174,7 +189,7 @@ def test_parse_execute_queries_response_empty_rows_returns_empty_frame_with_expe
 
 
 def test_parse_execute_queries_response_unexpected_shape_raises():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     with pytest.raises(ValueError, match="Unexpected executeQueries response"):
         parse_execute_queries_response({"unexpected": True}, spec)
 
@@ -182,20 +197,18 @@ def test_parse_execute_queries_response_unexpected_shape_raises():
 def test_cache_key_ignores_list_order():
     a = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Region", "Product"],
-        measures=[DaxMeasure(name="Total", aggregation="SUM", column="Revenue")],
+        group_by=[DaxColumn(table="Sales", column="Region"), DaxColumn(table="Sales", column="Product")],
+        measures=[DaxMeasure(name="Total", aggregation="SUM", table="Sales", column="Revenue")],
     )
     b = DaxQuerySpec(
         model_name="m",
-        table="Sales",
-        group_by=["Product", "Region"],
-        measures=[DaxMeasure(name="Total", aggregation="SUM", column="Revenue")],
+        group_by=[DaxColumn(table="Sales", column="Product"), DaxColumn(table="Sales", column="Region")],
+        measures=[DaxMeasure(name="Total", aggregation="SUM", table="Sales", column="Revenue")],
     )
     assert a.cache_key() == b.cache_key()
 
 
 def test_cache_key_differs_for_different_specs():
-    a = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
-    b = DaxQuerySpec(model_name="m", table="Sales", group_by=["Product"])
+    a = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    b = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Product")])
     assert a.cache_key() != b.cache_key()

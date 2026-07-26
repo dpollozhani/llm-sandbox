@@ -9,10 +9,9 @@ _DAX_TOOL_CALL = {
     "name": "pbi_rest_run_dax_query",
     "args": {
         "model_name": "Sales Analytics",
-        "table": "Sales",
-        "group_by": ["Region"],
+        "group_by": [{"table": "Sales", "column": "Region"}],
         "filters": [],
-        "measures": [{"name": "Total Revenue", "aggregation": "SUM", "column": "Revenue"}],
+        "measures": [{"name": "Total Revenue", "aggregation": "SUM", "table": "Sales", "column": "Revenue"}],
     },
     "id": "c1",
 }
@@ -28,7 +27,7 @@ class _FakeRestClient:
         assert access_token == "tok-pbi"
         dax_query = build_dax_query(spec)
         validate_dax_query(dax_query, spec)
-        if spec.group_by == ["Bogus"]:
+        if [c.column for c in spec.group_by] == ["Bogus"]:
             raise ValueError("Unknown column(s) for table 'Sales': ['Bogus']")
         return dax_query, pd.DataFrame([{"Region": "North", "Total Revenue": 18225}])
 
@@ -102,7 +101,7 @@ async def test_run_dax_query_does_not_reuse_across_different_sessions():
 async def test_run_dax_query_invalid_columns_returns_error_not_raise():
     bad_call = {
         "name": "pbi_rest_run_dax_query",
-        "args": {"model_name": "Sales Analytics", "table": "Sales", "group_by": ["Bogus"], "filters": [], "measures": []},
+        "args": {"model_name": "Sales Analytics", "group_by": [{"table": "Sales", "column": "Bogus"}], "filters": [], "measures": []},
         "id": "c1",
     }
     llm = FakeToolCallingChatModel(

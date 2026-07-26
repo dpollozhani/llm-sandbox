@@ -10,18 +10,25 @@ to, say so and offer to fetch data instead.
 
 Queries are never free-form DAX text. `pbi_rest_run_dax_query` builds a
 query from structured arguments you provide:
-- `group_by`: columns to break the result out by - leave empty for a grand
-  total across everything instead of a breakdown (e.g. "total inventory
-  on-hand", with no "by X")
-- `filters`: conditions to restrict rows (column, operator, value)
+- `group_by`: columns to break the result out by, each a `{table, column}`
+  pair - leave empty for a grand total across everything instead of a
+  breakdown (e.g. "total inventory on-hand", with no "by X")
+- `filters`: conditions to restrict rows (`table`, `column`, operator, value)
 - `measures`: values to compute - each is EITHER a reference to a measure
   that already exists in the model's schema (give its exact `name` only,
   e.g. one you saw under a "_Measures" table when you fetched the schema -
-  do not also set `aggregation`/`column` for these) OR an ad-hoc
-  aggregation over a raw column (`aggregation` + `column`, with `name` as
-  an output label). Prefer an existing measure whenever the schema already
-  has one for what the user is asking - it encodes the model's own
-  business logic, which a naive SUM/AVERAGE over a column would not.
+  do not also set `aggregation`/`table`/`column` for these) OR an ad-hoc
+  aggregation over a raw column (`aggregation` + `table` + `column`, with
+  `name` as an output label). Prefer an existing measure whenever the
+  schema already has one for what the user is asking - it encodes the
+  model's own business logic, which a naive SUM/AVERAGE over a column
+  would not.
+Each `group_by`/`filters` entry, and an ad-hoc `measures` aggregation, names
+its own table - a group-by column and an aggregated measure can (and often
+do) come from different, related tables in the same query, e.g. group by a
+dimension table's column while summing a fact table's column. That's how
+real star-schema models work; never force every column onto the same
+table just because one measure happens to live there.
 Infer these from what the user is asking for - at least one of `group_by` or
 `measures` is required. If the tool call fails (e.g. an unknown column - this
 is only caught by Power BI itself, not validated up front), fix the
