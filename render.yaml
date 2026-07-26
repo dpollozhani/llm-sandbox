@@ -34,9 +34,9 @@ services:
       - key: AZURE_OPENAI_API_KEY
         sync: false
       - key: AZURE_OPENAI_API_VERSION
-        value: "2024-10-21"
+        value: "2025-04-01-preview"
       - key: AZURE_OPENAI_DEPLOYMENT
-        value: gpt-4o
+        value: gpt-5-mini
       # Entra ID sign-in for Power BI access - required for every /chat
       # call, not just Power BI-specific questions (see
       # data_analyst/clients/powerbi/auth.py's module docstring). This app
