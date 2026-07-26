@@ -34,6 +34,7 @@ from data_analyst.agents.orchestrator.nodes import (
 from data_analyst.agents.orchestrator.state import OrchestratorState
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
+from data_analyst.config.settings import Glossary, get_glossary
 
 
 def _after_specialist(state: OrchestratorState) -> str:
@@ -53,13 +54,20 @@ def build_orchestrator_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     mcp_client: PBIMcpClient | None = None,
     rest_client: PBIRestClient | None = None,
+    glossary: Glossary | None = None,
 ) -> CompiledStateGraph:
+    # Fetched once and threaded to every node, rather than each node/subgraph
+    # independently calling get_glossary() - one source of truth per graph
+    # build, and a single override point for callers/tests.
+    glossary = glossary or get_glossary()
     graph = StateGraph(OrchestratorState)
-    graph.add_node("supervisor", build_supervisor_node(llm))
-    graph.add_node("datasource", build_datasource_node(llm, mcp_client=mcp_client, rest_client=rest_client))
-    graph.add_node("analysis", build_analysis_node(llm))
-    graph.add_node("respond", build_respond_node(llm))
-    graph.add_node("clarify", build_clarify_node(llm))
+    graph.add_node("supervisor", build_supervisor_node(llm, glossary=glossary))
+    graph.add_node(
+        "datasource", build_datasource_node(llm, mcp_client=mcp_client, rest_client=rest_client, glossary=glossary)
+    )
+    graph.add_node("analysis", build_analysis_node(llm, glossary=glossary))
+    graph.add_node("respond", build_respond_node(llm, glossary=glossary))
+    graph.add_node("clarify", build_clarify_node(llm, glossary=glossary))
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(

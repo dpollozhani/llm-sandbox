@@ -43,9 +43,14 @@ There's no workspace/refresh-history tool - both were dropped as unneeded
 for this build. Without a "list models" tool either, the model instead
 learns valid `model_name` values from the static catalog
 (`config/semantic_models.yaml`), appended to the system prompt by
-`chains.py::build_agent_chain` - which also appends `config/glossary.yaml`'s
-terms the same way, when any are configured (`Glossary`/`get_glossary` in
-`config/settings.py`).
+`chains.py::build_agent_chain`. `config/glossary.yaml`'s terms
+(`Glossary`/`get_glossary`/`inject_glossary` in `config/settings.py`) are
+appended the same way here - and in every other agent chain (the
+supervisor's routing/respond/clarify chains, and the analysis agent's),
+fetched once in `build_orchestrator_graph` and threaded to each - since a
+term the schema alone won't explain can trip up the supervisor's routing
+or the analysis agent just as easily as the datasource agent's
+query-building.
 
 | Tool | Backing client | Notes |
 |---|---|---|

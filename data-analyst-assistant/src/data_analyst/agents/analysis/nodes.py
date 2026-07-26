@@ -11,6 +11,7 @@ from data_analyst.agents.analysis.chains import build_agent_chain
 from data_analyst.agents.analysis.state import AnalysisState
 from data_analyst.agents.common.tools import request_clarification
 from data_analyst.clients.sandbox.client import get_sandbox_client
+from data_analyst.config.settings import Glossary
 
 
 @tool
@@ -31,8 +32,8 @@ async def python_sandbox_execute(
 TOOLS = [python_sandbox_execute, request_clarification]
 
 
-def build_agent_node(llm: BaseChatModel):
-    chain = build_agent_chain(llm, TOOLS)
+def build_agent_node(llm: BaseChatModel, glossary: Glossary | None = None):
+    chain = build_agent_chain(llm, TOOLS, glossary=glossary)
 
     async def agent_node(state: AnalysisState):
         response = await chain.ainvoke(state["messages"])

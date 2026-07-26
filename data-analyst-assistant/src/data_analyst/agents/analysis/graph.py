@@ -9,13 +9,14 @@ from langgraph.prebuilt import tools_condition
 
 from data_analyst.agents.analysis.nodes import build_agent_node, build_tool_node
 from data_analyst.agents.analysis.state import AnalysisState
+from data_analyst.config.settings import Glossary, get_glossary
 
 
 def build_analysis_graph(
-    llm: BaseChatModel, checkpointer: BaseCheckpointSaver | None = None
+    llm: BaseChatModel, checkpointer: BaseCheckpointSaver | None = None, glossary: Glossary | None = None
 ) -> CompiledStateGraph:
     graph = StateGraph(AnalysisState)
-    graph.add_node("agent", build_agent_node(llm))
+    graph.add_node("agent", build_agent_node(llm, glossary=glossary or get_glossary()))
     graph.add_node("tools", build_tool_node())
 
     graph.add_edge(START, "agent")

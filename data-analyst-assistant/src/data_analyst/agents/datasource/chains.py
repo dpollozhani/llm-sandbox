@@ -7,7 +7,7 @@ from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.tools import BaseTool
 
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
-from data_analyst.config.settings import Glossary, PowerBiCatalog
+from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
 
 
 def build_agent_chain(
@@ -26,12 +26,7 @@ def build_agent_chain(
         # to pass to pbi_mcp_get_semantic_metadata/pbi_rest_run_dax_query.
         names = ", ".join(f'"{m.model_name}"' for m in catalog.semantic_models)
         system_prompt += f"\n\nAvailable semantic models: {names}."
-    if glossary is not None and glossary.terms:
-        # Terms/concepts the schema alone won't explain (see
-        # config/glossary.yaml) - e.g. an abbreviation that collides with a
-        # more common meaning - so the model doesn't have to guess, or make
-        # the user re-explain, every conversation.
-        system_prompt += f"\n\nGlossary:\n{glossary.render()}"
+    system_prompt = inject_glossary(system_prompt, glossary)
 
     async def _invoke(messages: list[AnyMessage]):
         return await llm_with_tools.ainvoke([SystemMessage(content=system_prompt), *messages])

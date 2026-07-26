@@ -184,8 +184,10 @@ you.
 - `config/glossary.yaml` (optional) defines domain terms/concepts the
   schema alone won't explain - an abbreviation, a business meaning behind
   a cryptic column, a term that collides with a more common meaning -
-  injected into the datasource agent's system prompt so it doesn't have
-  to guess (or make the user re-explain) every conversation.
+  injected into every agent's system prompt (the supervisor's routing and
+  respond/clarify chains, and the datasource and analysis specialists),
+  not just the datasource agent's, since a term it doesn't recognize can
+  misroute or trigger an unnecessary clarifying question just as easily.
 - The sandbox (`clients/sandbox/`) really does `exec()` pandas code, but in
   a minimally-restricted namespace rather than a network-isolated worker -
   don't point it at untrusted input as-is.

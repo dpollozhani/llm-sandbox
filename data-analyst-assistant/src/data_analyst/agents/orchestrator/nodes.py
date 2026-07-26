@@ -17,6 +17,7 @@ from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_r
 from data_analyst.agents.orchestrator.state import OrchestratorState
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
+from data_analyst.config.settings import Glossary
 
 MAX_TURNS = 6
 
@@ -30,8 +31,8 @@ cap rather than an implicit one - see the `GraphRecursionError` handling
 below for what happens when it's hit."""
 
 
-def build_supervisor_node(llm: BaseChatModel):
-    chain = build_supervisor_chain(llm)
+def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
+    chain = build_supervisor_chain(llm, glossary=glossary)
 
     async def supervisor_node(state: OrchestratorState):
         turns = state.get("turns", 0)
@@ -176,10 +177,13 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
 
 
 def build_datasource_node(
-    llm: BaseChatModel, mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None
+    llm: BaseChatModel,
+    mcp_client: PBIMcpClient | None = None,
+    rest_client: PBIRestClient | None = None,
+    glossary: Glossary | None = None,
 ):
     def build_graph_fn(agent_llm: BaseChatModel):
-        return build_datasource_graph(agent_llm, mcp_client=mcp_client, rest_client=rest_client)
+        return build_datasource_graph(agent_llm, mcp_client=mcp_client, rest_client=rest_client, glossary=glossary)
 
     async def datasource_node(state: OrchestratorState):
         return await _run_specialist("datasource", build_graph_fn, llm, state)
@@ -187,15 +191,18 @@ def build_datasource_node(
     return datasource_node
 
 
-def build_analysis_node(llm: BaseChatModel):
+def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
+    def build_graph_fn(agent_llm: BaseChatModel):
+        return build_analysis_graph(agent_llm, glossary=glossary)
+
     async def analysis_node(state: OrchestratorState):
-        return await _run_specialist("analysis", build_analysis_graph, llm, state)
+        return await _run_specialist("analysis", build_graph_fn, llm, state)
 
     return analysis_node
 
 
-def build_respond_node(llm: BaseChatModel):
-    chain = build_respond_chain(llm)
+def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None):
+    chain = build_respond_chain(llm, glossary=glossary)
 
     async def respond_node(state: OrchestratorState):
         response = await chain.ainvoke(state["messages"])
@@ -204,8 +211,8 @@ def build_respond_node(llm: BaseChatModel):
     return respond_node
 
 
-def build_clarify_node(llm: BaseChatModel):
-    chain = build_clarify_chain(llm)
+def build_clarify_node(llm: BaseChatModel, glossary: Glossary | None = None):
+    chain = build_clarify_chain(llm, glossary=glossary)
 
     async def clarify_node(state: OrchestratorState):
         clarification = await chain.ainvoke(state["messages"])

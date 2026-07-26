@@ -15,6 +15,7 @@ from data_analyst.agents.orchestrator.prompts import (
     RESPOND_SYSTEM_PROMPT,
     SUPERVISOR_SYSTEM_PROMPT,
 )
+from data_analyst.config.settings import Glossary, inject_glossary
 
 
 class Route(BaseModel):
@@ -26,11 +27,11 @@ class Route(BaseModel):
     reason: str = ""
 
 
-def build_supervisor_chain(llm: BaseChatModel) -> Runnable:
+def build_supervisor_chain(llm: BaseChatModel, glossary: Glossary | None = None) -> Runnable:
     router = llm.with_structured_output(Route)
 
     async def _invoke(args: dict) -> Route:
-        prompt = SUPERVISOR_SYSTEM_PROMPT
+        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary)
         if data_context := args.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {FetchedDataset(**data_context).describe()}"
         return await router.ainvoke([SystemMessage(content=prompt), *args["messages"]])
@@ -38,17 +39,20 @@ def build_supervisor_chain(llm: BaseChatModel) -> Runnable:
     return RunnableLambda(_invoke)
 
 
-def build_respond_chain(llm: BaseChatModel) -> Runnable:
+def build_respond_chain(llm: BaseChatModel, glossary: Glossary | None = None) -> Runnable:
+    prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary)
+
     async def _invoke(messages: list[AnyMessage]):
-        return await llm.ainvoke([SystemMessage(content=RESPOND_SYSTEM_PROMPT), *messages])
+        return await llm.ainvoke([SystemMessage(content=prompt), *messages])
 
     return RunnableLambda(_invoke)
 
 
-def build_clarify_chain(llm: BaseChatModel) -> Runnable:
+def build_clarify_chain(llm: BaseChatModel, glossary: Glossary | None = None) -> Runnable:
     chain = llm.with_structured_output(Clarification)
+    prompt = inject_glossary(CLARIFY_SYSTEM_PROMPT, glossary)
 
     async def _invoke(messages: list[AnyMessage]) -> Clarification:
-        return await chain.ainvoke([SystemMessage(content=CLARIFY_SYSTEM_PROMPT), *messages])
+        return await chain.ainvoke([SystemMessage(content=prompt), *messages])
 
     return RunnableLambda(_invoke)
