@@ -211,11 +211,72 @@ Two things worth being precise about:
   Power BI/sandbox backend - every request would tie up a thread for the
   duration of each call instead of yielding the event loop while waiting.
 
+## Streaming (SSE)
+
+`POST /chat/stream` (`app/api.py::chat_stream`) drives the same turn as
+`POST /chat`, but via `graph.astream_events(..., version="v2")` instead of
+`ainvoke`, streaming Server-Sent Events as the run progresses instead of
+waiting for the whole thing to finish. Both endpoints exist side by side -
+`/chat` for simple request/response callers, `/chat/stream` for the web page
+(`app/web.py`) and `cli.py`'s default mode.
+
+The interesting part is how little of the rest of the codebase had to change
+to support this - none of the chains, since `astream_events` already exists
+on the compiled graph object and needs nothing from the call sites beneath
+it:
+
+- **Node-level progress comes from event metadata, for free.** Every event
+  `astream_events` yields carries `metadata["langgraph_node"]`, so
+  `chat_stream` can tell "the `datasource` node just started" apart from
+  "the `analysis` node just started" without any node needing to say so
+  itself. This works for nested subgraph nodes too (e.g. the datasource
+  specialist's own internal `agent`/`tools` nodes) via the same ambient
+  propagation that already makes the orchestrator's checkpointer reach
+  child graphs (see "How delegation works" above) - callbacks and config
+  propagate through nested `.ainvoke()` calls the same way.
+- **A single node visit fires several nested `on_chain_start` events**
+  (the node's own runnable, its chain's inner `_invoke`, etc.), all tagged
+  with the same `langgraph_node` metadata. `chat_stream` only treats the one
+  whose own name matches the node name as "this node started" - filtering
+  by `node not in seen_nodes` instead (i.e. only the *first* visit) would be
+  wrong, since a node like `supervisor` legitimately runs more than once in
+  a turn and each visit should report status.
+- **Token-level streaming needs zero chain changes, but does need a real
+  `_stream`/`_astream` on the model.** Every chain here calls `llm.ainvoke()`,
+  never `.astream()` - yet `on_chat_model_stream` events still carry
+  per-token chunks under `astream_events`, because LangChain's event
+  machinery routes the call through the model's streaming code path
+  regardless of which method the calling code used, *if* the model
+  implements one. `clients/llm/factory.py::FakeToolCallingChatModel` adds a
+  `_stream` override for exactly this reason - without it, `LLM_PROVIDER=demo`
+  would only ever produce whole-message `on_chat_model_end` events, so
+  `/chat/stream` would show status updates but never live-typed tokens, an
+  easy thing to miss if you only test with a model that already streams.
+  Real providers (Anthropic, Azure OpenAI) implement real streaming
+  natively, so this only matters for the demo/test model.
+- **Token events are filtered to the user-facing answer.** `chat_stream`
+  only forwards `on_chat_model_stream` chunks when
+  `metadata["langgraph_node"]` is `"respond"` or `"clarify"` - otherwise the
+  supervisor's routing decision and a specialist's internal reasoning would
+  leak into the stream looking like partial answers.
+- **The final `"done"` event is the authoritative result**, read from the
+  outermost graph's own `on_chain_end` (`event["name"] == "LangGraph"` with
+  no `langgraph_node` in its metadata - that's what distinguishes the whole
+  run's own start/end from any node's), not reconstructed from accumulated
+  tokens. In demo mode the tokens happen to add up to the same text; this
+  guarantees it regardless.
+- **The browser can't use `EventSource` for this.** `EventSource` only
+  supports `GET` with no request body, and this endpoint needs a JSON POST
+  body (`message`/`thread_id`). `app/web.py`'s JS instead reads the
+  `text/event-stream` body by hand via `fetch()` + `ReadableStream`,
+  splitting on blank lines the same way any SSE parser would.
+
 ## What's mocked vs. real
 
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,
-  checkpointing), the async structure throughout (see above), the FastAPI
-  request/response cycle, the sandbox's `exec()`-based code execution.
+  checkpointing), the async structure throughout (see above), streaming via
+  `astream_events` (see above), the FastAPI request/response cycle, the
+  sandbox's `exec()`-based code execution.
 - **Mocked**: Power BI MCP/REST calls (`clients/powerbi/`, backed by
   `config/semantic_models.yaml` and in-memory fake tables) and Azure AD auth
   (`clients/powerbi/auth.py`) - async in shape, but with nothing real to
