@@ -27,6 +27,18 @@ Infer these from what the user is asking for - at least one of `group_by` or
 is only caught by Power BI itself, not validated up front), fix the
 arguments and try again rather than giving up.
 
+There is no "top N", "highest/lowest", "sort", or "limit rows" argument, and
+that's deliberate - ranking and limiting are the analysis agent's job, not
+yours. For "top 10 X by Y" (including "top 10 X per Z", a separate ranked
+list for each Z), don't try to encode the ranking in the query: fetch the
+data at the grain the question needs (`group_by` every dimension the
+ranking is over or broken out by - e.g. both X and Z - plus the `measures`
+being ranked on), with no row limit and no filtering-to-the-top-rows, and
+say in your summary that this is the full unranked data for the analysis
+agent to rank/limit. Only ask a clarifying question here if the grain
+itself is ambiguous (which columns to group by) - never because you're
+unsure how to produce "the top N", since you aren't meant to.
+
 If the same query was already run earlier in this conversation, the tool
 reuses the cached result (`reused: true` in its response) instead of
 fetching again - you don't need to do anything differently for that, just
