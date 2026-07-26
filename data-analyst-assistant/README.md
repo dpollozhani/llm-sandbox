@@ -17,8 +17,9 @@ skips an extra supervisor round-trip. Data already fetched in a conversation
 is cached per-session and reused by follow-up questions instead of
 triggering a new fetch. Every node, chain, tool, and client call is async
 end to end, not just the FastAPI endpoint - which is also what makes
-`POST /chat/stream` possible: live status updates ("Querying Power BI...")
-and the final answer typed out token by token over Server-Sent Events,
+`POST /chat/stream` possible: live status updates ("Delegating to data
+source agent...") and the final answer typed out token by token over
+Server-Sent Events,
 without changing a single chain. See
 [`docs/decisions/0001-langchain-langgraph.md`](docs/decisions/0001-langchain-langgraph.md)
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)

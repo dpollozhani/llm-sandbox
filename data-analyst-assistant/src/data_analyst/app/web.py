@@ -2,7 +2,8 @@
 assistant - one self-contained HTML page (inline CSS/JS, no build step, no
 static file serving) mounted at `GET /` in api.py. Streams from
 `POST /chat/stream` (Server-Sent Events) rather than the plain JSON
-`POST /chat`, so the UI can show live status ("Querying Power BI...") and
+`POST /chat`, so the UI can show live status ("Delegating to data source
+agent...") and
 type out the final answer token by token - the browser's native
 `EventSource` only supports GET with no body, so this reads the streamed
 response by hand (`fetch` + `ReadableStream`) instead.

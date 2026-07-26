@@ -82,8 +82,8 @@ async def get_pbi_tokens(request: Request) -> PBITokens:
 # only these five top-level transitions are ever surfaced to the client.
 _NODE_STATUS = {
     "supervisor": "Thinking about what to do next...",
-    "datasource": "Querying Power BI...",
-    "analysis": "Running analysis...",
+    "datasource": "Delegating to data source agent...",
+    "analysis": "Delegating to analysis agent...",
     "respond": "Composing answer...",
     "clarify": "Composing a clarifying question...",
 }
