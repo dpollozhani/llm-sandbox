@@ -52,7 +52,6 @@ class Settings(BaseSettings):
 class SemanticModelConfig(BaseModel):
     model_name: str
     dataset_id: str
-    tables: list[str]
 
 
 class PowerBiCatalog(BaseModel):

@@ -7,6 +7,12 @@ import pytest
 from data_analyst.clients.powerbi.dax import DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
+from data_analyst.config.settings import PowerBiCatalog, SemanticModelConfig
+
+# A catalog of our own, independent of the real shipped
+# config/semantic_models.yaml - these are client-layer tests, not tests of
+# that specific config's content.
+_CATALOG = PowerBiCatalog(semantic_models=[SemanticModelConfig(model_name="Test Model", dataset_id="ds-test")])
 
 
 class _FakeContent:
@@ -49,18 +55,18 @@ _EXECUTE_QUERIES_RESPONSE = {
 
 
 def _rest_client(handler) -> PBIRestClient:
-    return PBIRestClient(transport=httpx.MockTransport(handler))
+    return PBIRestClient(catalog=_CATALOG, transport=httpx.MockTransport(handler))
 
 
 async def test_run_dax_query_executes_and_parses_the_response():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1.0/myorg/datasets/ds-001/executeQueries"
+        assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeQueries"
         assert request.headers["authorization"] == "Bearer tok-123"
         body = json.loads(request.content)
         assert body["queries"][0]["query"].startswith("SUMMARIZECOLUMNS(")
         return httpx.Response(200, json=_EXECUTE_QUERIES_RESPONSE)
 
-    spec = DaxQuerySpec(model_name="Sales Analytics", table="Products", group_by=["Category"])
+    spec = DaxQuerySpec(model_name="Test Model", table="Products", group_by=["Category"])
     dax_query, df = await _rest_client(handler).run_dax_query("tok-123", spec)
 
     assert dax_query.startswith("SUMMARIZECOLUMNS(")
@@ -80,7 +86,7 @@ async def test_run_dax_query_surfaces_power_bi_error_response():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, text="Column 'Bogus' does not exist")
 
-    spec = DaxQuerySpec(model_name="Sales Analytics", table="Sales", group_by=["Bogus"])
+    spec = DaxQuerySpec(model_name="Test Model", table="Sales", group_by=["Bogus"])
     with pytest.raises(ValueError, match="Bogus"):
         await _rest_client(handler).run_dax_query("tok-123", spec)
 
@@ -103,7 +109,7 @@ async def test_get_semantic_metadata_unknown_model_raises_without_any_mcp_call(m
     monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _unreachable)
 
     with pytest.raises(ValueError, match="Unknown semantic model"):
-        await PBIMcpClient().get_semantic_metadata("tok-123", "Nonexistent Model")
+        await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Nonexistent Model")
 
 
 def test_mcp_client_has_no_query_execution():
@@ -115,12 +121,12 @@ async def test_get_semantic_metadata_calls_get_semantic_metadata_tool_and_parses
     monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _fake_streamablehttp_client)
     monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
 
-    result = await PBIMcpClient().get_semantic_metadata("tok-123", "Sales Analytics")
+    result = await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
 
     assert result == {"tables": [{"name": "Products"}]}
     tool_name, args = fake_session.calls[0]
     assert tool_name == "GetSemanticMetadata"
-    assert args == {"datasetId": "ds-001"}
+    assert args == {"datasetId": "ds-test"}
 
 
 async def test_get_semantic_metadata_raises_on_tool_error(monkeypatch):
@@ -129,4 +135,4 @@ async def test_get_semantic_metadata_raises_on_tool_error(monkeypatch):
     monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
 
     with pytest.raises(ValueError, match="permission denied"):
-        await PBIMcpClient().get_semantic_metadata("tok-123", "Sales Analytics")
+        await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")

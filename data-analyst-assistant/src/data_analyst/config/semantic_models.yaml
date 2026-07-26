@@ -1,11 +1,7 @@
 # Maps a friendly model name (what the model uses in a DaxQuerySpec) to a
 # real Power BI dataset id - populate this with your own tenant's values.
-# `tables` is illustrative only; the real column/table schema comes from
-# the live pbi_mcp_get_semantic_metadata call, not from here.
+# Table/column schema isn't listed here - it's discovered live via the
+# pbi_mcp_get_semantic_metadata tool (GetSemanticMetadata).
 semantic_models:
-  - model_name: Sales Analytics
-    dataset_id: ds-001
-    tables:
-      - Sales
-      - Products
-      - Regions
+  - model_name: Stock visibility
+    dataset_id: df81e208-e8bc-4179-8dab-55936e89dd5e
