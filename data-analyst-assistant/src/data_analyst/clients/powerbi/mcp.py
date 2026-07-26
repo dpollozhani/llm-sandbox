@@ -1,4 +1,4 @@
-"""Real Power BI MCP client - calls the official remote Power BI MCP
+"""Power BI MCP client - calls the official remote Power BI MCP
 server's `GetSemanticMetadata` tool (tables/columns/measures/relationships
 for one semantic model) over streamable HTTP. That's the only capability of
 this server this app uses. There's no "list all models" tool anywhere in

@@ -8,7 +8,7 @@ reuse fetched data across turns of the same conversation via
 supplying it. `pbi_rest_token`/`pbi_mcp_token` are the same idea applied to
 auth: the current request's delegated Power BI tokens (see
 `app/api.py::get_pbi_tokens`), injected into the datasource agent's tools so
-row-level security is enforced as the real signed-in user - never the
+row-level security is enforced as the signed-in user - never the
 model's business, and never put in the message history. Both are
 `NotRequired`: callers that never touch Power BI (the analysis subgraph,
 most tests) don't have to supply them, and the tools that do read them

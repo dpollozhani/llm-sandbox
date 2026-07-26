@@ -4,9 +4,9 @@ HTTP. Every test drives its own scripted model via
 `app.dependency_overrides[get_graph]` (see tests/conftest.py for why the app
 can still start up without one), and a fake Power BI REST/MCP client swapped
 into the orchestrator graph's datasource specialist so nothing here needs a
-real Power BI tenant or sign-in. `get_pbi_tokens` (the dependency that
-otherwise requires a real signed-in session - see app/auth.py) is overridden
-for every test in this module by the `_fake_pbi_tokens` fixture below."""
+Power BI tenant or sign-in. `get_pbi_tokens` (the dependency that otherwise
+requires a signed-in session - see app/auth.py) is overridden for every test
+in this module by the `_fake_pbi_tokens` fixture below."""
 from __future__ import annotations
 
 import json

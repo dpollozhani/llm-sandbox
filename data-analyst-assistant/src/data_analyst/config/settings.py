@@ -33,11 +33,11 @@ class Settings(BaseSettings):
 
     semantic_models_path: Path = _DEFAULT_CATALOG_PATH
 
-    # Entra ID app registration used for delegated (real user) sign-in. This
+    # Entra ID app registration used for delegated (per-user) sign-in. This
     # is required: Power BI's ExecuteQueries and the remote PBI MCP server's
     # GetSemanticMetadata both enforce row-level security using the calling
     # user's own identity - a service-principal (app-only) token is rejected
-    # outright on datasets with RLS - so every request needs a real signed-in
+    # outright on datasets with RLS - so every request needs a signed-in
     # user's delegated token, not a client-credentials token.
     entra_tenant_id: str
     entra_client_id: str

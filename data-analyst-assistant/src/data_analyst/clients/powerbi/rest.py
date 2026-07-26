@@ -1,4 +1,4 @@
-"""Real Power BI REST API client - DAX query execution only. No write/admin
+"""Power BI REST API client - DAX query execution only. No write/admin
 operations (e.g. triggering a refresh) are exposed here; the datasource
 agent is intentionally read-only.
 
@@ -38,7 +38,7 @@ class PBIRestClient:
         self._base_url = base_url
         self._transport = transport
         """`transport` is only ever set in tests, via `httpx.MockTransport` -
-        production callers leave it as None and get a real connection."""
+        production callers leave it as None."""
 
     def _client(self, access_token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -50,8 +50,8 @@ class PBIRestClient:
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
         """Build, validate, and execute a structured DAX query against the
-        real Power BI dataset resolved from `spec.model_name` via the
-        catalog config.
+        Power BI dataset resolved from `spec.model_name` via the catalog
+        config.
 
         Returns the resolved DAX text (for transparency in the tool result)
         and the resulting DataFrame. Raises ValueError if the model is

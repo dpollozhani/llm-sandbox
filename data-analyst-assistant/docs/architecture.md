@@ -116,7 +116,7 @@ text from the model - only structured `group_by` columns, `filters`, and
    must be selected. It can't check that a referenced column actually exists
    on the target table - there's no live schema lookup here - so that class
    of error surfaces from Power BI's own response instead (see next point).
-3. Sends it to the real Power BI REST `executeQueries` endpoint
+3. Sends it to the Power BI REST `executeQueries` endpoint
    (`PBIRestClient.run_dax_query`) using the caller's delegated access
    token, and parses the JSON response back into a DataFrame
    (`parse_execute_queries_response`).
@@ -197,11 +197,11 @@ Two things worth being precise about:
 
 - **I/O-bound vs. CPU-bound.** The Power BI client methods
   (`clients/powerbi/mcp.py`, `rest.py`, `auth.py`) are async because they
-  really do `await` a network call (real Power BI REST/MCP calls, real MSAL
-  token acquisition) - that's I/O-bound work, so `await`ing it directly is
-  correct and doesn't block the event loop. The sandbox's code execution
+  `await` a network call (Power BI REST/MCP calls, MSAL token acquisition) -
+  that's I/O-bound work, so `await`ing it directly is correct and doesn't
+  block the event loop. The sandbox's code execution
   (`clients/sandbox/executor.py`)
-  is different: it's genuinely CPU-bound (it runs arbitrary code, which
+  is different: it's CPU-bound (it runs arbitrary code, which
   could be slow), so merely marking it `async def` wouldn't help - it would
   still block the event loop for its duration. `SandboxClient.execute`
   (`clients/sandbox/client.py`) instead offloads it with
@@ -283,12 +283,12 @@ it:
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,
   checkpointing), the async structure throughout (see above), streaming via
   `astream_events` (see above), the FastAPI request/response cycle, the
-  sandbox's `exec()`-based code execution, and Power BI itself - real REST
-  API calls (`clients/powerbi/rest.py`), a real remote MCP server call for
-  `GetSemanticMetadata` (`clients/powerbi/mcp.py`), and real Entra ID
-  delegated auth (`clients/powerbi/auth.py`, `app/auth.py`, `cli.py`'s
-  device-code flow) - see that auth module's docstring for why a delegated
-  user token is required rather than an app-only one.
+  sandbox's `exec()`-based code execution, and Power BI itself - REST API
+  calls (`clients/powerbi/rest.py`), a remote MCP server call for
+  `GetSemanticMetadata` (`clients/powerbi/mcp.py`), and Entra ID delegated
+  auth (`clients/powerbi/auth.py`, `app/auth.py`, `cli.py`'s device-code
+  flow) - see that auth module's docstring for why a delegated user token is
+  required rather than an app-only one.
 - **Mocked**: only the Python sandbox's data layer - `clients/sandbox/`
-  really executes code via `exec()`, but against an in-process dict of
-  staged DataFrames rather than an isolated execution service.
+  executes code via `exec()`, but against an in-process dict of staged
+  DataFrames rather than an isolated execution service.

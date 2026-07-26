@@ -30,7 +30,7 @@ dataset) on top of the shared `ChatState`.
 
 Power BI specialist, **read-only by design**: metadata lookups and
 structured queries only, nothing that changes state in Power BI. Query
-execution goes through the REST client (the real Power BI REST API's
+execution goes through the REST client (the Power BI REST API's
 "Execute Queries" endpoint), not MCP - the MCP client only calls the remote
 Power BI MCP server's `GetSemanticMetadata` tool. Both clients require the
 caller's own delegated access token (see `clients/powerbi/auth.py`'s module
@@ -45,8 +45,8 @@ learns valid `model_name` values from the static catalog
 
 | Tool | Backing client | Notes |
 |---|---|---|
-| `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the real MCP server's `GetSemanticMetadata` |
-| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS query, checks the session's cache before running it, calls the real `executeQueries` endpoint, stages the parsed result and returns a `sandbox_ref` |
+| `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
+| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `sandbox_ref` |
 | `request_clarification` | `agents/common/tools.py` | shared with the analysis agent; asks the user a question when the specialist itself is unsure what's meant - see `docs/architecture.md`'s "Two places a clarifying question can come from" |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
@@ -55,11 +55,11 @@ read the delegated `pbi_rest_token`/`pbi_mcp_token` (returning `{"error":
 ...}` if missing rather than calling Power BI with no token), and, for
 `pbi_rest_run_dax_query`, to also reach its session's data store by
 `session_id`. `build_tools(mcp_client=..., rest_client=...)` takes the two
-Power BI clients as parameters (real ones by default) specifically so tests
-can inject fakes without reaching past the `@tool` decorators - see
+Power BI clients as parameters specifically so tests can inject fakes
+without reaching past the `@tool` decorators - see
 `tests/integration/test_datasource_graph.py`. Tools return plain dicts at
 the LangChain tool boundary, catching `ValueError` from spec construction,
-structural validation, or the real REST/MCP call itself, and returning
+structural validation, or the REST/MCP call itself, and returning
 `{"error": ...}` rather than raising, so the model can see what was wrong
 and retry. `clients/powerbi/rest.py` has no write/admin method (e.g.
 triggering a refresh) at all - this isn't just a tool that's unexposed, the

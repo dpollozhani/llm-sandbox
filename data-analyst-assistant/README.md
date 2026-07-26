@@ -24,20 +24,21 @@ without changing a single chain. See
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
 
-Power BI access is real, not mocked: `clients/powerbi/rest.py` calls the
-actual Power BI REST API, and `clients/powerbi/mcp.py` calls the official
-remote Power BI MCP server's `GetSemanticMetadata` tool. Both require the
-caller's own **delegated** Entra ID access token, never an app-only
-service-principal one - row-level security depends on whose identity the
-call runs as, and Power BI's `executeQueries` rejects a service-principal
-token outright on any dataset with RLS configured (see
+`clients/powerbi/rest.py` calls the Power BI REST API, and
+`clients/powerbi/mcp.py` calls the official remote Power BI MCP server's
+`GetSemanticMetadata` tool. Both require the caller's own **delegated**
+Entra ID access token, never an app-only service-principal one -
+row-level security depends on whose identity the call runs as, and Power
+BI's `executeQueries` rejects a service-principal token outright on any
+dataset with RLS configured (see
 [`clients/powerbi/auth.py`](src/data_analyst/clients/powerbi/auth.py)'s
-module docstring). So every `/chat` call needs a real signed-in user: the
+module docstring). So every `/chat` call needs a signed-in user: the
 browser flow (`app/auth.py`) is a standard OAuth authorization-code sign-in,
-and `cli.py` gets its own tokens via a device-code flow. Only the Python
-sandbox (`clients/sandbox/`) is still mocked/in-process - see "What's
-simplified" below. `LLM_PROVIDER` (`anthropic` or `azure_openai`, with the
-matching API key) is also required - there's no offline/no-key fallback.
+and `cli.py` gets its own tokens via a device-code flow. The Python sandbox
+(`clients/sandbox/`) is still in-process rather than an isolated service -
+see "What's simplified" below. `LLM_PROVIDER` (`anthropic` or
+`azure_openai`, with the matching API key) is also required - there's no
+offline/no-key fallback.
 
 ## Quickstart
 
@@ -115,8 +116,8 @@ spins the instance down after ~15 minutes of inactivity (30-60s cold start
 on the next request).
 
 If you just want to see the full multi-agent flow (routing, tool calls
-across both specialists) without a real Power BI tenant or LLM provider at
-all, read `tests/e2e/test_api_chat.py`, which drives it end-to-end with a
+across both specialists) without a Power BI tenant or LLM provider at all,
+read `tests/e2e/test_api_chat.py`, which drives it end-to-end with a
 scripted model and a fake Power BI client - no sign-in, no API key.
 
 ## Layout
@@ -129,14 +130,14 @@ src/data_analyst/
     datasource/    Power BI specialist (PBI MCP + PBI REST tools, structured DAX queries only)
     analysis/      Python sandbox specialist
     common/        shared state shape (messages + session_id + delegated PBI tokens) + models used across all three
-  clients/       Power BI (real REST + MCP calls, delegated auth only), sandbox (mocked, session-bound), and LLM provider clients
-  config/        env-driven settings + the Power BI catalog (model name -> workspace/dataset id mapping)
+  clients/       Power BI (REST + MCP calls, delegated auth only), sandbox (mocked, session-bound), and LLM provider clients
+  config/        env-driven settings + the Power BI catalog (model name -> dataset id mapping)
   telemetry/     logging/tracing/metrics stand-ins
   utils/         small shared helpers
 tests/
   unit/          client layer only (no LangGraph) - Power BI REST calls mocked via httpx.MockTransport, MCP via a fake ClientSession
   integration/   one subgraph / one orchestrator node at a time, scripted models + a fake Power BI client
-  e2e/           the real FastAPI app end-to-end, across both specialists, with fake Power BI clients and a stubbed sign-in
+  e2e/           the FastAPI app end-to-end, across both specialists, with fake Power BI clients and a stubbed sign-in
 deploy/          Dockerfile + docker-compose, an Azure DevOps pipeline
 infrastructure/  illustrative Bicep/Terraform for a Container App + Azure OpenAI
 docs/            architecture, per-agent reference, decision records
@@ -148,16 +149,16 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All tests run offline - no real Power BI tenant, no LLM API key, no
-network. Power BI's real HTTP/MCP clients are exercised against a fake
-transport/session in `tests/unit/`, and the datasource/orchestrator graphs
-are tested against injected fake `PBIRestClient`/`PBIMcpClient` instances
+All tests run offline - no Power BI tenant, no LLM API key, no network.
+Power BI's HTTP/MCP clients are exercised against a fake transport/session
+in `tests/unit/`, and the datasource/orchestrator graphs are tested against
+injected fake `PBIRestClient`/`PBIMcpClient` instances
 (`build_datasource_graph(llm, mcp_client=..., rest_client=...)`) rather than
-the real network calls, with `app/api.py::get_pbi_tokens` overridden the
-same way `get_graph` already is. Everything except `tests/e2e` is
-`async def` (LangGraph requires `.ainvoke()` once any node is async);
-`tests/e2e` stays sync because FastAPI's `TestClient` already bridges to
-the async app for you.
+the network calls, with `app/api.py::get_pbi_tokens` overridden the same
+way `get_graph` already is. Everything except `tests/e2e` is `async def`
+(LangGraph requires `.ainvoke()` once any node is async); `tests/e2e` stays
+sync because FastAPI's `TestClient` already bridges to the async app for
+you.
 
 ## What's simplified vs. a real deployment
 
@@ -166,8 +167,8 @@ the async app for you.
   passed through to the model as-is rather than forced into a schema that
   might not match what your tenant's server actually returns.
 - `config/semantic_models.yaml` maps a friendly model name (what the model
-  uses in a `DaxQuerySpec`) to a real workspace/dataset id - populate it
-  with your own tenant's values.
+  uses in a `DaxQuerySpec`) to a dataset id - populate it with your own
+  tenant's values.
 - The sandbox (`clients/sandbox/`) really does `exec()` pandas code, but in
   a minimally-restricted namespace rather than a network-isolated worker -
   don't point it at untrusted input as-is.

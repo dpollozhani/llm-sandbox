@@ -1,12 +1,12 @@
-"""Real Entra ID (Azure AD) auth for Power BI: delegated (per-user) tokens
-via MSAL, not app-only client-credentials.
+"""Entra ID (Azure AD) auth for Power BI: delegated (per-user) tokens via
+MSAL, not app-only client-credentials.
 
 Both the Power BI REST API's `executeQueries` and the remote PBI MCP
 server's `GetSemanticMetadata` enforce row-level security using the calling
 user's own identity - `executeQueries` rejects a service-principal token
 outright (401) on any dataset with RLS configured, and the MCP server is
 documented as delegated-only. So there is no app-only fallback here: every
-call needs a real signed-in user's delegated access token.
+call needs a signed-in user's delegated access token.
 
 `TokenBroker` wraps one user's MSAL token cache and mints scoped access
 tokens from it, refreshing silently via the cached refresh token. Two
