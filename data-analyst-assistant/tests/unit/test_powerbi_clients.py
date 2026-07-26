@@ -85,26 +85,15 @@ async def test_run_dax_query_surfaces_power_bi_error_response():
         await _rest_client(handler).run_dax_query("tok-123", spec)
 
 
-async def test_list_workspaces_returns_the_value_array():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1.0/myorg/groups"
-        return httpx.Response(200, json={"value": [{"id": "ws-001", "name": "Retail Analytics"}]})
-
-    workspaces = await _rest_client(handler).list_workspaces("tok-123")
-    assert workspaces == [{"id": "ws-001", "name": "Retail Analytics"}]
-
-
-async def test_get_refresh_history_returns_the_value_array():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1.0/myorg/datasets/ds-001/refreshes"
-        return httpx.Response(200, json={"value": [{"status": "Completed"}]})
-
-    history = await _rest_client(handler).get_refresh_history("tok-123", "ds-001")
-    assert history == [{"status": "Completed"}]
-
-
 def test_rest_client_has_no_trigger_refresh():
     assert not hasattr(PBIRestClient(), "trigger_refresh")
+
+
+def test_rest_client_has_no_workspace_or_refresh_history_listing():
+    # Not needed for this build - see PBIRestClient's module docstring.
+    client = PBIRestClient()
+    assert not hasattr(client, "list_workspaces")
+    assert not hasattr(client, "get_refresh_history")
 
 
 async def test_get_semantic_metadata_unknown_model_raises_without_any_mcp_call(monkeypatch):

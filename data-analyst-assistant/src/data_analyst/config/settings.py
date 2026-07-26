@@ -47,17 +47,6 @@ class Settings(BaseSettings):
     pbi_mcp_server_url: str = "https://api.fabric.microsoft.com/v1/mcp/powerbi"
 
 
-class DatasetConfig(BaseModel):
-    dataset_id: str
-    dataset_name: str
-
-
-class WorkspaceConfig(BaseModel):
-    workspace_id: str
-    workspace_name: str
-    datasets: list[DatasetConfig]
-
-
 class SemanticModelConfig(BaseModel):
     model_name: str
     dataset_id: str
@@ -65,7 +54,6 @@ class SemanticModelConfig(BaseModel):
 
 
 class PowerBiCatalog(BaseModel):
-    workspaces: list[WorkspaceConfig]
     semantic_models: list[SemanticModelConfig]
 
     def find_model(self, model_name: str) -> SemanticModelConfig | None:

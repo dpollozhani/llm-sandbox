@@ -51,12 +51,6 @@ class _FakeRestClient:
         validate_dax_query(dax_query, spec)
         return dax_query, pd.DataFrame([{"Total Revenue": 18225}])
 
-    async def get_refresh_history(self, access_token: str, dataset_id: str):
-        return [{"status": "Completed"}]
-
-    async def list_workspaces(self, access_token: str):
-        return [{"id": "ws-001", "name": "Retail Analytics"}]
-
 
 class _FakeMcpClient:
     async def get_semantic_metadata(self, access_token: str, model_name: str):

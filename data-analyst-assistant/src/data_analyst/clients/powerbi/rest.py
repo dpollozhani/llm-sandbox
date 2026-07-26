@@ -1,7 +1,6 @@
-"""Real Power BI REST API client - read-only (workspace/dataset metadata,
-refresh history, DAX query execution). No write/admin operations (e.g.
-triggering a refresh) are exposed here; the datasource agent is
-intentionally read-only.
+"""Real Power BI REST API client - DAX query execution only. No write/admin
+operations (e.g. triggering a refresh) are exposed here; the datasource
+agent is intentionally read-only.
 
 Every call takes the caller's own delegated access token and sends it as-is
 - this client holds no auth state itself (see `clients/powerbi/auth.py`'s
@@ -48,20 +47,6 @@ class PBIRestClient:
             transport=self._transport,
             timeout=30.0,
         )
-
-    async def list_workspaces(self, access_token: str) -> list[dict]:
-        with trace_span("pbi_rest.list_workspaces"):
-            async with self._client(access_token) as client:
-                response = await client.get("/groups")
-                response.raise_for_status()
-                return response.json()["value"]
-
-    async def get_refresh_history(self, access_token: str, dataset_id: str) -> list[dict]:
-        with trace_span("pbi_rest.get_refresh_history", dataset_id=dataset_id):
-            async with self._client(access_token) as client:
-                response = await client.get(f"/datasets/{dataset_id}/refreshes")
-                response.raise_for_status()
-                return response.json()["value"]
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
         """Build, validate, and execute a structured DAX query against the

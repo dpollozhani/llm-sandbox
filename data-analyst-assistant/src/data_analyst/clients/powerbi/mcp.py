@@ -1,9 +1,10 @@
 """Real Power BI MCP client - calls the official remote Power BI MCP
 server's `GetSemanticMetadata` tool (tables/columns/measures/relationships
 for one semantic model) over streamable HTTP. That's the only capability of
-this server this app uses; workspace/dataset discovery stays on the REST
-client (`rest.py::PBIRestClient.list_workspaces`) since MCP's metadata tool
-takes a specific model, not "list everything".
+this server this app uses. There's no "list all models" tool anywhere in
+this build - the model learns valid `model_name` values from the static
+catalog (`config/semantic_models.yaml`), injected into the datasource
+agent's system prompt (see `agents/datasource/chains.py`).
 
 Delegated auth only (see `clients/powerbi/auth.py`'s module docstring) - the
 caller's own access token is sent as a Bearer header on the MCP transport,

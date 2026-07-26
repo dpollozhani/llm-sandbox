@@ -11,6 +11,7 @@ from data_analyst.agents.datasource.nodes import build_agent_node, build_tool_no
 from data_analyst.agents.datasource.state import DatasourceState
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
+from data_analyst.config.settings import PowerBiCatalog, get_catalog
 
 
 def build_datasource_graph(
@@ -18,10 +19,11 @@ def build_datasource_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     mcp_client: PBIMcpClient | None = None,
     rest_client: PBIRestClient | None = None,
+    catalog: PowerBiCatalog | None = None,
 ) -> CompiledStateGraph:
     tools = build_tools(mcp_client=mcp_client, rest_client=rest_client)
     graph = StateGraph(DatasourceState)
-    graph.add_node("agent", build_agent_node(llm, tools))
+    graph.add_node("agent", build_agent_node(llm, tools, catalog=catalog or get_catalog()))
     graph.add_node("tools", build_tool_node(tools))
 
     graph.add_edge(START, "agent")

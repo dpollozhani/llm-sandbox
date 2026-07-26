@@ -25,6 +25,7 @@ from data_analyst.clients.powerbi.dax import DaxFilter, DaxMeasure, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
+from data_analyst.config.settings import PowerBiCatalog
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again."
 
@@ -49,22 +50,6 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
             return await mcp.get_semantic_metadata(token, model_name)
         except ValueError as exc:
             return {"error": str(exc)}
-
-    @tool
-    async def pbi_rest_list_workspaces(state: Annotated[DatasourceState, InjectedState]) -> list[dict]:
-        """List Power BI workspaces and their datasets via the PBI REST API."""
-        token = state.get("pbi_rest_token")
-        if not token:
-            return [{"error": _NOT_SIGNED_IN}]
-        return await rest.list_workspaces(token)
-
-    @tool
-    async def pbi_rest_get_refresh_history(dataset_id: str, state: Annotated[DatasourceState, InjectedState]) -> list[dict]:
-        """Get the refresh history for a dataset via the PBI REST API."""
-        token = state.get("pbi_rest_token")
-        if not token:
-            return [{"error": _NOT_SIGNED_IN}]
-        return await rest.get_refresh_history(token, dataset_id)
 
     @tool
     async def pbi_rest_run_dax_query(
@@ -130,16 +115,14 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
     return [
         pbi_mcp_get_semantic_metadata,
-        pbi_rest_list_workspaces,
-        pbi_rest_get_refresh_history,
         pbi_rest_run_dax_query,
         request_clarification,
     ]
 
 
-def build_agent_node(llm: BaseChatModel, tools: list[BaseTool] | None = None):
+def build_agent_node(llm: BaseChatModel, tools: list[BaseTool] | None = None, catalog: PowerBiCatalog | None = None):
     tools = tools if tools is not None else build_tools()
-    chain = build_agent_chain(llm, tools)
+    chain = build_agent_chain(llm, tools, catalog=catalog)
 
     async def agent_node(state: DatasourceState):
         response = await chain.ainvoke(state["messages"])

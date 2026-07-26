@@ -37,11 +37,15 @@ caller's own delegated access token (see `clients/powerbi/auth.py`'s module
 docstring - RLS requires it), read from `state` via `InjectedState`, not a
 client-held credential. Tools (`nodes.py::build_tools`):
 
+There's no workspace/refresh-history tool - both were dropped as unneeded
+for this build. Without a "list models" tool either, the model instead
+learns valid `model_name` values from the static catalog
+(`config/semantic_models.yaml`), appended to the system prompt by
+`chains.py::build_agent_chain`.
+
 | Tool | Backing client | Notes |
 |---|---|---|
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the real MCP server's `GetSemanticMetadata` |
-| `pbi_rest_list_workspaces` | `clients/powerbi/rest.py` | real `GET /groups` |
-| `pbi_rest_get_refresh_history` | `clients/powerbi/rest.py` | real `GET /datasets/{id}/refreshes` |
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS query, checks the session's cache before running it, calls the real `executeQueries` endpoint, stages the parsed result and returns a `sandbox_ref` |
 | `request_clarification` | `agents/common/tools.py` | shared with the analysis agent; asks the user a question when the specialist itself is unsure what's meant - see `docs/architecture.md`'s "Two places a clarifying question can come from" |
 

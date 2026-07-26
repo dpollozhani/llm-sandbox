@@ -154,9 +154,9 @@ the correctness of "no duplicate fetch" depends on.
 
 ## No mutating actions (by design)
 
-The datasource agent only reads: semantic model/table discovery, DAX
-queries, workspace listing, refresh history. There's no tool anywhere in
-this build that changes state in Power BI (or elsewhere), so there's
+The datasource agent only reads: semantic model schema lookups and DAX
+queries. There's no tool anywhere in this build that changes state in Power
+BI (or elsewhere), so there's
 nothing that needs a human-in-the-loop approval gate.
 
 That said, the orchestrator's checkpointing already supports one for free.

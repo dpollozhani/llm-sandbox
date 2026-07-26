@@ -32,14 +32,6 @@ class _FakeRestClient:
             raise ValueError("Unknown column(s) for table 'Sales': ['Bogus']")
         return dax_query, pd.DataFrame([{"Region": "North", "Total Revenue": 18225}])
 
-    async def get_refresh_history(self, access_token: str, dataset_id: str):
-        assert access_token == "tok-rest"
-        return [{"status": "Completed"}]
-
-    async def list_workspaces(self, access_token: str):
-        assert access_token == "tok-rest"
-        return [{"id": "ws-001", "name": "Retail Analytics"}]
-
 
 def _graph(llm):
     return build_datasource_graph(llm, rest_client=_FakeRestClient())
@@ -120,27 +112,6 @@ async def test_run_dax_query_without_a_signed_in_token_returns_error_not_raise()
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert "sign" in tool_messages[0].content.lower()
-
-
-async def test_get_refresh_history_is_read_only_no_trigger_tool_available():
-    llm = FakeToolCallingChatModel(
-        responses=[
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "pbi_rest_get_refresh_history", "args": {"dataset_id": "ds-001"}, "id": "c1"}],
-            ),
-            AIMessage(content="The dataset last refreshed successfully."),
-        ]
-    )
-    graph = _graph(llm)
-
-    result = await graph.ainvoke(
-        _state("sess-refresh", [HumanMessage(content="when did the dataset last refresh?")])
-    )
-
-    tool_names = {tc["name"] for m in result["messages"] if m.type == "ai" for tc in (m.tool_calls or [])}
-    assert "pbi_rest_trigger_dataset_refresh" not in tool_names
-    assert result["messages"][-1].content == "The dataset last refreshed successfully."
 
 
 async def test_can_ask_for_clarification_instead_of_guessing():

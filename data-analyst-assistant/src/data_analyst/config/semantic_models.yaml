@@ -1,13 +1,7 @@
-# Declarative metadata describing the (mocked) Power BI estate. A real
-# deployment would sync this from the Power BI REST API / a metadata store;
-# here it's just what the mock clients use to answer list_* calls.
-workspaces:
-  - workspace_id: ws-001
-    workspace_name: Retail Analytics
-    datasets:
-      - dataset_id: ds-001
-        dataset_name: Sales Analytics
-
+# Maps a friendly model name (what the model uses in a DaxQuerySpec) to a
+# real Power BI dataset id - populate this with your own tenant's values.
+# `tables` is illustrative only; the real column/table schema comes from
+# the live pbi_mcp_get_semantic_metadata call, not from here.
 semantic_models:
   - model_name: Sales Analytics
     dataset_id: ds-001
