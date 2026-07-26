@@ -24,7 +24,7 @@ from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, D
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
-from data_analyst.config.settings import PowerBiCatalog
+from data_analyst.config.settings import Glossary, PowerBiCatalog
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
@@ -141,9 +141,14 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
     ]
 
 
-def build_agent_node(llm: BaseChatModel, tools: list[BaseTool] | None = None, catalog: PowerBiCatalog | None = None):
+def build_agent_node(
+    llm: BaseChatModel,
+    tools: list[BaseTool] | None = None,
+    catalog: PowerBiCatalog | None = None,
+    glossary: Glossary | None = None,
+):
     tools = tools if tools is not None else build_tools()
-    chain = build_agent_chain(llm, tools, catalog=catalog)
+    chain = build_agent_chain(llm, tools, catalog=catalog, glossary=glossary)
 
     async def agent_node(state: DatasourceState):
         response = await chain.ainvoke(state["messages"])

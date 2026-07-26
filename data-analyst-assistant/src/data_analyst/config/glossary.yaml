@@ -1,0 +1,12 @@
+# Domain terms/concepts worth explaining to the model up front - an
+# abbreviation, a business meaning behind a cryptically-named column, or a
+# term that collides with a more common meaning - so it doesn't have to
+# guess (or make the user re-explain) every conversation. Populate this
+# with your own organization's terms; an empty or missing file is fine, it
+# just means nothing gets injected.
+terms:
+  - term: BRIC
+    definition: >-
+      An item attribute in the semantic model (a global item code) -
+      not the BRIC/BRICS country grouping (Brazil, Russia, India, China,
+      South Africa).

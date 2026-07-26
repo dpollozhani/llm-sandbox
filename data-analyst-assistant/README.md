@@ -181,6 +181,11 @@ you.
 - `config/semantic_models.yaml` maps a friendly model name (what the model
   uses in a `DaxQuerySpec`) to a dataset id - populate it with your own
   tenant's values.
+- `config/glossary.yaml` (optional) defines domain terms/concepts the
+  schema alone won't explain - an abbreviation, a business meaning behind
+  a cryptic column, a term that collides with a more common meaning -
+  injected into the datasource agent's system prompt so it doesn't have
+  to guess (or make the user re-explain) every conversation.
 - The sandbox (`clients/sandbox/`) really does `exec()` pandas code, but in
   a minimally-restricted namespace rather than a network-isolated worker -
   don't point it at untrusted input as-is.

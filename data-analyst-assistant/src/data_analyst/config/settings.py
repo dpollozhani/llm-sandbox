@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_CATALOG_PATH = Path(__file__).parent / "semantic_models.yaml"
+_DEFAULT_GLOSSARY_PATH = Path(__file__).parent / "glossary.yaml"
 
 
 class Settings(BaseSettings):
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     azure_openai_deployment: str = "gpt-4o"
 
     semantic_models_path: Path = _DEFAULT_CATALOG_PATH
+    glossary_path: Path = _DEFAULT_GLOSSARY_PATH
 
     # Entra ID app registration used for delegated (per-user) sign-in. This
     # is required: Power BI's ExecuteQueries and the remote PBI MCP server's
@@ -61,6 +63,28 @@ class PowerBiCatalog(BaseModel):
         return next((m for m in self.semantic_models if m.model_name == model_name), None)
 
 
+class GlossaryEntry(BaseModel):
+    term: str
+    definition: str
+
+
+class Glossary(BaseModel):
+    """Domain terms/concepts the model can't reliably infer from the
+    semantic model's schema alone (an abbreviation, a business meaning
+    behind a cryptically-named column, a term that collides with a more
+    common meaning) - injected into the datasource agent's system prompt
+    (see `agents/datasource/chains.py`) so the user doesn't have to
+    re-explain them every conversation."""
+
+    terms: list[GlossaryEntry] = Field(default_factory=list)
+
+    def render(self) -> str:
+        """A compact `term: definition` line per entry, for injecting into
+        a prompt - not a big structured block, since a glossary is meant to
+        be a handful of terms, not a dataset in its own right."""
+        return "\n".join(f"- {e.term}: {e.definition}" for e in self.terms)
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
@@ -72,3 +96,17 @@ def get_catalog(path: Path | None = None) -> PowerBiCatalog:
     with open(catalog_path) as f:
         raw = yaml.safe_load(f)
     return PowerBiCatalog.model_validate(raw)
+
+
+@lru_cache
+def get_glossary(path: Path | None = None) -> Glossary:
+    """Unlike `get_catalog` (required - no semantic models means no data
+    queries at all), a glossary is optional supplementary context: a
+    missing or empty file just means no terms to inject, not a startup
+    failure."""
+    glossary_path = path or get_settings().glossary_path
+    if not glossary_path.exists():
+        return Glossary()
+    with open(glossary_path) as f:
+        raw = yaml.safe_load(f) or {}
+    return Glossary.model_validate(raw)

@@ -7,10 +7,15 @@ from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.tools import BaseTool
 
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
-from data_analyst.config.settings import PowerBiCatalog
+from data_analyst.config.settings import Glossary, PowerBiCatalog
 
 
-def build_agent_chain(llm: BaseChatModel, tools: list[BaseTool], catalog: PowerBiCatalog | None = None) -> Runnable:
+def build_agent_chain(
+    llm: BaseChatModel,
+    tools: list[BaseTool],
+    catalog: PowerBiCatalog | None = None,
+    glossary: Glossary | None = None,
+) -> Runnable:
     llm_with_tools = llm.bind_tools(tools)
 
     system_prompt = SYSTEM_PROMPT
@@ -21,6 +26,12 @@ def build_agent_chain(llm: BaseChatModel, tools: list[BaseTool], catalog: PowerB
         # to pass to pbi_mcp_get_semantic_metadata/pbi_rest_run_dax_query.
         names = ", ".join(f'"{m.model_name}"' for m in catalog.semantic_models)
         system_prompt += f"\n\nAvailable semantic models: {names}."
+    if glossary is not None and glossary.terms:
+        # Terms/concepts the schema alone won't explain (see
+        # config/glossary.yaml) - e.g. an abbreviation that collides with a
+        # more common meaning - so the model doesn't have to guess, or make
+        # the user re-explain, every conversation.
+        system_prompt += f"\n\nGlossary:\n{glossary.render()}"
 
     async def _invoke(messages: list[AnyMessage]):
         return await llm_with_tools.ainvoke([SystemMessage(content=system_prompt), *messages])

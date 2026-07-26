@@ -43,7 +43,9 @@ There's no workspace/refresh-history tool - both were dropped as unneeded
 for this build. Without a "list models" tool either, the model instead
 learns valid `model_name` values from the static catalog
 (`config/semantic_models.yaml`), appended to the system prompt by
-`chains.py::build_agent_chain`.
+`chains.py::build_agent_chain` - which also appends `config/glossary.yaml`'s
+terms the same way, when any are configured (`Glossary`/`get_glossary` in
+`config/settings.py`).
 
 | Tool | Backing client | Notes |
 |---|---|---|
