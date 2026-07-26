@@ -4,13 +4,13 @@ from data_analyst.clients.powerbi.dax import (
     DaxFilter,
     DaxMeasure,
     DaxQuerySpec,
-    build_summarizecolumns,
+    build_dax_query,
     parse_execute_queries_response,
     validate_dax_query,
 )
 
 
-def test_build_summarizecolumns_shape():
+def test_build_dax_query_shape():
     spec = DaxQuerySpec(
         model_name="m",
         table="Sales",
@@ -18,7 +18,7 @@ def test_build_summarizecolumns_shape():
         filters=[DaxFilter(column="Region", operator="!=", value="South")],
         measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
     )
-    dax = build_summarizecolumns(spec)
+    dax = build_dax_query(spec)
     assert dax.startswith("EVALUATE SUMMARIZECOLUMNS(")
     assert dax.endswith(")")
     assert "'Sales'[Region]" in dax
@@ -26,7 +26,7 @@ def test_build_summarizecolumns_shape():
     assert '"Total Revenue", SUM(\'Sales\'[Revenue])' in dax
 
 
-def test_build_summarizecolumns_references_an_existing_model_measure_directly():
+def test_build_dax_query_references_an_existing_model_measure_directly():
     """A measure with no `aggregation` is a reference to a measure that
     already exists in the model (e.g. under a "_Measures" table) - it's
     addressed directly by name, never wrapped in an aggregation function
@@ -38,7 +38,7 @@ def test_build_summarizecolumns_references_an_existing_model_measure_directly():
         group_by=["Region"],
         measures=[DaxMeasure(name="Inventory on-hand")],
     )
-    dax = build_summarizecolumns(spec)
+    dax = build_dax_query(spec)
     assert '"Inventory on-hand", [Inventory on-hand]' in dax
 
 
@@ -47,7 +47,7 @@ def test_measure_with_aggregation_requires_column():
         DaxMeasure(name="Total Revenue", aggregation="SUM")
 
 
-def test_build_summarizecolumns_does_not_double_bracket_an_already_bracketed_measure_name():
+def test_build_dax_query_does_not_double_bracket_an_already_bracketed_measure_name():
     """If the caller (or model) already wrapped the measure name in
     brackets, e.g. "[Inventory on-hand]", the reference must still come
     out as a single [Inventory on-hand] - not [[Inventory on-hand]], which
@@ -58,7 +58,7 @@ def test_build_summarizecolumns_does_not_double_bracket_an_already_bracketed_mea
         group_by=["Region"],
         measures=[DaxMeasure(name="[Inventory on-hand]")],
     )
-    dax = build_summarizecolumns(spec)
+    dax = build_dax_query(spec)
     assert '"[Inventory on-hand]", [Inventory on-hand]' in dax
     assert "[[Inventory on-hand]]" not in dax
 
@@ -71,15 +71,57 @@ def test_validate_rejects_non_summarizecolumns_text():
 
 def test_validate_rejects_empty_selection():
     spec = DaxQuerySpec(model_name="m", table="Sales")
-    dax = build_summarizecolumns(spec)
+    dax = build_dax_query(spec)
     with pytest.raises(ValueError, match="at least one"):
         validate_dax_query(dax, spec)
 
 
 def test_validate_accepts_a_well_formed_query():
     spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
-    dax = build_summarizecolumns(spec)
+    dax = build_dax_query(spec)
     validate_dax_query(dax, spec)  # doesn't raise
+
+
+def test_build_dax_query_uses_row_for_a_grand_total_with_no_group_by():
+    """SUMMARIZECOLUMNS requires at least one group-by column - it has no
+    "just give me the totals" mode - so a spec with only measures (e.g. "total
+    inventory on-hand across everything", the exact case that 400'd in
+    production) must use EVALUATE ROW(...) instead, DAX's own idiom for a
+    single ungrouped row of measures."""
+    spec = DaxQuerySpec(model_name="m", table="Sales", measures=[DaxMeasure(name="Inventory on-hand")])
+    dax = build_dax_query(spec)
+    assert dax.startswith("EVALUATE ROW(")
+    assert "SUMMARIZECOLUMNS" not in dax
+    assert '"Inventory on-hand", [Inventory on-hand]' in dax
+    validate_dax_query(dax, spec)  # doesn't raise
+
+
+def test_build_dax_query_wraps_filtered_grand_total_measures_in_calculate():
+    """ROW() has no table-filter arguments like SUMMARIZECOLUMNS does, so a
+    filtered grand total (no group_by, but a filter) has to fold the filter
+    into each measure's own expression via CALCULATE instead."""
+    spec = DaxQuerySpec(
+        model_name="m",
+        table="Sales",
+        filters=[DaxFilter(column="Region", operator="=", value="North")],
+        measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
+    )
+    dax = build_dax_query(spec)
+    assert dax.startswith("EVALUATE ROW(")
+    assert '"Total Revenue", CALCULATE(SUM(\'Sales\'[Revenue]), FILTER(ALL(\'Sales\'), \'Sales\'[Region] = "North"))' in dax
+    validate_dax_query(dax, spec)  # doesn't raise
+
+
+def test_validate_rejects_row_text_when_group_by_is_present():
+    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
+        validate_dax_query("EVALUATE ROW(\n    \"x\", 1\n)", spec)
+
+
+def test_validate_rejects_summarizecolumns_text_when_group_by_is_absent():
+    spec = DaxQuerySpec(model_name="m", table="Sales", measures=[DaxMeasure(name="Total")])
+    with pytest.raises(ValueError, match="ROW"):
+        validate_dax_query('EVALUATE SUMMARIZECOLUMNS(\n    "Total", [Total]\n)', spec)
 
 
 def test_parse_execute_queries_response_renames_group_by_and_measures():

@@ -72,11 +72,12 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
     ) -> dict:
         """Run a structured query against a Power BI semantic model via the PBI REST API.
 
-        The query is always built as a single SUMMARIZECOLUMNS(...) call from
-        `group_by` columns, `filters`, and `measures` - never free-form DAX
-        text - and is validated before being sent. Pass empty lists for
-        anything not needed, but at least one of `group_by` or `measures` is
-        required.
+        The query is always built from `group_by` columns, `filters`, and
+        `measures` - never free-form DAX text - and is validated before
+        being sent. Pass empty lists for anything not needed, but at least
+        one of `group_by` or `measures` is required. With `group_by`, it's a
+        single SUMMARIZECOLUMNS(...) call; with none (a grand total, not
+        broken out by anything), it's a ROW(...) call instead.
 
         If this exact query (same table/columns/filters/measures) was already
         run earlier in this conversation, the cached result is reused instead

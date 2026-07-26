@@ -137,14 +137,18 @@ where the ambiguity was actually discovered.
 text from the model - only structured `group_by` columns, `filters`, and
 `measures` (`clients/powerbi/dax.py::DaxQuerySpec`). The tool:
 
-1. Builds a single `SUMMARIZECOLUMNS(...)` string from the spec
-   (`build_summarizecolumns`).
+1. Builds a single DAX query string from the spec (`build_dax_query`): an
+   `EVALUATE SUMMARIZECOLUMNS(...)` call if `group_by` is non-empty, or an
+   `EVALUATE ROW(...)` grand total if it's empty - `SUMMARIZECOLUMNS`
+   requires at least one group-by column syntactically, it has no
+   "just give me the totals" mode.
 2. Validates it structurally (`validate_dax_query`) before it would be sent
-   to the REST endpoint: the text must actually be a well-formed
-   `SUMMARIZECOLUMNS(...)` call, and at least one group-by column or measure
-   must be selected. It can't check that a referenced column actually exists
-   on the target table - there's no live schema lookup here - so that class
-   of error surfaces from Power BI's own response instead (see next point).
+   to the REST endpoint: the text must actually be a well-formed call to
+   whichever of those two the spec implies, and at least one group-by column
+   or measure must be selected. It can't check that a referenced column
+   actually exists on the target table - there's no live schema lookup here
+   - so that class of error surfaces from Power BI's own response instead
+   (see next point).
 3. Sends it to the Power BI REST `executeQueries` endpoint
    (`PBIRestClient.run_dax_query`) using the caller's delegated access
    token, and parses the JSON response back into a DataFrame

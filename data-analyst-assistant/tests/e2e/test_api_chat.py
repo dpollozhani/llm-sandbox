@@ -23,7 +23,7 @@ from data_analyst.agents.orchestrator.graph import build_orchestrator_graph
 from data_analyst.app.api import PBITokens, app, get_pbi_tokens
 from data_analyst.app.dependencies import get_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
-from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_summarizecolumns, validate_dax_query
+from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_dax_query, validate_dax_query
 
 
 class ScriptedRoutingModel(FakeToolCallingChatModel):
@@ -56,7 +56,7 @@ class _FakeRestClient:
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
         assert access_token == "tok-pbi"
-        dax_query = build_summarizecolumns(spec)
+        dax_query = build_dax_query(spec)
         validate_dax_query(dax_query, spec)
         return dax_query, pd.DataFrame([{"Total Revenue": 18225}])
 

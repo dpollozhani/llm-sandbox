@@ -8,7 +8,8 @@ instead of the Azure AI SDK's Agents Service.
 
 The Power BI agent is read-only (metadata + structured queries only, no
 write/admin actions), and every query is a validated, structurally-built
-`SUMMARIZECOLUMNS(...)` call - never free-form DAX text from the model. Both
+`SUMMARIZECOLUMNS(...)`/`ROW(...)` call - never free-form DAX text from the
+model. Both
 the supervisor and the specialist agents can ask a clarifying question
 instead of guessing - the supervisor for broad "which specialist even
 handles this" uncertainty, a specialist itself for narrower ambiguity (which

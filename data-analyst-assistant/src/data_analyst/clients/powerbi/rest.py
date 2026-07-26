@@ -6,7 +6,7 @@ Every call takes the caller's own delegated access token and sends it as-is
 - this client holds no auth state itself (see `clients/powerbi/auth.py`'s
 module docstring for why a delegated user token is required: `executeQueries`
 rejects a service-principal token outright on any dataset with row-level
-security). Queries are always structured `SUMMARIZECOLUMNS(...)` calls built
+security). Queries are always structured `SUMMARIZECOLUMNS(...)`/`ROW(...)` calls built
 and validated from a `DaxQuerySpec` (see `dax.py`) - never free-form DAX text
 handed in directly.
 """
@@ -17,7 +17,7 @@ import pandas as pd
 
 from data_analyst.clients.powerbi.dax import (
     DaxQuerySpec,
-    build_summarizecolumns,
+    build_dax_query,
     parse_execute_queries_response,
     validate_dax_query,
 )
@@ -67,7 +67,7 @@ class PBIRestClient:
             if model is None:
                 raise ValueError(f"Unknown semantic model '{spec.model_name}'")
 
-            dax_query = build_summarizecolumns(spec)
+            dax_query = build_dax_query(spec)
             validate_dax_query(dax_query, spec)
 
             body = {"queries": [{"query": dax_query}], "serializerSettings": {"includeNulls": True}}

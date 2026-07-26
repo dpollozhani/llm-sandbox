@@ -1,10 +1,18 @@
 """Structured DAX query support: every query the datasource agent can run is
-built as a single `EVALUATE SUMMARIZECOLUMNS(...)` call from structured
-group-by columns, filters, and measures - never free-form DAX text from the
-model.
+built from structured group-by columns, filters, and measures - never
+free-form DAX text from the model - as one of two query shapes:
 
-`DaxQuerySpec` is the structural request; `build_summarizecolumns` renders it
-to DAX text; `validate_dax_query` checks that text (and the spec behind it)
+- with at least one `group_by` column: `EVALUATE SUMMARIZECOLUMNS(...)`,
+  filters folded in as `FILTER(ALL(...), ...)` table arguments.
+- with none (a grand total, not broken out by anything):
+  `EVALUATE ROW(...)` instead - `SUMMARIZECOLUMNS` requires at least one
+  group-by column syntactically, it has no "just give me the totals" mode,
+  and `ROW` is DAX's own idiom for that. Filters have nowhere to attach on
+  `ROW` (no table arguments), so each measure expression is wrapped in
+  `CALCULATE(<expr>, <filter>, ...)` instead.
+
+`DaxQuerySpec` is the structural request; `build_dax_query` renders it to
+DAX text; `validate_dax_query` checks that text (and the spec behind it)
 structurally before it would be sent to the REST endpoint - it doesn't know
 the real model's columns, so an unknown column still comes back as an error
 from Power BI itself (see `rest.py::PBIRestClient.run_dax_query`), just like
@@ -91,36 +99,53 @@ def _bracketed(name: str) -> str:
     return f"[{name}]"
 
 
-def build_summarizecolumns(spec: DaxQuerySpec) -> str:
-    """Render a `DaxQuerySpec` to an `EVALUATE SUMMARIZECOLUMNS(...)` DAX
-    query. The `EVALUATE` is not optional decoration - `executeQueries`
-    parses the query text as a full DAX query, and every live call without
-    it failed with a generic "Invalid query syntax. A valid MDX or DAX
-    query was expected." (confirmed against Power BI, and matching every
-    official request-body example in Microsoft's own docs)."""
-    parts: list[str] = [f"'{spec.table}'[{col}]" for col in spec.group_by]
+def _filter_parts(spec: DaxQuerySpec) -> list[str]:
+    parts = []
     for f in spec.filters:
         keyword = "IN" if f.operator == "IN" else f.operator
         parts.append(f"FILTER(ALL('{spec.table}'), '{spec.table}'[{f.column}] {keyword} {_literal(f.value)})")
-    for m in spec.measures:
-        if m.aggregation is None:
-            parts.append(f'"{m.name}", {_bracketed(m.name)}')
-        else:
-            parts.append(f'"{m.name}", {m.aggregation}(\'{spec.table}\'[{m.column}])')
-    inner = ",\n    ".join(parts)
-    return f"EVALUATE SUMMARIZECOLUMNS(\n    {inner}\n)"
+    return parts
+
+
+def _measure_expr(spec: DaxQuerySpec, m: DaxMeasure) -> str:
+    expr = _bracketed(m.name) if m.aggregation is None else f"{m.aggregation}('{spec.table}'[{m.column}])"
+    if spec.group_by:
+        return expr  # a group-by column is already in scope to filter by; SUMMARIZECOLUMNS's own filter-table args apply
+    filters = _filter_parts(spec)
+    return f"CALCULATE({expr}, {', '.join(filters)})" if filters else expr
+
+
+def build_dax_query(spec: DaxQuerySpec) -> str:
+    """Render a `DaxQuerySpec` to DAX text - see this module's docstring for
+    why the shape (`SUMMARIZECOLUMNS` vs `ROW`) depends on whether
+    `group_by` is empty. The `EVALUATE` is not optional decoration either
+    way - `executeQueries` parses the query text as a full DAX query, and
+    every live call without it failed with a generic "Invalid query syntax.
+    A valid MDX or DAX query was expected." (confirmed against Power BI, and
+    matching every official request-body example in Microsoft's own docs)."""
+    measure_parts = [f'"{m.name}", {_measure_expr(spec, m)}' for m in spec.measures]
+
+    if spec.group_by:
+        parts = [f"'{spec.table}'[{col}]" for col in spec.group_by] + _filter_parts(spec) + measure_parts
+        inner = ",\n    ".join(parts)
+        return f"EVALUATE SUMMARIZECOLUMNS(\n    {inner}\n)"
+
+    inner = ",\n    ".join(measure_parts)
+    return f"EVALUATE ROW(\n    {inner}\n)"
 
 
 def validate_dax_query(dax_query: str, spec: DaxQuerySpec) -> None:
     """Structural validation before the query would be sent to the REST
     endpoint. Raises ValueError with a specific reason on failure."""
-    text = dax_query.strip()
-    if not text.startswith("EVALUATE SUMMARIZECOLUMNS(") or not text.endswith(")"):
-        raise ValueError("DAX query must be a single EVALUATE SUMMARIZECOLUMNS(...) call")
-    if text.count("(") != text.count(")"):
-        raise ValueError("DAX query has unbalanced parentheses")
     if not spec.group_by and not spec.measures:
         raise ValueError("Query must select at least one group-by column or measure")
+
+    text = dax_query.strip()
+    expected_prefix = "EVALUATE SUMMARIZECOLUMNS(" if spec.group_by else "EVALUATE ROW("
+    if not text.startswith(expected_prefix) or not text.endswith(")"):
+        raise ValueError(f"DAX query must be a single {expected_prefix}...) call")
+    if text.count("(") != text.count(")"):
+        raise ValueError("DAX query has unbalanced parentheses")
 
 
 def _result_key(keys: list[str], name: str, table: str | None = None) -> str:

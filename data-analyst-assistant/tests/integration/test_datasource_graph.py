@@ -3,7 +3,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
-from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_summarizecolumns, validate_dax_query
+from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_dax_query, validate_dax_query
 
 _DAX_TOOL_CALL = {
     "name": "pbi_rest_run_dax_query",
@@ -26,7 +26,7 @@ class _FakeRestClient:
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
         assert access_token == "tok-pbi"
-        dax_query = build_summarizecolumns(spec)
+        dax_query = build_dax_query(spec)
         validate_dax_query(dax_query, spec)
         if spec.group_by == ["Bogus"]:
             raise ValueError("Unknown column(s) for table 'Sales': ['Bogus']")
