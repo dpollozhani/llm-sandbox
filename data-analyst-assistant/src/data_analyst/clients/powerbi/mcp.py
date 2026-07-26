@@ -1,23 +1,53 @@
-"""Mocked Power BI MCP client - semantic model discovery/metadata only.
+"""Real Power BI MCP client - calls the official remote Power BI MCP
+server's `GetSemanticMetadata` tool (tables/columns/measures/relationships
+for one semantic model) over streamable HTTP. That's the only capability of
+this server this app uses; workspace/dataset discovery stays on the REST
+client (`rest.py::PBIRestClient.list_workspaces`) since MCP's metadata tool
+takes a specific model, not "list everything".
 
-In production this would be a Model Context Protocol client talking to a PBI
-MCP server over the network, hence async. Query execution is handled through
-the REST client instead (see `rest.py::PBIRestClient.run_dax_query`,
-mirroring the real Power BI REST API's "Execute Queries" endpoint), not
-through MCP.
+Delegated auth only (see `clients/powerbi/auth.py`'s module docstring) - the
+caller's own access token is sent as a Bearer header on the MCP transport,
+same as any other call to this server; this client holds no auth state.
+
+The exact shape of `GetSemanticMetadata`'s JSON payload (tables/columns/
+measures/relationships) isn't pinned down here beyond "valid JSON" - it's
+passed through as-is for the datasource agent's model to read, rather than
+forced into a schema that might not match the live server.
 """
 from __future__ import annotations
 
-from data_analyst.clients.powerbi.auth import get_bearer_token
-from data_analyst.config.settings import PowerBiCatalog, get_catalog
+import json
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+from data_analyst.config.settings import PowerBiCatalog, get_catalog, get_settings
 from data_analyst.telemetry.tracing import trace_span
 
 
 class PBIMcpClient:
-    def __init__(self, catalog: PowerBiCatalog | None = None) -> None:
+    def __init__(self, catalog: PowerBiCatalog | None = None, server_url: str | None = None) -> None:
         self._catalog = catalog or get_catalog()
+        self._server_url = server_url or get_settings().pbi_mcp_server_url
 
-    async def list_semantic_models(self) -> list[dict]:
-        with trace_span("pbi_mcp.list_semantic_models"):
-            await get_bearer_token()
-            return [m.model_dump() for m in self._catalog.semantic_models]
+    async def get_semantic_metadata(self, access_token: str, model_name: str) -> dict:
+        """Fetch `GetSemanticMetadata` for the semantic model named
+        `model_name` (resolved to a dataset id via the catalog config).
+        Raises ValueError if the model is unknown or the tool call fails."""
+        with trace_span("pbi_mcp.get_semantic_metadata", model_name=model_name):
+            model = self._catalog.find_model(model_name)
+            if model is None:
+                raise ValueError(f"Unknown semantic model '{model_name}'")
+
+            headers = {"Authorization": f"Bearer {access_token}"}
+            async with streamablehttp_client(self._server_url, headers=headers) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool("GetSemanticMetadata", {"datasetId": model.dataset_id})
+
+            texts = [c.text for c in result.content if hasattr(c, "text")]
+            if result.isError:
+                raise ValueError(f"GetSemanticMetadata failed: {'; '.join(texts) or 'unknown error'}")
+            if not texts:
+                raise ValueError("GetSemanticMetadata returned no content")
+            return json.loads(texts[0])

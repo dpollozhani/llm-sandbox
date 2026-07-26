@@ -4,8 +4,11 @@ columns, filters, and measures - never free-form DAX text from the model.
 
 `DaxQuerySpec` is the structural request; `build_summarizecolumns` renders it
 to DAX text; `validate_dax_query` checks that text (and the spec behind it)
-before it would be sent to the REST endpoint; `execute_query` is the mocked
-query engine standing in for what a real semantic model would compute.
+structurally before it would be sent to the REST endpoint - it doesn't know
+the real model's columns, so an unknown column still comes back as an error
+from Power BI itself (see `rest.py::PBIRestClient.run_dax_query`), just like
+any other query mistake the agent can retry after; `parse_execute_queries_response`
+turns the REST API's `executeQueries` response back into a DataFrame.
 """
 from __future__ import annotations
 
@@ -18,8 +21,6 @@ from pydantic import BaseModel, Field
 
 FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
 Aggregation = Literal["SUM", "AVERAGE", "COUNT", "MIN", "MAX"]
-
-_PANDAS_AGG = {"SUM": "sum", "AVERAGE": "mean", "COUNT": "count", "MIN": "min", "MAX": "max"}
 
 
 class DaxFilter(BaseModel):
@@ -76,7 +77,7 @@ def build_summarizecolumns(spec: DaxQuerySpec) -> str:
     return f"SUMMARIZECOLUMNS(\n    {inner}\n)"
 
 
-def validate_dax_query(dax_query: str, spec: DaxQuerySpec, known_columns: set[str]) -> None:
+def validate_dax_query(dax_query: str, spec: DaxQuerySpec) -> None:
     """Structural validation before the query would be sent to the REST
     endpoint. Raises ValueError with a specific reason on failure."""
     text = dax_query.strip()
@@ -87,48 +88,42 @@ def validate_dax_query(dax_query: str, spec: DaxQuerySpec, known_columns: set[st
     if not spec.group_by and not spec.measures:
         raise ValueError("Query must select at least one group-by column or measure")
 
-    referenced = set(spec.group_by) | {f.column for f in spec.filters} | {m.column for m in spec.measures}
-    unknown = referenced - known_columns
-    if unknown:
-        raise ValueError(f"Unknown column(s) for table '{spec.table}': {sorted(unknown)}")
+
+def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
+    """Match `name` (a group-by column or measure name from the spec) against
+    one of the column headers Power BI actually returned. Group-by columns
+    can come back as `'Table'[Column]`, `Table[Column]`, or bare `[Column]`
+    depending on the model; measures come back as the plain name given in
+    the query. Raises ValueError (surfaced to the agent, not raised past the
+    tool) if nothing matches."""
+    candidates = [name, f"[{name}]"]
+    if table:
+        candidates += [f"'{table}'[{name}]", f"{table}[{name}]"]
+    for candidate in candidates:
+        if candidate in keys:
+            return candidate
+    suffix = f"[{name}]"
+    for key in keys:
+        if key.endswith(suffix):
+            return key
+    raise ValueError(f"Column '{name}' not found in query result columns: {keys}")
 
 
-def _apply_filter(df: pd.DataFrame, f: DaxFilter) -> pd.DataFrame:
-    column = df[f.column]
-    if f.operator == "=":
-        mask = column == f.value
-    elif f.operator == "!=":
-        mask = column != f.value
-    elif f.operator == ">":
-        mask = column > f.value
-    elif f.operator == ">=":
-        mask = column >= f.value
-    elif f.operator == "<":
-        mask = column < f.value
-    elif f.operator == "<=":
-        mask = column <= f.value
-    else:  # "IN"
-        values = f.value if isinstance(f.value, list) else [f.value]
-        mask = column.isin(values)
-    return df[mask]
+def parse_execute_queries_response(response: dict, spec: DaxQuerySpec) -> pd.DataFrame:
+    """Turn a Power BI REST `executeQueries` response body back into a
+    DataFrame with friendly column names (the spec's own `group_by`/measure
+    names), for the analysis agent to work with by `sandbox_ref`."""
+    try:
+        rows = response["results"][0]["tables"][0]["rows"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f"Unexpected executeQueries response shape: {response!r}") from exc
 
+    wanted = [*spec.group_by, *(m.name for m in spec.measures)]
+    if not rows:
+        return pd.DataFrame(columns=wanted)
 
-def execute_query(df: pd.DataFrame, spec: DaxQuerySpec) -> pd.DataFrame:
-    """Mocked query engine: applies `spec` to `df` the way a real semantic
-    model would evaluate the equivalent SUMMARIZECOLUMNS query."""
-    result = df
-    for f in spec.filters:
-        result = _apply_filter(result, f)
+    keys = list(rows[0].keys())
+    rename = {_result_key(keys, col, table=spec.table): col for col in spec.group_by}
+    rename.update({_result_key(keys, m.name): m.name for m in spec.measures})
 
-    if spec.measures:
-        agg_spec = {m.column: _PANDAS_AGG[m.aggregation] for m in spec.measures}
-        rename = {m.column: m.name for m in spec.measures}
-        if spec.group_by:
-            result = result.groupby(spec.group_by, as_index=False).agg(agg_spec).rename(columns=rename)
-        else:
-            row = {m.name: getattr(result[m.column], _PANDAS_AGG[m.aggregation])() for m in spec.measures}
-            result = pd.DataFrame([row])
-    elif spec.group_by:
-        result = result[spec.group_by].drop_duplicates().reset_index(drop=True)
-
-    return result
+    return pd.DataFrame(rows).rename(columns=rename)[wanted]

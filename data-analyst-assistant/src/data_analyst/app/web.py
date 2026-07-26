@@ -53,6 +53,14 @@ CHAT_PAGE_HTML = """<!doctype html>
     background: #2563eb; color: #fff; font-size: 1rem; font-weight: 600;
   }
   button:disabled { background: #9ab4ee; }
+  #signin {
+    flex: none; display: none; flex-direction: column; align-items: center; gap: 0.75rem;
+    padding: 2rem 1rem; text-align: center;
+  }
+  #signin a {
+    display: inline-block; padding: 0.6rem 1.5rem; border-radius: 1.5rem;
+    background: #2563eb; color: #fff; text-decoration: none; font-weight: 600;
+  }
 </style>
 </head>
 <body>
@@ -61,6 +69,10 @@ CHAT_PAGE_HTML = """<!doctype html>
   <small id="thread-label">new conversation</small>
 </header>
 <div id="log"></div>
+<div id="signin">
+  <p>Sign in with Power BI access to start chatting.</p>
+  <a href="/auth/login">Sign in with Microsoft</a>
+</div>
 <form id="form">
   <input id="input" type="text" placeholder="Ask about the data..." autocomplete="off" autofocus>
   <button id="send" type="submit">Send</button>
@@ -72,6 +84,16 @@ CHAT_PAGE_HTML = """<!doctype html>
   const input = document.getElementById("input");
   const sendBtn = document.getElementById("send");
   const threadLabel = document.getElementById("thread-label");
+  const signinBox = document.getElementById("signin");
+
+  function requireSignIn() {
+    form.style.display = "none";
+    signinBox.style.display = "flex";
+  }
+
+  fetch("/auth/whoami").then((r) => r.json()).then((data) => {
+    if (!data.signed_in) requireSignIn();
+  });
 
   function addMessage(text, cls) {
     const el = document.createElement("div");
@@ -124,6 +146,11 @@ CHAT_PAGE_HTML = """<!doctype html>
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, thread_id: threadId }),
       });
+      if (response.status === 401) {
+        pending.remove();
+        requireSignIn();
+        return;
+      }
       if (!response.ok) {
         throw new Error("HTTP " + response.status);
       }

@@ -5,25 +5,76 @@ Each HTTP request is stateless; conversations are resumed by passing back the
 keep the message history for that conversation, and which also scopes the
 session-bound data store (see clients/sandbox/client.py) so a follow-up
 question can reuse already-fetched data.
+
+Every `/chat*` call also needs the caller's own delegated Power BI tokens
+(see `clients/powerbi/auth.py` for why - row-level security requires them),
+resolved by `get_pbi_tokens` from either the browser's signed-in session
+(`app/auth.py`) or `X-PBI-*-Token` headers a client (e.g. `cli.py`) already
+holds from its own sign-in flow.
 """
 from __future__ import annotations
 
 import json
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Literal
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
+from data_analyst.app.auth import get_token_broker, save_broker
+from data_analyst.app.auth import router as auth_router
 from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
 from data_analyst.app.web import CHAT_PAGE_HTML
+from data_analyst.clients.powerbi.auth import PBI_MCP_SCOPE, PBI_REST_SCOPE
+from data_analyst.config.settings import get_settings
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
+app.include_router(auth_router)
+
+_NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI access to use the assistant."}
+
+
+@dataclass
+class PBITokens:
+    rest: str | None
+    mcp: str | None
+
+
+async def get_pbi_tokens(request: Request) -> PBITokens:
+    """CLI clients (see cli.py) get their own tokens via a device-code flow
+    and send them directly as headers; the browser instead relies on the
+    signed-in session from app/auth.py. Either way, at least one token is
+    required - a chat turn that never touches Power BI still needs *a*
+    signed-in identity, since the supervisor decides mid-run whether the
+    datasource specialist is needed at all."""
+    header_rest = request.headers.get("X-PBI-Rest-Token")
+    header_mcp = request.headers.get("X-PBI-Mcp-Token")
+    if header_rest or header_mcp:
+        return PBITokens(rest=header_rest, mcp=header_mcp)
+
+    broker = get_token_broker(request, get_settings())
+    if broker is None:
+        raise HTTPException(status_code=401, detail=_NOT_SIGNED_IN)
+
+    async def _try(scope: str) -> str | None:
+        try:
+            return await broker.get_token(scope)
+        except RuntimeError:
+            return None
+
+    rest_token = await _try(PBI_REST_SCOPE)
+    mcp_token = await _try(PBI_MCP_SCOPE)
+    save_broker(request, broker)
+
+    if rest_token is None and mcp_token is None:
+        raise HTTPException(status_code=401, detail=_NOT_SIGNED_IN)
+    return PBITokens(rest=rest_token, mcp=mcp_token)
 
 # Human-readable status shown while a given orchestrator node is running -
 # see /chat/stream. Keyed by node name (LangGraph's `metadata.langgraph_node`
@@ -57,7 +108,9 @@ def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
 @app.get("/", response_class=HTMLResponse)
 async def chat_page() -> str:
     """A minimal browser chat UI (see app/web.py) for trying the assistant
-    by hand - the same /chat endpoints any other client would use."""
+    by hand - the same /chat endpoints any other client would use. Whether
+    the visitor is signed in is checked client-side via GET /auth/whoami
+    (see app/auth.py), not here, since this just serves the static page."""
     return CHAT_PAGE_HTML
 
 
@@ -67,17 +120,29 @@ async def health() -> dict:
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(body: ChatRequest, graph: CompiledStateGraph = Depends(get_graph)) -> ChatResponse:
+async def chat(
+    body: ChatRequest,
+    graph: CompiledStateGraph = Depends(get_graph),
+    tokens: PBITokens = Depends(get_pbi_tokens),
+) -> ChatResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=body.message)], "turns": 0, "session_id": thread_id},
+        {
+            "messages": [HumanMessage(content=body.message)],
+            "turns": 0,
+            "session_id": thread_id,
+            "pbi_rest_token": tokens.rest,
+            "pbi_mcp_token": tokens.mcp,
+        },
         config=config,
     )
     return _to_chat_response(thread_id, result)
 
 
-async def _stream_chat_events(body: ChatRequest, graph: CompiledStateGraph, thread_id: str) -> AsyncIterator[str]:
+async def _stream_chat_events(
+    body: ChatRequest, graph: CompiledStateGraph, thread_id: str, tokens: PBITokens
+) -> AsyncIterator[str]:
     """Drive one /chat turn via `astream_events` instead of `ainvoke`, emitting
     Server-Sent Events as the orchestrator progresses:
 
@@ -108,7 +173,13 @@ async def _stream_chat_events(body: ChatRequest, graph: CompiledStateGraph, thre
     final_state: dict | None = None
     try:
         async for event in graph.astream_events(
-            {"messages": [HumanMessage(content=body.message)], "turns": 0, "session_id": thread_id},
+            {
+                "messages": [HumanMessage(content=body.message)],
+                "turns": 0,
+                "session_id": thread_id,
+                "pbi_rest_token": tokens.rest,
+                "pbi_mcp_token": tokens.mcp,
+            },
             config=config,
             version="v2",
         ):
@@ -141,10 +212,14 @@ async def _stream_chat_events(body: ChatRequest, graph: CompiledStateGraph, thre
 
 
 @app.post("/chat/stream")
-async def chat_stream(body: ChatRequest, graph: CompiledStateGraph = Depends(get_graph)) -> StreamingResponse:
+async def chat_stream(
+    body: ChatRequest,
+    graph: CompiledStateGraph = Depends(get_graph),
+    tokens: PBITokens = Depends(get_pbi_tokens),
+) -> StreamingResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
     return StreamingResponse(
-        _stream_chat_events(body, graph, thread_id),
+        _stream_chat_events(body, graph, thread_id, tokens),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

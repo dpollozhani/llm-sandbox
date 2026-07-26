@@ -13,3 +13,13 @@ import os
 
 os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-not-a-real-key")
+
+# Same idea for the Entra ID / Power BI sign-in settings (config/settings.py)
+# - required for Settings() to construct, never actually used since tests
+# either inject fake Power BI clients directly (see
+# tests/integration/test_datasource_graph.py) or override
+# app.api.get_pbi_tokens (see tests/e2e/test_api_chat.py).
+os.environ.setdefault("ENTRA_TENANT_ID", "test-tenant")
+os.environ.setdefault("ENTRA_CLIENT_ID", "test-client-id")
+os.environ.setdefault("ENTRA_CLIENT_SECRET", "test-not-a-real-secret")
+os.environ.setdefault("ENTRA_REDIRECT_URI", "http://localhost:8000/auth/callback")

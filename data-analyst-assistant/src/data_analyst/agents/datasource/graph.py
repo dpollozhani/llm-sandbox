@@ -7,16 +7,22 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
 
-from data_analyst.agents.datasource.nodes import build_agent_node, build_tool_node
+from data_analyst.agents.datasource.nodes import build_agent_node, build_tool_node, build_tools
 from data_analyst.agents.datasource.state import DatasourceState
+from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.rest import PBIRestClient
 
 
 def build_datasource_graph(
-    llm: BaseChatModel, checkpointer: BaseCheckpointSaver | None = None
+    llm: BaseChatModel,
+    checkpointer: BaseCheckpointSaver | None = None,
+    mcp_client: PBIMcpClient | None = None,
+    rest_client: PBIRestClient | None = None,
 ) -> CompiledStateGraph:
+    tools = build_tools(mcp_client=mcp_client, rest_client=rest_client)
     graph = StateGraph(DatasourceState)
-    graph.add_node("agent", build_agent_node(llm))
-    graph.add_node("tools", build_tool_node())
+    graph.add_node("agent", build_agent_node(llm, tools))
+    graph.add_node("tools", build_tool_node(tools))
 
     graph.add_edge(START, "agent")
     graph.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: END})

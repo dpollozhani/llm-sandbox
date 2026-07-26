@@ -2,19 +2,26 @@
 the full orchestrator -> datasource -> analysis -> respond round trip over
 HTTP. Every test drives its own scripted model via
 `app.dependency_overrides[get_graph]` (see tests/conftest.py for why the app
-can still start up without one)."""
+can still start up without one), and a fake Power BI REST/MCP client swapped
+into the orchestrator graph's datasource specialist so nothing here needs a
+real Power BI tenant or sign-in. `get_pbi_tokens` (the dependency that
+otherwise requires a real signed-in session - see app/auth.py) is overridden
+for every test in this module by the `_fake_pbi_tokens` fixture below."""
 from __future__ import annotations
 
 import json
 
+import pandas as pd
+import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from fastapi.testclient import TestClient
 
 from data_analyst.agents.orchestrator.graph import build_orchestrator_graph
-from data_analyst.app.api import app
+from data_analyst.app.api import PBITokens, app, get_pbi_tokens
 from data_analyst.app.dependencies import get_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
+from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_summarizecolumns, validate_dax_query
 
 
 class ScriptedRoutingModel(FakeToolCallingChatModel):
@@ -32,6 +39,40 @@ class ScriptedRoutingModel(FakeToolCallingChatModel):
             return schema(**route)
 
         return RunnableLambda(_invoke)
+
+
+class _FakeRestClient:
+    """Stands in for PBIRestClient's real HTTP calls - see the identical
+    fake in tests/integration/test_datasource_graph.py."""
+
+    async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
+        assert access_token == "tok-rest"
+        dax_query = build_summarizecolumns(spec)
+        validate_dax_query(dax_query, spec)
+        return dax_query, pd.DataFrame([{"Total Revenue": 18225}])
+
+    async def get_refresh_history(self, access_token: str, dataset_id: str):
+        return [{"status": "Completed"}]
+
+    async def list_workspaces(self, access_token: str):
+        return [{"id": "ws-001", "name": "Retail Analytics"}]
+
+
+class _FakeMcpClient:
+    async def get_semantic_metadata(self, access_token: str, model_name: str):
+        assert access_token == "tok-mcp"
+        return {"tables": [{"name": "Sales", "columns": ["Region", "Revenue"]}]}
+
+
+def _build_graph(llm):
+    return build_orchestrator_graph(llm, mcp_client=_FakeMcpClient(), rest_client=_FakeRestClient())
+
+
+@pytest.fixture(autouse=True)
+def _fake_pbi_tokens():
+    app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(rest="tok-rest", mcp="tok-mcp")
+    yield
+    app.dependency_overrides.pop(get_pbi_tokens, None)
 
 
 def _stream_events(client: TestClient, body: dict) -> list[dict]:
@@ -57,9 +98,21 @@ def test_chat_page_is_served_at_root():
     assert "/chat" in response.text
 
 
+def test_chat_without_signing_in_returns_401_with_a_login_url():
+    app.dependency_overrides.pop(get_pbi_tokens, None)  # undo the autouse override for this one test
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat", json={"message": "hello"})
+    finally:
+        app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(rest="tok-rest", mcp="tok-mcp")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["login_url"] == "/auth/login"
+
+
 def test_chat_endpoint_answers_using_a_simple_scripted_model():
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -87,7 +140,7 @@ def test_scripted_reply_reused_across_turns_does_not_echo_the_next_message():
     on every turn after the first.
     """
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -107,7 +160,7 @@ def test_full_flow_delegates_through_both_specialists():
         responses=[
             AIMessage(
                 content="",
-                tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}],
+                tool_calls=[{"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}],
             ),
             AIMessage(content="There is one semantic model: Sales Analytics."),
             AIMessage(
@@ -119,7 +172,7 @@ def test_full_flow_delegates_through_both_specialists():
         ],
         routes=[{"next": "datasource"}, {"next": "analysis"}, {"next": "respond"}],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -139,7 +192,7 @@ def test_supervisor_asks_for_clarification_when_uncertain():
         responses=[AIMessage(content="Which region and time period do you mean?")],
         routes=[{"next": "clarify", "reason": "ambiguous request"}],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -167,7 +220,7 @@ def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
         ],
         routes=[{"next": "datasource"}],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -224,7 +277,7 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
             {"next": "respond"},
         ],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -244,7 +297,7 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
 
 def test_stream_simple_reply_emits_status_tokens_and_a_matching_done_event():
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -268,7 +321,10 @@ def test_stream_simple_reply_emits_status_tokens_and_a_matching_done_event():
 def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
     llm = ScriptedRoutingModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}]),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}],
+            ),
             AIMessage(content="There is one semantic model: Sales Analytics."),
             AIMessage(
                 content="",
@@ -279,7 +335,7 @@ def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
         ],
         routes=[{"next": "datasource"}, {"next": "analysis"}, {"next": "respond"}],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:
@@ -292,7 +348,7 @@ def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
     assert status_nodes == ["supervisor", "datasource", "supervisor", "analysis", "supervisor", "respond"]
 
     tool_names = [e["name"] for e in events if e["type"] == "tool"]
-    assert tool_names == ["pbi_mcp_list_semantic_models", "python_sandbox_execute"]
+    assert tool_names == ["pbi_mcp_get_semantic_metadata", "python_sandbox_execute"]
 
     done = events[-1]
     assert done["type"] == "done"
@@ -305,7 +361,7 @@ def test_stream_clarify_path_reports_clarification_needed():
         responses=[AIMessage(content="Which region and time period do you mean?")],
         routes=[{"next": "clarify", "reason": "ambiguous request"}],
     )
-    graph = build_orchestrator_graph(llm)
+    graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
 
     try:

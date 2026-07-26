@@ -12,6 +12,8 @@ from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
 from data_analyst.agents.orchestrator.state import OrchestratorState
+from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.rest import PBIRestClient
 
 MAX_TURNS = 6
 
@@ -53,7 +55,12 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
 
     child_graph = build_graph_fn(llm)
     result = await child_graph.ainvoke(
-        {"messages": [HumanMessage(content=seed_content)], "session_id": state["session_id"]}
+        {
+            "messages": [HumanMessage(content=seed_content)],
+            "session_id": state["session_id"],
+            "pbi_rest_token": state.get("pbi_rest_token"),
+            "pbi_mcp_token": state.get("pbi_mcp_token"),
+        }
     )
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
@@ -77,9 +84,14 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
     return update
 
 
-def build_datasource_node(llm: BaseChatModel):
+def build_datasource_node(
+    llm: BaseChatModel, mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None
+):
+    def build_graph_fn(agent_llm: BaseChatModel):
+        return build_datasource_graph(agent_llm, mcp_client=mcp_client, rest_client=rest_client)
+
     async def datasource_node(state: OrchestratorState):
-        return await _run_specialist("datasource", build_datasource_graph, llm, state)
+        return await _run_specialist("datasource", build_graph_fn, llm, state)
 
     return datasource_node
 

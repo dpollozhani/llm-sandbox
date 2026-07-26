@@ -110,16 +110,21 @@ text from the model - only structured `group_by` columns, `filters`, and
 
 1. Builds a single `SUMMARIZECOLUMNS(...)` string from the spec
    (`build_summarizecolumns`).
-2. Validates it (`validate_dax_query`) before it would be sent to the REST
-   endpoint: the text must actually be a well-formed `SUMMARIZECOLUMNS(...)`
-   call, at least one group-by column or measure must be selected, and every
-   referenced column must exist on the target table.
-3. Only then "executes" it (`execute_query`, a small pandas engine standing
-   in for the real semantic model) against the mocked table.
+2. Validates it structurally (`validate_dax_query`) before it would be sent
+   to the REST endpoint: the text must actually be a well-formed
+   `SUMMARIZECOLUMNS(...)` call, and at least one group-by column or measure
+   must be selected. It can't check that a referenced column actually exists
+   on the target table - there's no live schema lookup here - so that class
+   of error surfaces from Power BI's own response instead (see next point).
+3. Sends it to the real Power BI REST `executeQueries` endpoint
+   (`PBIRestClient.run_dax_query`) using the caller's delegated access
+   token, and parses the JSON response back into a DataFrame
+   (`parse_execute_queries_response`).
 
-Validation failures are caught inside the tool and returned as `{"error":
-...}` rather than raised, so the model sees the specific problem (e.g. an
-unknown column) and can correct its next tool call - the same pattern
+Failures (a validation problem, an unknown model, or Power BI's own error
+response - e.g. an unknown column) are caught inside the tool and returned
+as `{"error": ...}` rather than raised, so the model sees the specific
+problem and can correct its next tool call - the same pattern
 `clients/sandbox/executor.py` already uses for sandbox code errors.
 
 ## Session-bound data reuse
@@ -191,10 +196,11 @@ async ASGI app for you).
 Two things worth being precise about:
 
 - **I/O-bound vs. CPU-bound.** The Power BI client methods
-  (`clients/powerbi/mcp.py`, `rest.py`, `auth.py`) are async because a real
-  implementation would `await` a network call there - the mocked bodies
-  just don't have anything to actually await, which is fine; the shape is
-  what matters. The sandbox's code execution (`clients/sandbox/executor.py`)
+  (`clients/powerbi/mcp.py`, `rest.py`, `auth.py`) are async because they
+  really do `await` a network call (real Power BI REST/MCP calls, real MSAL
+  token acquisition) - that's I/O-bound work, so `await`ing it directly is
+  correct and doesn't block the event loop. The sandbox's code execution
+  (`clients/sandbox/executor.py`)
   is different: it's genuinely CPU-bound (it runs arbitrary code, which
   could be slow), so merely marking it `async def` wouldn't help - it would
   still block the event loop for its duration. `SandboxClient.execute`
@@ -277,9 +283,12 @@ it:
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,
   checkpointing), the async structure throughout (see above), streaming via
   `astream_events` (see above), the FastAPI request/response cycle, the
-  sandbox's `exec()`-based code execution.
-- **Mocked**: Power BI MCP/REST calls (`clients/powerbi/`, backed by
-  `config/semantic_models.yaml` and in-memory fake tables) and Azure AD auth
-  (`clients/powerbi/auth.py`) - async in shape, but with nothing real to
-  await. Swapping these for real integrations only touches `clients/`, not
-  the agents or graphs.
+  sandbox's `exec()`-based code execution, and Power BI itself - real REST
+  API calls (`clients/powerbi/rest.py`), a real remote MCP server call for
+  `GetSemanticMetadata` (`clients/powerbi/mcp.py`), and real Entra ID
+  delegated auth (`clients/powerbi/auth.py`, `app/auth.py`, `cli.py`'s
+  device-code flow) - see that auth module's docstring for why a delegated
+  user token is required rather than an app-only one.
+- **Mocked**: only the Python sandbox's data layer - `clients/sandbox/`
+  really executes code via `exec()`, but against an in-process dict of
+  staged DataFrames rather than an isolated execution service.

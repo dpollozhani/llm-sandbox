@@ -1,4 +1,3 @@
-import pandas as pd
 import pytest
 
 from data_analyst.clients.powerbi.dax import (
@@ -6,16 +5,8 @@ from data_analyst.clients.powerbi.dax import (
     DaxMeasure,
     DaxQuerySpec,
     build_summarizecolumns,
-    execute_query,
+    parse_execute_queries_response,
     validate_dax_query,
-)
-
-_DF = pd.DataFrame(
-    [
-        {"Region": "North", "Product": "A", "Revenue": 100},
-        {"Region": "North", "Product": "B", "Revenue": 50},
-        {"Region": "South", "Product": "A", "Revenue": 30},
-    ]
 )
 
 
@@ -38,45 +29,75 @@ def test_build_summarizecolumns_shape():
 def test_validate_rejects_non_summarizecolumns_text():
     spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
     with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
-        validate_dax_query("EVALUATE Sales", spec, {"Region"})
+        validate_dax_query("EVALUATE Sales", spec)
 
 
 def test_validate_rejects_empty_selection():
     spec = DaxQuerySpec(model_name="m", table="Sales")
     dax = build_summarizecolumns(spec)
     with pytest.raises(ValueError, match="at least one"):
-        validate_dax_query(dax, spec, {"Region"})
+        validate_dax_query(dax, spec)
 
 
-def test_validate_rejects_unknown_column():
-    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Bogus"])
+def test_validate_accepts_a_well_formed_query():
+    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
     dax = build_summarizecolumns(spec)
-    with pytest.raises(ValueError, match="Unknown column"):
-        validate_dax_query(dax, spec, {"Region"})
+    validate_dax_query(dax, spec)  # doesn't raise
 
 
-def test_execute_query_groups_filters_and_aggregates():
+def test_parse_execute_queries_response_renames_group_by_and_measures():
     spec = DaxQuerySpec(
         model_name="m",
         table="Sales",
         group_by=["Region"],
-        filters=[DaxFilter(column="Region", operator="!=", value="South")],
         measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
     )
-    result = execute_query(_DF, spec)
-    assert result.to_dict(orient="records") == [{"Region": "North", "Total Revenue": 150}]
+    response = {
+        "results": [
+            {
+                "tables": [
+                    {
+                        "rows": [
+                            {"Sales[Region]": "North", "Total Revenue": 150},
+                            {"Sales[Region]": "South", "Total Revenue": 30},
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    df = parse_execute_queries_response(response, spec)
+    assert list(df.columns) == ["Region", "Total Revenue"]
+    assert df.to_dict(orient="records") == [
+        {"Region": "North", "Total Revenue": 150},
+        {"Region": "South", "Total Revenue": 30},
+    ]
 
 
-def test_execute_query_no_measures_returns_distinct_group_by():
+def test_parse_execute_queries_response_handles_quoted_table_column_headers():
     spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
-    result = execute_query(_DF, spec)
-    assert sorted(result["Region"].tolist()) == ["North", "South"]
+    response = {"results": [{"tables": [{"rows": [{"'Sales'[Region]": "North"}]}]}]}
+    df = parse_execute_queries_response(response, spec)
+    assert df.to_dict(orient="records") == [{"Region": "North"}]
 
 
-def test_execute_query_no_group_by_returns_single_row_aggregate():
-    spec = DaxQuerySpec(model_name="m", table="Sales", measures=[DaxMeasure(name="Total", aggregation="SUM", column="Revenue")])
-    result = execute_query(_DF, spec)
-    assert result.to_dict(orient="records") == [{"Total": 180}]
+def test_parse_execute_queries_response_empty_rows_returns_empty_frame_with_expected_columns():
+    spec = DaxQuerySpec(
+        model_name="m",
+        table="Sales",
+        group_by=["Region"],
+        measures=[DaxMeasure(name="Total", aggregation="SUM", column="Revenue")],
+    )
+    response = {"results": [{"tables": [{"rows": []}]}]}
+    df = parse_execute_queries_response(response, spec)
+    assert list(df.columns) == ["Region", "Total"]
+    assert len(df) == 0
+
+
+def test_parse_execute_queries_response_unexpected_shape_raises():
+    spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
+    with pytest.raises(ValueError, match="Unexpected executeQueries response"):
+        parse_execute_queries_response({"unexpected": True}, spec)
 
 
 def test_cache_key_ignores_list_order():

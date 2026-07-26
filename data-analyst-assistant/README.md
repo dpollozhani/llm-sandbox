@@ -24,17 +24,34 @@ without changing a single chain. See
 for the concept-by-concept mapping, and [`docs/architecture.md`](docs/architecture.md)
 for how the pieces fit together.
 
-The three external integrations - Power BI MCP, Power BI REST, and a Python
-code-execution sandbox - are mocked (see `src/data_analyst/clients/`), so
-the only real dependency is the LLM provider itself: `LLM_PROVIDER` is
-required (`anthropic` or `azure_openai`, with the matching API key) - there's
-no offline/no-key fallback mode.
+Power BI access is real, not mocked: `clients/powerbi/rest.py` calls the
+actual Power BI REST API, and `clients/powerbi/mcp.py` calls the official
+remote Power BI MCP server's `GetSemanticMetadata` tool. Both require the
+caller's own **delegated** Entra ID access token, never an app-only
+service-principal one - row-level security depends on whose identity the
+call runs as, and Power BI's `executeQueries` rejects a service-principal
+token outright on any dataset with RLS configured (see
+[`clients/powerbi/auth.py`](src/data_analyst/clients/powerbi/auth.py)'s
+module docstring). So every `/chat` call needs a real signed-in user: the
+browser flow (`app/auth.py`) is a standard OAuth authorization-code sign-in,
+and `cli.py` gets its own tokens via a device-code flow. Only the Python
+sandbox (`clients/sandbox/`) is still mocked/in-process - see "What's
+simplified" below. `LLM_PROVIDER` (`anthropic` or `azure_openai`, with the
+matching API key) is also required - there's no offline/no-key fallback.
 
 ## Quickstart
 
+You'll need one Entra ID (Azure AD) app registration with:
+- a client secret (this app is a confidential OAuth client for the browser
+  sign-in flow)
+- **Allow public client flows** enabled (for `cli.py`'s device-code flow)
+- delegated API permissions for the Power BI Service, and for the remote
+  Power BI MCP server if you use it - with admin consent granted
+- `http://localhost:8000/auth/callback` registered as a Web redirect URI
+
 ```bash
 pip install -e ".[dev]"
-cp .env.example .env   # set LLM_PROVIDER and the matching API key
+cp .env.example .env   # set LLM_PROVIDER + API key, and the ENTRA_* values
 
 uvicorn data_analyst.app.api:app --reload
 ```
@@ -42,25 +59,30 @@ uvicorn data_analyst.app.api:app --reload
 Then try it any of three ways:
 
 - **Browser**: open <http://localhost:8000/> - a minimal, mobile-friendly
-  chat page (`app/web.py`, no build step, no extra dependency) that streams
-  live status and the answer token by token via `POST /chat/stream`.
-- **Terminal**: `python cli.py` - a small interactive chat client
+  chat page (`app/web.py`, no build step, no extra dependency) that prompts
+  you to sign in with Microsoft first, then streams live status and the
+  answer token by token via `POST /chat/stream`.
+- **Terminal**: `python cli.py --tenant-id ... --client-id ...` (or set
+  `$ENTRA_TENANT_ID`/`$ENTRA_CLIENT_ID`) - a small interactive chat client
   (stdlib-only), streaming by default; `--no-stream` for plain
-  request/response.
-- **curl** (plain, non-streaming):
+  request/response. Prints a device-code sign-in URL the first time (once
+  per resource scope needed - two prompts on a first run), then caches the
+  tokens locally and refreshes them silently after that.
+- **curl**: needs the same delegated tokens as headers, so it's only
+  practical once you already have them (e.g. copied from `cli.py`'s token
+  cache at `~/.cache/data-analyst-assistant/pbi_tokens.json`, or a debugger
+  breakpoint in `app/auth.py`):
   ```bash
   curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
-    -d '{"message": "what can you do?"}'
-  ```
-  or watch the raw event stream directly:
-  ```bash
-  curl -N localhost:8000/chat/stream -X POST -H 'content-type: application/json' \
+    -H 'X-PBI-Rest-Token: ...' -H 'X-PBI-Mcp-Token: ...' \
     -d '{"message": "what can you do?"}'
   ```
 
 To try it from your phone without deploying anywhere: run
-`uvicorn data_analyst.app.api:app --host 0.0.0.0` and open
-`http://<your-laptop's-LAN-IP>:8000/` from your phone on the same Wi-Fi.
+`uvicorn data_analyst.app.api:app --host 0.0.0.0`, add
+`http://<your-laptop's-LAN-IP>:8000/auth/callback` as another redirect URI
+on the app registration, and open `http://<your-laptop's-LAN-IP>:8000/`
+from your phone on the same Wi-Fi.
 
 ## Deploy (Render)
 
@@ -82,34 +104,39 @@ builds `deploy/docker/Dockerfile`.
   Health Check Path `/health` -> free plan.
 
 Either way, **the service won't start without `LLM_PROVIDER` and the
-matching `ANTHROPIC_API_KEY` or `AZURE_OPENAI_*` vars set in the service's
-Environment tab** - there's no default provider to fall back to. The free
-plan also spins the instance down after ~15 minutes of inactivity (30-60s
-cold start on the next request).
+matching `ANTHROPIC_API_KEY`/`AZURE_OPENAI_*` vars, plus `ENTRA_TENANT_ID`,
+`ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_REDIRECT_URI`, set in
+the service's Environment tab** - there's no default provider or Power BI
+sign-in to fall back to. Set `ENTRA_REDIRECT_URI` to this service's public
+URL + `/auth/callback` (e.g.
+`https://data-analyst-assistant.onrender.com/auth/callback`) and register
+that exact URI on the Entra ID app registration too. The free plan also
+spins the instance down after ~15 minutes of inactivity (30-60s cold start
+on the next request).
 
 If you just want to see the full multi-agent flow (routing, tool calls
-across both specialists) without setting up a provider at all, read
-`tests/e2e/test_api_chat.py`, which drives it end-to-end with a scripted
-model and needs no API key.
+across both specialists) without a real Power BI tenant or LLM provider at
+all, read `tests/e2e/test_api_chat.py`, which drives it end-to-end with a
+scripted model and a fake Power BI client - no sign-in, no API key.
 
 ## Layout
 
 ```
 src/data_analyst/
-  app/           FastAPI: api.py (routes incl. /chat/stream SSE, via astream_events), lifespan.py (builds the graph once), dependencies.py
+  app/           FastAPI: api.py (routes incl. /chat/stream SSE, via astream_events), auth.py (Entra ID browser sign-in), lifespan.py (builds the graph once), dependencies.py
   agents/
     orchestrator/  supervisor loop: routes to a specialist, responds, or asks for clarification
     datasource/    Power BI specialist (PBI MCP + PBI REST tools, structured DAX queries only)
     analysis/      Python sandbox specialist
-    common/        shared state shape (messages + session_id) + models used across all three
-  clients/       Power BI (mocked, incl. the DAX query builder/validator), sandbox (mocked, session-bound), and LLM provider clients
-  config/        env-driven settings + the (mocked) Power BI catalog
+    common/        shared state shape (messages + session_id + delegated PBI tokens) + models used across all three
+  clients/       Power BI (real REST + MCP calls, delegated auth only), sandbox (mocked, session-bound), and LLM provider clients
+  config/        env-driven settings + the Power BI catalog (model name -> workspace/dataset id mapping)
   telemetry/     logging/tracing/metrics stand-ins
   utils/         small shared helpers
 tests/
-  unit/          client layer only (no LangGraph)
-  integration/   one subgraph / one orchestrator node at a time, scripted models
-  e2e/           the real FastAPI app end-to-end, across both specialists
+  unit/          client layer only (no LangGraph) - Power BI REST calls mocked via httpx.MockTransport, MCP via a fake ClientSession
+  integration/   one subgraph / one orchestrator node at a time, scripted models + a fake Power BI client
+  e2e/           the real FastAPI app end-to-end, across both specialists, with fake Power BI clients and a stubbed sign-in
 deploy/          Dockerfile + docker-compose, an Azure DevOps pipeline
 infrastructure/  illustrative Bicep/Terraform for a Container App + Azure OpenAI
 docs/            architecture, per-agent reference, decision records
@@ -121,22 +148,32 @@ docs/            architecture, per-agent reference, decision records
 pytest
 ```
 
-All 45 tests run offline with scripted fake models - no API key or network
-needed. Everything except `tests/e2e` is `async def` (LangGraph requires
-`.ainvoke()` once any node is async); `tests/e2e` stays sync because
-FastAPI's `TestClient` already bridges to the async app for you.
+All tests run offline - no real Power BI tenant, no LLM API key, no
+network. Power BI's real HTTP/MCP clients are exercised against a fake
+transport/session in `tests/unit/`, and the datasource/orchestrator graphs
+are tested against injected fake `PBIRestClient`/`PBIMcpClient` instances
+(`build_datasource_graph(llm, mcp_client=..., rest_client=...)`) rather than
+the real network calls, with `app/api.py::get_pbi_tokens` overridden the
+same way `get_graph` already is. Everything except `tests/e2e` is
+`async def` (LangGraph requires `.ainvoke()` once any node is async);
+`tests/e2e` stays sync because FastAPI's `TestClient` already bridges to
+the async app for you.
 
 ## What's simplified vs. a real deployment
 
-- Power BI MCP/REST calls are mocked in `clients/powerbi/` against
-  `config/semantic_models.yaml` and a handful of in-memory fake tables; the
-  DAX query engine (`clients/powerbi/dax.py`) is a small pandas-based
-  stand-in, not a real semantic model, and MCP transport isn't implemented.
+- The exact JSON shape of the remote PBI MCP server's `GetSemanticMetadata`
+  response isn't pinned down in code (see `clients/powerbi/mcp.py`) - it's
+  passed through to the model as-is rather than forced into a schema that
+  might not match what your tenant's server actually returns.
+- `config/semantic_models.yaml` maps a friendly model name (what the model
+  uses in a `DaxQuerySpec`) to a real workspace/dataset id - populate it
+  with your own tenant's values.
 - The sandbox (`clients/sandbox/`) really does `exec()` pandas code, but in
   a minimally-restricted namespace rather than a network-isolated worker -
   don't point it at untrusted input as-is.
-- Both `InMemorySaver` (conversation state, `app/lifespan.py`) and the
-  session-bound data store (`clients/sandbox/client.py`) are process-local;
-  swap in a Postgres/Redis-backed checkpointer and a shared cache/object
-  store, respectively, for anything that needs to survive a restart or run
-  across multiple instances.
+- Sign-in sessions (`app/auth.py`), `InMemorySaver` (conversation state,
+  `app/lifespan.py`), and the session-bound data store
+  (`clients/sandbox/client.py`) are all process-local; swap in a shared
+  session store, a Postgres/Redis-backed checkpointer, and a shared
+  cache/object store, respectively, for anything that needs to survive a
+  restart or run across multiple instances.

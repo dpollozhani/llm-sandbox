@@ -32,6 +32,8 @@ from data_analyst.agents.orchestrator.nodes import (
     build_supervisor_node,
 )
 from data_analyst.agents.orchestrator.state import OrchestratorState
+from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.rest import PBIRestClient
 
 
 def _after_specialist(state: OrchestratorState) -> str:
@@ -47,11 +49,14 @@ def _after_specialist(state: OrchestratorState) -> str:
 
 
 def build_orchestrator_graph(
-    llm: BaseChatModel, checkpointer: BaseCheckpointSaver | None = None
+    llm: BaseChatModel,
+    checkpointer: BaseCheckpointSaver | None = None,
+    mcp_client: PBIMcpClient | None = None,
+    rest_client: PBIRestClient | None = None,
 ) -> CompiledStateGraph:
     graph = StateGraph(OrchestratorState)
     graph.add_node("supervisor", build_supervisor_node(llm))
-    graph.add_node("datasource", build_datasource_node(llm))
+    graph.add_node("datasource", build_datasource_node(llm, mcp_client=mcp_client, rest_client=rest_client))
     graph.add_node("analysis", build_analysis_node(llm))
     graph.add_node("respond", build_respond_node(llm))
     graph.add_node("clarify", build_clarify_node(llm))
