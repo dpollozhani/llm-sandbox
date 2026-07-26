@@ -9,7 +9,7 @@ from langchain_core.messages import AnyMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel
 
-from data_analyst.agents.common.models import Clarification
+from data_analyst.agents.common.models import Clarification, FetchedDataset
 from data_analyst.agents.orchestrator.prompts import (
     CLARIFY_SYSTEM_PROMPT,
     RESPOND_SYSTEM_PROMPT,
@@ -32,7 +32,7 @@ def build_supervisor_chain(llm: BaseChatModel) -> Runnable:
     async def _invoke(args: dict) -> Route:
         prompt = SUPERVISOR_SYSTEM_PROMPT
         if data_context := args.get("data_context"):
-            prompt += f"\n\nCurrently available data in this session: {data_context.describe()}"
+            prompt += f"\n\nCurrently available data in this session: {FetchedDataset(**data_context).describe()}"
         return await router.ainvoke([SystemMessage(content=prompt), *args["messages"]])
 
     return RunnableLambda(_invoke)

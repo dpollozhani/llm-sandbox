@@ -19,7 +19,10 @@ import itertools
 import pandas as pd
 
 from data_analyst.clients.sandbox.executor import ExecutionResult, execute
+from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
+
+_logger = get_logger("clients.sandbox.client")
 
 
 class SandboxClient:
@@ -60,7 +63,15 @@ class SandboxClient:
                 if dataset_id not in self._store:
                     return ExecutionResult(error=f"Unknown dataset_id '{dataset_id}'")
                 dataframe = self._store[dataset_id]
-            return await asyncio.to_thread(execute, code, dataframe)
+            result = await asyncio.to_thread(execute, code, dataframe)
+            if result.error:
+                # INFO, not DEBUG (trace_span's own logging is DEBUG-only,
+                # and LOG_LEVEL defaults to INFO) - without this, a model
+                # stuck retrying failing code shows up as nothing but
+                # repeated tool calls, with no visibility into why each one
+                # actually failed.
+                _logger.info("sandbox execute failed: code=%s error=%s", code, result.error)
+            return result
 
 
 _sessions: dict[str, SandboxClient] = {}

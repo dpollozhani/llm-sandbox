@@ -18,7 +18,7 @@ from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
 _FETCHED = FetchedDataset(
     dataset_id="dataset_1", model_name="Sales Analytics", group_by=["Sales.Region"], measures=["Total Revenue"], row_count=5
-)
+).model_dump()
 
 
 class _RecordingLLM(FakeToolCallingChatModel):
@@ -235,9 +235,33 @@ async def test_datasource_node_sets_data_context_from_the_tool_result_not_the_su
     update = await node(state)
 
     fetched = update["data_context"]
-    assert isinstance(fetched, FetchedDataset)
-    assert fetched.dataset_id == "dataset_1"
-    assert fetched.model_name == "Sales Analytics"
-    assert fetched.group_by == ["Sales.Region"]
-    assert fetched.measures == ["Total Revenue = SUM(Sales.Revenue)"]
-    assert fetched.row_count == 1
+    assert isinstance(fetched, dict)  # checkpoint-safe - see OrchestratorState.data_context
+    assert fetched["dataset_id"] == "dataset_1"
+    assert fetched["model_name"] == "Sales Analytics"
+    assert fetched["group_by"] == ["Sales.Region"]
+    assert fetched["measures"] == ["Total Revenue = SUM(Sales.Revenue)"]
+    assert fetched["row_count"] == 1
+
+
+async def test_specialist_hitting_the_recursion_limit_returns_a_clean_failure_not_a_crash():
+    """A specialist that never reaches a final answer - here, a model that
+    always calls a tool, never just replies - runs into LangGraph's hard
+    step cap (GraphRecursionError) inside `child_graph.ainvoke()`. Left
+    uncaught, that would crash the whole turn with a raw framework error
+    instead of a normal, bounded reply."""
+    always_call = {"name": "python_sandbox_execute", "args": {"code": "result = 1 / 0"}, "id": "c1"}
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="", tool_calls=[always_call])])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="compute something impossible")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-9",
+        "data_context": None,
+    }
+    update = await node(state)
+
+    assert "couldn't complete this" in update["messages"][0].content.lower()
+    assert update["awaiting_clarification"] is False
+    assert "data_context" not in update

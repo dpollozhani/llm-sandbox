@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from data_analyst.agents.common.models import FetchedDataset
 from data_analyst.agents.common.state import ChatState
 
 
@@ -15,13 +14,18 @@ class OrchestratorState(ChatState):
 
     turns: int
     next: str | None
-    data_context: FetchedDataset | None
+    data_context: dict | None
     """The most recently fetched dataset (set by `_run_specialist` from the
     datasource tool's own structured result, not a specialist's freeform
-    summary of it - see `FetchedDataset`). Threaded into the supervisor's
-    routing prompt and into the analysis specialist's seed message (via
-    `.describe()`), so a follow-up question can reuse already-fetched data
-    instead of triggering a new datasource delegation."""
+    summary of it), as a plain dict - `FetchedDataset(**data_context)` to
+    work with it (e.g. `.describe()` to render it into a prompt). Kept as a
+    dict rather than the `FetchedDataset` model itself because this field is
+    checkpointed: LangGraph's serializer only has provisional, soon-to-be-
+    removed support for arbitrary custom types, but a plain dict of
+    strings/ints/lists is unconditionally safe to checkpoint on any
+    backend. Threaded into the supervisor's routing prompt and into the
+    analysis specialist's seed message, so a follow-up question can reuse
+    already-fetched data instead of triggering a new datasource delegation."""
     clarification_options: list[str] | None
     """Set alongside a "clarify" outcome - either the supervisor's own
     upfront decision (`build_clarify_node`) or a specialist's

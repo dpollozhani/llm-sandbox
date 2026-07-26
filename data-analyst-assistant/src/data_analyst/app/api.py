@@ -26,6 +26,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
+from data_analyst.agents.orchestrator.nodes import MAX_TURNS
 from data_analyst.app.auth import get_token_broker, save_broker
 from data_analyst.app.auth import router as auth_router
 from data_analyst.app.dependencies import get_graph
@@ -37,6 +38,14 @@ app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
 app.include_router(auth_router)
 
 _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI access to use the assistant."}
+
+# Explicit rather than relying on LangGraph's own default recursion limit,
+# which is version-dependent (observed to differ by orders of magnitude
+# between installs). A generous multiple of MAX_TURNS, not a magic number -
+# each supervisor turn is a supervisor-node visit plus one delegate/respond/
+# clarify visit, and specialist subgraphs are bounded separately (see
+# agents/orchestrator/nodes.py::SPECIALIST_RECURSION_LIMIT).
+ORCHESTRATOR_RECURSION_LIMIT = MAX_TURNS * 4
 
 
 @dataclass
@@ -122,7 +131,7 @@ async def chat(
     tokens: PBITokens = Depends(get_pbi_tokens),
 ) -> ChatResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
     result = await graph.ainvoke(
         {
             "messages": [HumanMessage(content=body.message)],
@@ -164,7 +173,7 @@ async def _stream_chat_events(
 
     yield sse({"type": "start", "thread_id": thread_id})
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
     final_state: dict | None = None
     try:
         async for event in graph.astream_events(

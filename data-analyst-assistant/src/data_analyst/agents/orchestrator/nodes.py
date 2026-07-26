@@ -7,6 +7,7 @@ import json
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langgraph.errors import GraphRecursionError
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
 from data_analyst.agents.common.models import AgentResult, Clarification, FetchedDataset
@@ -18,6 +19,15 @@ from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 
 MAX_TURNS = 6
+
+SPECIALIST_RECURSION_LIMIT = 20
+"""Caps a specialist's own internal agent<->tools loop (`_run_specialist`'s
+`child_graph.ainvoke()`) - explicitly, rather than relying on LangGraph's
+own default, which is version-dependent and has been observed to differ
+by orders of magnitude between installs. Generous enough for several
+legitimate tool-call/retry round trips, but still a bounded, intentional
+cap rather than an implicit one - see the `GraphRecursionError` handling
+below for what happens when it's hit."""
 
 
 def build_supervisor_node(llm: BaseChatModel):
@@ -94,20 +104,38 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
     else:
         task_message = _latest_user_task(state["messages"])
         seed_content = (
-            f"(Available data in this session: {data_context.describe()})\n\n{task_message.content}"
+            f"(Available data in this session: {FetchedDataset(**data_context).describe()})\n\n{task_message.content}"
             if data_context
             else task_message.content
         )
         messages = [HumanMessage(content=seed_content)]
 
     child_graph = build_graph_fn(llm)
-    result = await child_graph.ainvoke(
-        {
-            "messages": messages,
-            "session_id": state["session_id"],
-            "pbi_token": state.get("pbi_token"),
+    try:
+        result = await child_graph.ainvoke(
+            {
+                "messages": messages,
+                "session_id": state["session_id"],
+                "pbi_token": state.get("pbi_token"),
+            },
+            config={"recursion_limit": SPECIALIST_RECURSION_LIMIT},
+        )
+    except GraphRecursionError:
+        # The specialist's own agent<->tools loop kept calling tools without
+        # ever reaching a final answer (e.g. retrying a computation that
+        # keeps failing) - LangGraph's hard step cap turned that into a raw
+        # exception that would otherwise crash this whole turn. Fold back a
+        # plain failure instead: the supervisor's own MAX_TURNS still bounds
+        # how many times this can happen before "respond" takes over.
+        return {
+            "messages": [
+                AIMessage(
+                    content=f"[{agent_name}] Couldn't complete this after many attempts - "
+                    "try a simpler or narrower request."
+                )
+            ],
+            "awaiting_clarification": False,
         }
-    )
 
     clarification = _specialist_clarification(result["messages"])
     if clarification is not None:
@@ -140,8 +168,10 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             # SUPERVISOR_SYSTEM_PROMPT and clients/sandbox/client.py's cache.
             # Left out of `update` (not overwritten with None) when this run
             # didn't fetch anything (e.g. only browsed the schema), so a
-            # dataset from an earlier turn stays available.
-            update["data_context"] = fetched
+            # dataset from an earlier turn stays available. Stored as a
+            # plain dict, not the FetchedDataset itself - see
+            # OrchestratorState.data_context's docstring for why.
+            update["data_context"] = fetched.model_dump()
     return update
 
 
