@@ -26,13 +26,31 @@ class _FakeToolResult:
         self.isError = is_error
 
 
+class _FakeTool:
+    def __init__(self, name: str, properties: dict) -> None:
+        self.name = name
+        self.inputSchema = {"properties": properties}
+
+
+class _FakeListToolsResult:
+    def __init__(self, tools: list[_FakeTool]) -> None:
+        self.tools = tools
+
+
+_DEFAULT_TOOLS = [_FakeTool("GetSemanticMetadata", {"datasetId": {"type": "string"}})]
+
+
 class _FakeSession:
-    def __init__(self, result: _FakeToolResult) -> None:
+    def __init__(self, result: _FakeToolResult, tools: list[_FakeTool] | None = None) -> None:
         self._result = result
+        self._tools = tools if tools is not None else _DEFAULT_TOOLS
         self.calls: list[tuple[str, dict]] = []
 
     async def initialize(self) -> None:
         pass
+
+    async def list_tools(self) -> _FakeListToolsResult:
+        return _FakeListToolsResult(self._tools)
 
     async def call_tool(self, name: str, args: dict) -> _FakeToolResult:
         self.calls.append((name, args))
@@ -135,4 +153,32 @@ async def test_get_semantic_metadata_raises_on_tool_error(monkeypatch):
     monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
 
     with pytest.raises(ValueError, match="permission denied"):
+        await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+
+async def test_get_semantic_metadata_adapts_to_a_differently_named_server_tool(monkeypatch):
+    """The tool's exact machine name and dataset-id argument key aren't
+    hardcoded - Microsoft's own docs disagree on the name across pages -
+    so this should work against whatever the live server actually
+    advertises via list_tools(), not just the one name/key we've seen."""
+    tools = [_FakeTool("Get Semantic Model Schema", {"semanticModelId": {"type": "string"}})]
+    fake_session = _FakeSession(_FakeToolResult(json.dumps({"tables": []})), tools=tools)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _fake_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+
+    result = await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert result == {"tables": []}
+    tool_name, args = fake_session.calls[0]
+    assert tool_name == "Get Semantic Model Schema"
+    assert args == {"semanticModelId": "ds-test"}
+
+
+async def test_get_semantic_metadata_raises_clearly_when_no_matching_tool_is_advertised(monkeypatch):
+    tools = [_FakeTool("SomeUnrelatedTool", {})]
+    fake_session = _FakeSession(_FakeToolResult("unused"), tools=tools)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _fake_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+
+    with pytest.raises(ValueError, match="No semantic-metadata tool"):
         await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")

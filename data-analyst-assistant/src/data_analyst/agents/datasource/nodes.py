@@ -50,7 +50,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
     @tool
     async def pbi_mcp_get_semantic_metadata(model_name: str, state: Annotated[DatasourceState, InjectedState]) -> dict:
         """Get a semantic model's schema (tables, columns, measures,
-        relationships) via the Power BI MCP server's GetSemanticMetadata.
+        relationships) via the Power BI MCP server's semantic metadata tool.
         Call this for a model before querying it if you haven't already
         seen its schema this conversation."""
         token = state.get("pbi_token")
@@ -59,7 +59,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         try:
             return await mcp.get_semantic_metadata(token, model_name)
         except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
-            return {"error": f"GetSemanticMetadata call failed: {_describe(exc)}"}
+            return {"error": f"Power BI MCP call failed: {_describe(exc)}"}
 
     @tool
     async def pbi_rest_run_dax_query(
