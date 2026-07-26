@@ -25,7 +25,7 @@ class _FakeRestClient:
     threaded through from the graph's initial state actually arrives here."""
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
-        assert access_token == "tok-rest"
+        assert access_token == "tok-pbi"
         dax_query = build_summarizecolumns(spec)
         validate_dax_query(dax_query, spec)
         if spec.group_by == ["Bogus"]:
@@ -38,7 +38,7 @@ def _graph(llm):
 
 
 def _state(session_id: str, messages: list) -> dict:
-    return {"messages": messages, "session_id": session_id, "pbi_rest_token": "tok-rest", "pbi_mcp_token": "tok-mcp"}
+    return {"messages": messages, "session_id": session_id, "pbi_token": "tok-pbi"}
 
 
 async def test_run_dax_query_stages_a_sandbox_ref():

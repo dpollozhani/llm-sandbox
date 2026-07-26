@@ -7,17 +7,16 @@ POST /chat/stream endpoint (same one the web UI at "/" uses), printing
 status updates and the answer as it's generated; --no-stream falls back to
 the plain POST /chat request/response endpoint.
 
-Every request needs the caller's own delegated Power BI access tokens (see
+Every request needs the caller's own delegated Power BI access token (see
 `clients/powerbi/auth.py`'s module docstring on the server for why - the
 server enforces sign-in for every /chat* call, not just Power BI-specific
 questions). Rather than driving the server's browser-based sign-in
-(app/auth.py, which needs a real browser), this CLI gets its own tokens
+(app/auth.py, which needs a real browser), this CLI gets its own token
 directly from Entra ID via the device-code flow: it prints a URL and a
 short code, you enter that code in any browser (even on another device),
-and this process polls until Entra ID issues the tokens - then sends them
-to the server as `X-PBI-Rest-Token`/`X-PBI-Mcp-Token` headers on every
-request. Tokens (and their refresh tokens) are cached locally so you're not
-re-prompted every run.
+and this process polls until Entra ID issues the token - then sends it to
+the server as an `X-PBI-Token` header on every request. The token (and its
+refresh token) is cached locally so you're not re-prompted every run.
 
 Usage:
     python cli.py [--url http://localhost:8000] [--no-stream]
@@ -40,13 +39,12 @@ import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
-# Mirrors clients/powerbi/auth.py's scope constants - duplicated rather than
+# Mirrors clients/powerbi/auth.py's scope constant - duplicated rather than
 # imported so this file stays stdlib-only (no dependency on the installed
 # `data_analyst` package, or its `msal`/`mcp` dependencies, just to run the CLI).
-PBI_REST_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
-PBI_MCP_SCOPE = "https://api.fabric.microsoft.com/.default"
+PBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 
-_TOKEN_CACHE_PATH = Path.home() / ".cache" / "data-analyst-assistant" / "pbi_tokens.json"
+_TOKEN_CACHE_PATH = Path.home() / ".cache" / "data-analyst-assistant" / "pbi_token.json"
 _EXPIRY_MARGIN_SECONDS = 60
 
 
@@ -119,46 +117,43 @@ def _save_cache(cache: dict) -> None:
     _TOKEN_CACHE_PATH.write_text(json.dumps(cache))
 
 
-def _get_token(cache: dict, key: str, scope: str, tenant_id: str, client_id: str) -> str:
-    """Return a valid access token for `scope`, using the cache (refreshing
-    silently if possible), or falling back to an interactive device-code
-    sign-in - once per (tenant, client, scope), not once per chat request."""
-    entry = cache.get(key)
+def _get_token(cache: dict, tenant_id: str, client_id: str) -> str:
+    """Return a valid access token, using the cache (refreshing silently if
+    possible), or falling back to an interactive device-code sign-in - once
+    per (tenant, client), not once per chat request."""
+    entry = cache.get("token")
     if entry and entry.get("tenant_id") == tenant_id and entry.get("client_id") == client_id:
         if entry["expires_at"] > time.time() + _EXPIRY_MARGIN_SECONDS:
             return entry["access_token"]
-        refreshed = _refresh(tenant_id, client_id, entry["refresh_token"], scope)
+        refreshed = _refresh(tenant_id, client_id, entry["refresh_token"], PBI_SCOPE)
         if "access_token" in refreshed:
             entry.update(
                 access_token=refreshed["access_token"],
                 refresh_token=refreshed.get("refresh_token", entry["refresh_token"]),
                 expires_at=time.time() + refreshed.get("expires_in", 3600),
             )
-            cache[key] = entry
+            cache["token"] = entry
             return entry["access_token"]
         # Refresh token no longer valid (revoked/expired) - fall through to a fresh interactive sign-in.
 
-    result = _device_code_flow(tenant_id, client_id, scope)
-    cache[key] = {
+    result = _device_code_flow(tenant_id, client_id, PBI_SCOPE)
+    cache["token"] = {
         "tenant_id": tenant_id,
         "client_id": client_id,
         "access_token": result["access_token"],
         "refresh_token": result["refresh_token"],
         "expires_at": time.time() + result.get("expires_in", 3600),
     }
-    return cache[key]["access_token"]
+    return cache["token"]["access_token"]
 
 
 def get_pbi_headers(tenant_id: str, client_id: str) -> dict[str, str]:
-    """Signs in (or reuses/refreshes a cached sign-in) for both Power BI
-    resources this app needs, returning the headers to send on every
-    request. May prompt for two separate interactive device-code sign-ins
-    the first time (one per resource) - see the module docstring."""
+    """Signs in (or reuses/refreshes a cached sign-in), returning the header
+    to send on every request."""
     cache = _load_cache()
-    rest_token = _get_token(cache, "rest", PBI_REST_SCOPE, tenant_id, client_id)
-    mcp_token = _get_token(cache, "mcp", PBI_MCP_SCOPE, tenant_id, client_id)
+    token = _get_token(cache, tenant_id, client_id)
     _save_cache(cache)
-    return {"X-PBI-Rest-Token": rest_token, "X-PBI-Mcp-Token": mcp_token}
+    return {"X-PBI-Token": token}
 
 
 def post_chat(base_url: str, message: str, thread_id: str | None, headers: dict[str, str]) -> dict:

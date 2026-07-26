@@ -55,7 +55,7 @@ class _FakeRestClient:
     fake in tests/integration/test_datasource_graph.py."""
 
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec):
-        assert access_token == "tok-rest"
+        assert access_token == "tok-pbi"
         dax_query = build_summarizecolumns(spec)
         validate_dax_query(dax_query, spec)
         return dax_query, pd.DataFrame([{"Total Revenue": 18225}])
@@ -63,7 +63,7 @@ class _FakeRestClient:
 
 class _FakeMcpClient:
     async def get_semantic_metadata(self, access_token: str, model_name: str):
-        assert access_token == "tok-mcp"
+        assert access_token == "tok-pbi"
         return {"tables": [{"name": "Sales", "columns": ["Region", "Revenue"]}]}
 
 
@@ -73,7 +73,7 @@ def _build_graph(llm):
 
 @pytest.fixture(autouse=True)
 def _fake_pbi_tokens():
-    app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(rest="tok-rest", mcp="tok-mcp")
+    app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(token="tok-pbi")
     yield
     app.dependency_overrides.pop(get_pbi_tokens, None)
 
@@ -107,7 +107,7 @@ def test_chat_without_signing_in_returns_401_with_a_login_url():
         with TestClient(app) as client:
             response = client.post("/chat", json={"message": "hello"})
     finally:
-        app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(rest="tok-rest", mcp="tok-mcp")
+        app.dependency_overrides[get_pbi_tokens] = lambda: PBITokens(token="tok-pbi")
 
     assert response.status_code == 401
     assert response.json()["detail"]["login_url"] == "/auth/login"

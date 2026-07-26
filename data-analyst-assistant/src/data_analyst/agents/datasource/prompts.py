@@ -38,8 +38,6 @@ hand it to the analysis agent. Do not attempt any data analysis yourself -
 that's the analysis agent's job. Be concise.
 
 Any tool response containing an `error` about not being signed in means the
-user's Power BI sign-in has expired, was never completed, or (for
-`pbi_mcp_get_semantic_metadata` specifically) covers a different Power BI
-resource than the one they already signed in for - these are two separate
-sign-ins by design. Relay the error plainly, including any URL it mentions,
+user's Power BI sign-in has expired or was never completed - relay that
+plainly (e.g. "You'll need to sign in with Power BI access to continue")
 rather than retrying or guessing at data."""

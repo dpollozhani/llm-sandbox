@@ -1,33 +1,24 @@
 """Browser sign-in: Entra ID (Azure AD) OAuth authorization-code flow with
 PKCE, as a public client (no client secret) - see
 `clients/powerbi/auth.py`'s module docstring for why, and for the redirect
-URI platform-type requirement that goes with it.
+URI platform-type requirement that goes with it. One scope (`PBI_SCOPE`)
+covers both the Power BI REST API and the remote MCP server - see that same
+docstring - so this is a single sign-in, not one per resource.
 
-`/auth/login?resource=rest|mcp` starts the flow for ONE Power BI resource at
-a time (`TokenBroker.start_login`) - see that method's docstring for why
-this can't be combined into a single consent round for both resources
-(`.default` scopes are per-resource; Entra rejects mixing two of them in one
-request). Most users only ever need `resource=rest` (the default); a
-`request_clarification`-style "not signed in for this" tool error is what
-tells someone they also need to visit `/auth/login?resource=mcp` once, the
-first time a chat turn actually needs `pbi_mcp_get_semantic_metadata`.
+`/auth/login` starts the flow (`TokenBroker.start_login`), redirects to
+Microsoft, and stashes the returned flow dict (which carries the PKCE
+verifier and expected `state`, among other things MSAL needs to complete
+the exchange) server-side, keyed by its own `state` value. `/auth/callback`
+looks that flow back up by the `state` query param Entra sends back,
+exchanges the code for tokens (`TokenBroker.redeem_code`), and stores the
+resulting MSAL token cache server-side, keyed by an opaque session id kept
+in a cookie - the cookie itself never holds a token or the flow dict, only
+that lookup key, mirroring how `clients/sandbox/client.py` keys its
+per-session store (process-local; lost on restart).
 
-`/auth/login` redirects to Microsoft and stashes the returned flow dict
-(which carries the PKCE verifier and expected `state`, among other things
-MSAL needs to complete the exchange) server-side, keyed by its own `state`
-value. `/auth/callback` looks that flow back up by the `state` query param
-Entra sends back, exchanges the code for tokens (`TokenBroker.redeem_code`),
-and stores the resulting MSAL token cache server-side, keyed by an opaque
-session id kept in a cookie - the cookie itself never holds a token or the
-flow dict, only that lookup key, mirroring how `clients/sandbox/client.py`
-keys its per-session store (process-local; lost on restart). Signing in for
-a second resource reuses the same session's cache (so the first resource's
-tokens aren't lost), just adds another account/token entry to it.
-
-`cli.py` doesn't use any of this - it gets its own tokens directly via a
-device-code flow (already one resource at a time, for the same reason) and
-sends them as request headers instead. See `app/api.py::get_pbi_tokens` for
-how the two paths converge.
+`cli.py` doesn't use any of this - it gets its own token directly via a
+device-code flow and sends it as a request header instead. See
+`app/api.py::get_pbi_tokens` for how the two paths converge.
 """
 from __future__ import annotations
 
@@ -36,13 +27,12 @@ import secrets
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from data_analyst.clients.powerbi.auth import PBI_MCP_SCOPE, PBI_REST_SCOPE, TokenBroker
+from data_analyst.clients.powerbi.auth import TokenBroker
 from data_analyst.config.settings import Settings, get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 SESSION_COOKIE = "das_session"
-_RESOURCE_SCOPES = {"rest": PBI_REST_SCOPE, "mcp": PBI_MCP_SCOPE}
 
 # Process-local, mirroring clients/sandbox/client.py's per-session registry.
 _sessions: dict[str, str] = {}  # session_id -> serialized MSAL token cache
@@ -77,16 +67,12 @@ async def whoami(request: Request) -> dict:
 
 
 @router.get("/login")
-async def login(request: Request, resource: str = "rest") -> RedirectResponse:
-    scope = _RESOURCE_SCOPES.get(resource)
-    if scope is None:
-        raise HTTPException(status_code=400, detail=f"Unknown resource '{resource}', expected one of {sorted(_RESOURCE_SCOPES)}")
-
+async def login(request: Request) -> RedirectResponse:
     settings = get_settings()
     session_id = request.cookies.get(SESSION_COOKIE) or secrets.token_urlsafe(32)
 
     broker = TokenBroker(settings, serialized_cache=_sessions.get(session_id))
-    flow = broker.start_login(scope)
+    flow = broker.start_login()
     _pending_flows[flow["state"]] = (session_id, flow)
 
     response = RedirectResponse(flow["auth_uri"])

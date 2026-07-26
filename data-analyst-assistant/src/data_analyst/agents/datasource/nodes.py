@@ -3,12 +3,11 @@ that use them. No tool here mutates anything in Power BI - metadata lookups
 and structured DAX queries only.
 
 Every PBI tool reads the current request's delegated access token from
-`InjectedState` (`pbi_rest_token`/`pbi_mcp_token`, set by `app/api.py` from
-whichever the caller signed in with - see `clients/powerbi/auth.py`'s module
-docstring for why a delegated user token is required at all: row-level
-security depends on whose identity the call runs as, so there's no
-app-only/service-principal fallback here) rather than holding any auth of
-their own.
+`InjectedState` (`pbi_token`, set by `app/api.py` from whichever the caller
+signed in with - see `clients/powerbi/auth.py`'s module docstring for why a
+delegated user token is required at all: row-level security depends on
+whose identity the call runs as, so there's no app-only/service-principal
+fallback here) rather than holding any auth of their own.
 """
 from __future__ import annotations
 
@@ -27,11 +26,7 @@ from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import PowerBiCatalog
 
-_NOT_SIGNED_IN_REST = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
-_NOT_SIGNED_IN_MCP = (
-    "Not signed in with Power BI MCP access for this - ask the user to visit /auth/login?resource=mcp "
-    "(a separate sign-in from the main one, since Entra doesn't allow combining the two resources' consent)."
-)
+_NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
 
 def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None) -> list[BaseTool]:
@@ -47,9 +42,9 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         relationships) via the Power BI MCP server's GetSemanticMetadata.
         Call this for a model before querying it if you haven't already
         seen its schema this conversation."""
-        token = state.get("pbi_mcp_token")
+        token = state.get("pbi_token")
         if not token:
-            return {"error": _NOT_SIGNED_IN_MCP}
+            return {"error": _NOT_SIGNED_IN}
         try:
             return await mcp.get_semantic_metadata(token, model_name)
         except ValueError as exc:
@@ -79,9 +74,9 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         Returns a preview of the resulting rows plus a `sandbox_ref` that the
         analysis agent can use to load the full result as a DataFrame.
         """
-        token = state.get("pbi_rest_token")
+        token = state.get("pbi_token")
         if not token:
-            return {"error": _NOT_SIGNED_IN_REST}
+            return {"error": _NOT_SIGNED_IN}
 
         try:
             spec = DaxQuerySpec(

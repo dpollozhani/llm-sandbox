@@ -53,8 +53,8 @@ learns valid `model_name` values from the static catalog
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
 to the model's tool schema - see `tool_call_schema` vs. `args_schema`): to
-read the delegated `pbi_rest_token`/`pbi_mcp_token` (returning `{"error":
-...}` if missing rather than calling Power BI with no token), and, for
+read the delegated `pbi_token` (returning `{"error": ...}` if missing
+rather than calling Power BI with no token), and, for
 `pbi_rest_run_dax_query`, to also reach its session's data store by
 `session_id`. `build_tools(mcp_client=..., rest_client=...)` takes the two
 Power BI clients as parameters specifically so tests can inject fakes

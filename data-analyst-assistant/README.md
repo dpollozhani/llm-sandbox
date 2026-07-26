@@ -31,9 +31,11 @@ for how the pieces fit together.
 Entra ID access token, never an app-only service-principal one -
 row-level security depends on whose identity the call runs as, and Power
 BI's `executeQueries` rejects a service-principal token outright on any
-dataset with RLS configured (see
+dataset with RLS configured. Despite the MCP server being hosted at an
+`api.fabric.microsoft.com` URL, it authenticates against the same Entra
+resource as the classic REST API, so one scope/one sign-in covers both - see
 [`clients/powerbi/auth.py`](src/data_analyst/clients/powerbi/auth.py)'s
-module docstring). So every `/chat` call needs a signed-in user: the
+module docstring for all of this. So every `/chat` call needs a signed-in user: the
 browser flow (`app/auth.py`) is a PKCE authorization-code sign-in (public
 client, no client secret anywhere - delegated permissions don't require
 one), and `cli.py` gets its own tokens via a device-code flow. The Python sandbox
@@ -66,23 +68,20 @@ Then try it any of three ways:
 
 - **Browser**: open <http://localhost:8000/> - a minimal, mobile-friendly
   chat page (`app/web.py`, no build step, no extra dependency) that prompts
-  you to sign in with Microsoft first (plus a second, separate "grant schema
-  access" sign-in - see `clients/powerbi/auth.py`'s module docstring for why
-  Entra doesn't allow combining the two into one screen), then streams live
-  status and the answer token by token via `POST /chat/stream`.
+  you to sign in with Microsoft first, then streams live status and the
+  answer token by token via `POST /chat/stream`.
 - **Terminal**: `python cli.py --tenant-id ... --client-id ...` (or set
   `$ENTRA_TENANT_ID`/`$ENTRA_CLIENT_ID`) - a small interactive chat client
   (stdlib-only), streaming by default; `--no-stream` for plain
-  request/response. Prints a device-code sign-in URL the first time (once
-  per resource scope needed - two prompts on a first run), then caches the
-  tokens locally and refreshes them silently after that.
-- **curl**: needs the same delegated tokens as headers, so it's only
-  practical once you already have them (e.g. copied from `cli.py`'s token
-  cache at `~/.cache/data-analyst-assistant/pbi_tokens.json`, or a debugger
+  request/response. Prints a device-code sign-in URL the first time, then
+  caches the token locally and refreshes it silently after that.
+- **curl**: needs the same delegated token as a header, so it's only
+  practical once you already have one (e.g. copied from `cli.py`'s token
+  cache at `~/.cache/data-analyst-assistant/pbi_token.json`, or a debugger
   breakpoint in `app/auth.py`):
   ```bash
   curl -s localhost:8000/chat -X POST -H 'content-type: application/json' \
-    -H 'X-PBI-Rest-Token: ...' -H 'X-PBI-Mcp-Token: ...' \
+    -H 'X-PBI-Token: ...' \
     -d '{"message": "what can you do?"}'
   ```
 
@@ -138,7 +137,7 @@ src/data_analyst/
     orchestrator/  supervisor loop: routes to a specialist, responds, or asks for clarification
     datasource/    Power BI specialist (PBI MCP + PBI REST tools, structured DAX queries only)
     analysis/      Python sandbox specialist
-    common/        shared state shape (messages + session_id + delegated PBI tokens) + models used across all three
+    common/        shared state shape (messages + session_id + delegated PBI token) + models used across all three
   clients/       Power BI (REST + MCP calls, delegated auth only), sandbox (mocked, session-bound), and LLM provider clients
   config/        env-driven settings + the Power BI catalog (model name -> dataset id mapping)
   telemetry/     logging/tracing/metrics stand-ins

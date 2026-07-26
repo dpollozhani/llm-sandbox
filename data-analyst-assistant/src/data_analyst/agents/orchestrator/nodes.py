@@ -67,8 +67,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         {
             "messages": [HumanMessage(content=seed_content)],
             "session_id": state["session_id"],
-            "pbi_rest_token": state.get("pbi_rest_token"),
-            "pbi_mcp_token": state.get("pbi_mcp_token"),
+            "pbi_token": state.get("pbi_token"),
         }
     )
 

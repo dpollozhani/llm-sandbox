@@ -8,6 +8,15 @@ outright (401) on any dataset with RLS configured, and the MCP server is
 documented as delegated-only. So there is no app-only fallback here: every
 call needs a signed-in user's delegated access token.
 
+Despite being hosted at an `api.fabric.microsoft.com` URL, the remote Power
+BI MCP server authenticates against the *same* Entra resource as the
+classic REST API - `https://analysis.windows.net/powerbi/api` (delegated
+permissions `Dataset.Read.All`, `MLModel.Execute.All`, `Workspace.Read.All`
+under that resource, per Microsoft's docs for registering an app to call
+it) - not a separate `api.fabric.microsoft.com` resource. So one scope,
+`PBI_SCOPE`, and one sign-in covers both; there's no second resource to
+consent to.
+
 This app is a **public** OAuth client everywhere - the browser sign-in flow
 (`app/auth.py`) and `cli.py`'s device-code flow both authenticate the user
 without any client secret, via PKCE (MSAL's `initiate_auth_code_flow`/
@@ -29,13 +38,13 @@ client and will reject a secret-less token exchange against it
 client flows" also needs to be enabled (already required for `cli.py`'s
 device-code flow).
 
-`TokenBroker` wraps one user's MSAL token cache and mints scoped access
-tokens from it, refreshing silently via the cached refresh token. Two
-different callers build one:
+`TokenBroker` wraps one user's MSAL token cache and mints access tokens from
+it, refreshing silently via the cached refresh token. Two different callers
+build one:
 - `app/auth.py`'s browser sign-in flow (stores each user's serialized cache
   server-side, keyed by a session cookie).
-- `cli.py`'s device-code flow builds tokens itself and sends them as
-  request headers instead of going through a TokenBroker at all - see
+- `cli.py`'s device-code flow builds a token itself and sends it as a
+  request header instead of going through a TokenBroker at all - see
   `app/api.py::get_pbi_tokens`.
 """
 from __future__ import annotations
@@ -46,8 +55,7 @@ import msal
 
 from data_analyst.config.settings import Settings
 
-PBI_REST_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
-PBI_MCP_SCOPE = "https://api.fabric.microsoft.com/.default"
+PBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 
 
 def build_msal_app(
@@ -75,23 +83,12 @@ class TokenBroker:
         session on every request."""
         return self.cache.serialize() if self.cache.has_state_changed else None
 
-    def start_login(self, scope: str) -> dict:
-        """Begin a PKCE authorization-code flow for one resource `scope`.
-
-        `.default` scopes can't be combined across resources in a single
-        authorization request - Entra rejects it outright
-        (`AADSTS70011: ... static scope limit exceeded`), since `.default`
-        already means "every statically configured permission for *this*
-        resource", and that only makes sense for one resource at a time.
-        So `PBI_REST_SCOPE` and `PBI_MCP_SCOPE` each need their own
-        interactive consent round (see `app/auth.py`'s `/auth/login?
-        resource=`) - there's no single-screen shortcut for two resources
-        the way there is for multiple *named* scopes on the same resource.
-
-        Returns the flow dict `app/auth.py` must store server-side (keyed
-        by its own "state") until the matching `/auth/callback` request
-        arrives - this is a local, synchronous call, no network I/O."""
-        return self._app.initiate_auth_code_flow(scopes=[scope], redirect_uri=self._settings.entra_redirect_uri)
+    def start_login(self) -> dict:
+        """Begin a PKCE authorization-code flow for `PBI_SCOPE`. Returns the
+        flow dict `app/auth.py` must store server-side (keyed by its own
+        "state") until the matching `/auth/callback` request arrives - this
+        is a local, synchronous call, no network I/O."""
+        return self._app.initiate_auth_code_flow(scopes=[PBI_SCOPE], redirect_uri=self._settings.entra_redirect_uri)
 
     async def redeem_code(self, flow: dict, auth_response: dict) -> None:
         """Complete a PKCE flow started by `start_login`, exchanging the
@@ -106,15 +103,15 @@ class TokenBroker:
         if "access_token" not in result:
             raise RuntimeError(result.get("error_description") or result.get("error") or "Sign-in failed")
 
-    async def get_token(self, scope: str) -> str:
-        """Return a fresh delegated access token for `scope`, silently
+    async def get_token(self) -> str:
+        """Return a fresh delegated access token for `PBI_SCOPE`, silently
         refreshing via the cached refresh token. Raises RuntimeError if
-        there's no signed-in account, or this user hasn't consented to
-        `scope` yet (needs another interactive `/auth/login` round)."""
+        there's no signed-in account, or this user's consent has lapsed
+        (needs another interactive `/auth/login` round)."""
         accounts = self._app.get_accounts()
         if not accounts:
             raise RuntimeError("Not signed in")
-        result = await asyncio.to_thread(self._app.acquire_token_silent, [scope], account=accounts[0])
+        result = await asyncio.to_thread(self._app.acquire_token_silent, [PBI_SCOPE], account=accounts[0])
         if not result or "access_token" not in result:
-            raise RuntimeError(f"Sign-in required for scope '{scope}'")
+            raise RuntimeError("Sign-in required")
         return result["access_token"]

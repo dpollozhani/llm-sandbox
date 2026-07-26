@@ -6,10 +6,10 @@ keep the message history for that conversation, and which also scopes the
 session-bound data store (see clients/sandbox/client.py) so a follow-up
 question can reuse already-fetched data.
 
-Every `/chat*` call also needs the caller's own delegated Power BI tokens
-(see `clients/powerbi/auth.py` for why - row-level security requires them),
+Every `/chat*` call also needs the caller's own delegated Power BI token
+(see `clients/powerbi/auth.py` for why - row-level security requires it),
 resolved by `get_pbi_tokens` from either the browser's signed-in session
-(`app/auth.py`) or `X-PBI-*-Token` headers a client (e.g. `cli.py`) already
+(`app/auth.py`) or an `X-PBI-Token` header a client (e.g. `cli.py`) already
 holds from its own sign-in flow.
 """
 from __future__ import annotations
@@ -31,7 +31,6 @@ from data_analyst.app.auth import router as auth_router
 from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
 from data_analyst.app.web import CHAT_PAGE_HTML
-from data_analyst.clients.powerbi.auth import PBI_MCP_SCOPE, PBI_REST_SCOPE
 from data_analyst.config.settings import get_settings
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
@@ -42,39 +41,27 @@ _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI 
 
 @dataclass
 class PBITokens:
-    rest: str | None
-    mcp: str | None
+    token: str
 
 
 async def get_pbi_tokens(request: Request) -> PBITokens:
-    """CLI clients (see cli.py) get their own tokens via a device-code flow
-    and send them directly as headers; the browser instead relies on the
-    signed-in session from app/auth.py. Either way, at least one token is
-    required - a chat turn that never touches Power BI still needs *a*
-    signed-in identity, since the supervisor decides mid-run whether the
-    datasource specialist is needed at all."""
-    header_rest = request.headers.get("X-PBI-Rest-Token")
-    header_mcp = request.headers.get("X-PBI-Mcp-Token")
-    if header_rest or header_mcp:
-        return PBITokens(rest=header_rest, mcp=header_mcp)
+    """CLI clients (see cli.py) get their own token via a device-code flow
+    and send it directly as a header; the browser instead relies on the
+    signed-in session from app/auth.py."""
+    header_token = request.headers.get("X-PBI-Token")
+    if header_token:
+        return PBITokens(token=header_token)
 
     broker = get_token_broker(request, get_settings())
     if broker is None:
         raise HTTPException(status_code=401, detail=_NOT_SIGNED_IN)
 
-    async def _try(scope: str) -> str | None:
-        try:
-            return await broker.get_token(scope)
-        except RuntimeError:
-            return None
-
-    rest_token = await _try(PBI_REST_SCOPE)
-    mcp_token = await _try(PBI_MCP_SCOPE)
+    try:
+        token = await broker.get_token()
+    except RuntimeError:
+        raise HTTPException(status_code=401, detail=_NOT_SIGNED_IN) from None
     save_broker(request, broker)
-
-    if rest_token is None and mcp_token is None:
-        raise HTTPException(status_code=401, detail=_NOT_SIGNED_IN)
-    return PBITokens(rest=rest_token, mcp=mcp_token)
+    return PBITokens(token=token)
 
 # Human-readable status shown while a given orchestrator node is running -
 # see /chat/stream. Keyed by node name (LangGraph's `metadata.langgraph_node`
@@ -141,8 +128,7 @@ async def chat(
             "messages": [HumanMessage(content=body.message)],
             "turns": 0,
             "session_id": thread_id,
-            "pbi_rest_token": tokens.rest,
-            "pbi_mcp_token": tokens.mcp,
+            "pbi_token": tokens.token,
         },
         config=config,
     )
@@ -186,8 +172,7 @@ async def _stream_chat_events(
                 "messages": [HumanMessage(content=body.message)],
                 "turns": 0,
                 "session_id": thread_id,
-                "pbi_rest_token": tokens.rest,
-                "pbi_mcp_token": tokens.mcp,
+                "pbi_token": tokens.token,
             },
             config=config,
             version="v2",
