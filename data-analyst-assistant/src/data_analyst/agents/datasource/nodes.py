@@ -27,7 +27,11 @@ from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import PowerBiCatalog
 
-_NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again."
+_NOT_SIGNED_IN_REST = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
+_NOT_SIGNED_IN_MCP = (
+    "Not signed in with Power BI MCP access for this - ask the user to visit /auth/login?resource=mcp "
+    "(a separate sign-in from the main one, since Entra doesn't allow combining the two resources' consent)."
+)
 
 
 def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None) -> list[BaseTool]:
@@ -45,7 +49,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         seen its schema this conversation."""
         token = state.get("pbi_mcp_token")
         if not token:
-            return {"error": _NOT_SIGNED_IN}
+            return {"error": _NOT_SIGNED_IN_MCP}
         try:
             return await mcp.get_semantic_metadata(token, model_name)
         except ValueError as exc:
@@ -77,7 +81,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         """
         token = state.get("pbi_rest_token")
         if not token:
-            return {"error": _NOT_SIGNED_IN}
+            return {"error": _NOT_SIGNED_IN_REST}
 
         try:
             spec = DaxQuerySpec(

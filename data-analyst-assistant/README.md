@@ -66,8 +66,10 @@ Then try it any of three ways:
 
 - **Browser**: open <http://localhost:8000/> - a minimal, mobile-friendly
   chat page (`app/web.py`, no build step, no extra dependency) that prompts
-  you to sign in with Microsoft first, then streams live status and the
-  answer token by token via `POST /chat/stream`.
+  you to sign in with Microsoft first (plus a second, separate "grant schema
+  access" sign-in - see `clients/powerbi/auth.py`'s module docstring for why
+  Entra doesn't allow combining the two into one screen), then streams live
+  status and the answer token by token via `POST /chat/stream`.
 - **Terminal**: `python cli.py --tenant-id ... --client-id ...` (or set
   `$ENTRA_TENANT_ID`/`$ENTRA_CLIENT_ID`) - a small interactive chat client
   (stdlib-only), streaming by default; `--no-stream` for plain

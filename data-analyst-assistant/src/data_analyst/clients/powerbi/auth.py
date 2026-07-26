@@ -75,19 +75,23 @@ class TokenBroker:
         session on every request."""
         return self.cache.serialize() if self.cache.has_state_changed else None
 
-    def start_login(self) -> dict:
-        """Begin a PKCE authorization-code flow, requesting consent for both
-        Power BI resources up front (`PBI_REST_SCOPE` and `PBI_MCP_SCOPE`) so
-        the one interactive consent screen covers both, even though only
-        `PBI_REST_SCOPE` is actually redeemed for a token in `redeem_code` -
-        the other is minted later, silently, from the refresh token that
-        redemption produces (see `get_token`). Returns the flow dict
-        `app/auth.py` must store server-side (keyed by its own "state")
-        until the matching `/auth/callback` request arrives - this is a
-        local, synchronous call, no network I/O."""
-        return self._app.initiate_auth_code_flow(
-            scopes=[PBI_REST_SCOPE, PBI_MCP_SCOPE], redirect_uri=self._settings.entra_redirect_uri
-        )
+    def start_login(self, scope: str) -> dict:
+        """Begin a PKCE authorization-code flow for one resource `scope`.
+
+        `.default` scopes can't be combined across resources in a single
+        authorization request - Entra rejects it outright
+        (`AADSTS70011: ... static scope limit exceeded`), since `.default`
+        already means "every statically configured permission for *this*
+        resource", and that only makes sense for one resource at a time.
+        So `PBI_REST_SCOPE` and `PBI_MCP_SCOPE` each need their own
+        interactive consent round (see `app/auth.py`'s `/auth/login?
+        resource=`) - there's no single-screen shortcut for two resources
+        the way there is for multiple *named* scopes on the same resource.
+
+        Returns the flow dict `app/auth.py` must store server-side (keyed
+        by its own "state") until the matching `/auth/callback` request
+        arrives - this is a local, synchronous call, no network I/O."""
+        return self._app.initiate_auth_code_flow(scopes=[scope], redirect_uri=self._settings.entra_redirect_uri)
 
     async def redeem_code(self, flow: dict, auth_response: dict) -> None:
         """Complete a PKCE flow started by `start_login`, exchanging the
@@ -96,9 +100,7 @@ class TokenBroker:
         RuntimeError on failure (including a state/CSRF mismatch, which MSAL
         raises as ValueError - normalized here to one exception type)."""
         try:
-            result = await asyncio.to_thread(
-                self._app.acquire_token_by_auth_code_flow, flow, auth_response, [PBI_REST_SCOPE]
-            )
+            result = await asyncio.to_thread(self._app.acquire_token_by_auth_code_flow, flow, auth_response)
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
         if "access_token" not in result:

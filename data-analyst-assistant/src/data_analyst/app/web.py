@@ -80,6 +80,11 @@ CHAT_PAGE_HTML = """<!doctype html>
 <div id="signin">
   <p>Sign in with Power BI access to start chatting.</p>
   <a href="/auth/login">Sign in with Microsoft</a>
+  <p style="font-size: 0.8rem; opacity: 0.7;">
+    Then also <a href="/auth/login?resource=mcp">grant schema access</a> -
+    a separate sign-in, since Entra doesn't allow combining the two in one
+    step. Skippable if you won't be querying new tables/columns this session.
+  </p>
 </div>
 <form id="form">
   <input id="input" type="text" placeholder="Ask about the data..." autocomplete="off" autofocus>
