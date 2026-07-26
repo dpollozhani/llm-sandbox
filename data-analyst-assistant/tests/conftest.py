@@ -1,0 +1,15 @@
+"""`Settings.llm_provider` is required (see config/settings.py) - the real
+FastAPI app builds a real chat model at startup (app/lifespan.py) even in
+tests that immediately override it via `app.dependency_overrides[get_graph]`
+(the override only replaces what a request handler sees; startup still has
+to succeed first). Every test in this codebase drives its own scripted
+FakeToolCallingChatModel instead, so these values are never actually used to
+call a real API - they just need to be present and syntactically valid so
+`Settings()`/`init_chat_model(...)` construct without error. `setdefault` so
+a real ANTHROPIC_API_KEY in the environment (e.g. a developer intentionally
+testing against a real provider) isn't clobbered.
+"""
+import os
+
+os.environ.setdefault("LLM_PROVIDER", "anthropic")
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-not-a-real-key")

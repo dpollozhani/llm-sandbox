@@ -17,13 +17,14 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
-      - key: LLM_PROVIDER
-        value: demo
       - key: LOG_LEVEL
         value: INFO
-      # Set these in the Render dashboard (Environment tab) if you switch
-      # LLM_PROVIDER away from "demo" - `sync: false` keeps them out of this
-      # committed file.
+      # LLM_PROVIDER ("anthropic" or "azure_openai") and the matching
+      # credentials below are required - set them in the Render dashboard
+      # (Environment tab); `sync: false` keeps them out of this committed
+      # file.
+      - key: LLM_PROVIDER
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ANTHROPIC_MODEL

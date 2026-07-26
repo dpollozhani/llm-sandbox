@@ -247,13 +247,14 @@ it:
   per-token chunks under `astream_events`, because LangChain's event
   machinery routes the call through the model's streaming code path
   regardless of which method the calling code used, *if* the model
-  implements one. `clients/llm/factory.py::FakeToolCallingChatModel` adds a
-  `_stream` override for exactly this reason - without it, `LLM_PROVIDER=demo`
-  would only ever produce whole-message `on_chat_model_end` events, so
-  `/chat/stream` would show status updates but never live-typed tokens, an
-  easy thing to miss if you only test with a model that already streams.
-  Real providers (Anthropic, Azure OpenAI) implement real streaming
-  natively, so this only matters for the demo/test model.
+  implements one. `clients/llm/factory.py::FakeToolCallingChatModel` (the
+  scripted model every test drives) adds a `_stream` override for exactly
+  this reason - without it, a test's scripted model would only ever produce
+  whole-message `on_chat_model_end` events, and `/chat/stream` would show
+  status updates but never live-typed tokens, an easy thing to miss if you
+  only test with a model that already streams. Real providers (Anthropic,
+  Azure OpenAI) implement real streaming natively, so this only matters for
+  the test double.
 - **Token events are filtered to the user-facing answer.** `chat_stream`
   only forwards `on_chat_model_stream` chunks when
   `metadata["langgraph_node"]` is `"respond"` or `"clarify"` - otherwise the
@@ -263,8 +264,8 @@ it:
   outermost graph's own `on_chain_end` (`event["name"] == "LangGraph"` with
   no `langgraph_node` in its metadata - that's what distinguishes the whole
   run's own start/end from any node's), not reconstructed from accumulated
-  tokens. In demo mode the tokens happen to add up to the same text; this
-  guarantees it regardless.
+  tokens - those two happen to add up to the same text in practice, but
+  `"done"` doesn't depend on that being true.
 - **The browser can't use `EventSource` for this.** `EventSource` only
   supports `GET` with no request body, and this endpoint needs a JSON POST
   body (`message`/`thread_id`). `app/web.py`'s JS instead reads the

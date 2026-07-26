@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     app_name: str = "data-analyst-assistant"
     log_level: str = "INFO"
 
-    # "demo" runs a scripted fake model with no network/API key required.
-    llm_provider: Literal["azure_openai", "anthropic", "demo"] = "demo"
+    # No default: pick one explicitly. Fails fast (a pydantic ValidationError
+    # at Settings() construction, i.e. app startup) if LLM_PROVIDER isn't set,
+    # rather than silently falling back to anything.
+    llm_provider: Literal["azure_openai", "anthropic"]
 
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"

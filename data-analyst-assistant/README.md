@@ -26,13 +26,15 @@ for how the pieces fit together.
 
 The three external integrations - Power BI MCP, Power BI REST, and a Python
 code-execution sandbox - are mocked (see `src/data_analyst/clients/`), so
-the whole thing runs with no cloud dependency in `LLM_PROVIDER=demo` mode.
+the only real dependency is the LLM provider itself: `LLM_PROVIDER` is
+required (`anthropic` or `azure_openai`, with the matching API key) - there's
+no offline/no-key fallback mode.
 
 ## Quickstart
 
 ```bash
 pip install -e ".[dev]"
-cp .env.example .env   # defaults to LLM_PROVIDER=demo, no keys needed
+cp .env.example .env   # set LLM_PROVIDER and the matching API key
 
 uvicorn data_analyst.app.api:app --reload
 ```
@@ -67,7 +69,7 @@ To try it from your phone without deploying anywhere: run
 For a real public URL (e.g. to open from your phone off Wi-Fi), this repo
 has a Render Blueprint (`/render.yaml` at the repo root - this is a
 monorepo, so it points at `data-analyst-assistant/` via `rootDir`) that
-builds `deploy/docker/Dockerfile` and defaults to `LLM_PROVIDER=demo`.
+builds `deploy/docker/Dockerfile`.
 
 - **Button above**: works once `render.yaml` is on the repo's default
   branch (Render's Blueprint button deploys from the default branch, not
@@ -79,16 +81,16 @@ builds `deploy/docker/Dockerfile` and defaults to `LLM_PROVIDER=demo`.
   `./deploy/docker/Dockerfile` -> Docker Build Context Directory `.` ->
   Health Check Path `/health` -> free plan.
 
-Either way, the free plan spins the instance down after ~15 minutes of
-inactivity (30-60s cold start on the next request) and defaults to demo
-mode - set `LLM_PROVIDER` (and the matching `ANTHROPIC_API_KEY` or
-`AZURE_OPENAI_*` vars) in the service's Environment tab for the real
-multi-agent flow.
+Either way, **the service won't start without `LLM_PROVIDER` and the
+matching `ANTHROPIC_API_KEY` or `AZURE_OPENAI_*` vars set in the service's
+Environment tab** - there's no default provider to fall back to. The free
+plan also spins the instance down after ~15 minutes of inactivity (30-60s
+cold start on the next request).
 
-To see the full multi-agent flow (routing, tool calls across both
-specialists), set `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=azure_openai` in
-`.env` with a real key - or read `tests/e2e/test_api_chat.py`, which drives
-the same flow end-to-end with a scripted model and needs no API key.
+If you just want to see the full multi-agent flow (routing, tool calls
+across both specialists) without setting up a provider at all, read
+`tests/e2e/test_api_chat.py`, which drives it end-to-end with a scripted
+model and needs no API key.
 
 ## Layout
 

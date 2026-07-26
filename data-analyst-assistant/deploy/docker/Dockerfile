@@ -7,8 +7,11 @@ COPY src ./src
 
 RUN pip install --no-cache-dir .
 
-ENV LLM_PROVIDER=demo \
-    LOG_LEVEL=INFO
+ENV LOG_LEVEL=INFO
+# LLM_PROVIDER (and the matching ANTHROPIC_API_KEY/AZURE_OPENAI_* vars) is
+# required at runtime - no default here, since there's no fallback provider
+# to silently fall back to. Pass it via `docker run -e`, docker-compose, or
+# the hosting platform's environment settings.
 
 EXPOSE 8000
 

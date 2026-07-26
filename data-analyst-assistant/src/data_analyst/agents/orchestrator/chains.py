@@ -17,8 +17,9 @@ from data_analyst.agents.orchestrator.prompts import (
 
 
 class Route(BaseModel):
-    """Every field needs a default: the demo chat model's `with_structured_output`
-    stand-in constructs this with no arguments (see clients/llm/factory.py)."""
+    """Every field needs a default: `FakeToolCallingChatModel`'s
+    `with_structured_output` stand-in constructs this with no arguments (see
+    clients/llm/factory.py), which tests rely on."""
 
     next: Literal["datasource", "analysis", "respond", "clarify"] = "respond"
     reason: str = ""

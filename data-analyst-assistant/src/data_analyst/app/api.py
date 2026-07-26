@@ -92,8 +92,7 @@ async def _stream_chat_events(body: ChatRequest, graph: CompiledStateGraph, thre
       only for the respond/clarify node, so supervisor routing chatter and
       specialist-internal reasoning never leak into what looks like "the
       answer". Only fires with a chat model that actually implements
-      streaming (real providers do; the LLM_PROVIDER=demo fake model
-      doesn't, so demo mode shows status updates but not live typing).
+      streaming - both real providers (Anthropic, Azure OpenAI) do.
     - "done": the final payload, identical in shape to what POST /chat
       returns - the authoritative result, regardless of which/how many
       token events arrived before it.

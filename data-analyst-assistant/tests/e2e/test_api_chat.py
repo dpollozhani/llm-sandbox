@@ -1,7 +1,8 @@
 """End-to-end tests against the real FastAPI app (lifespan included), covering
 the full orchestrator -> datasource -> analysis -> respond round trip over
-HTTP, plus the demo-mode default path with no scripting required.
-"""
+HTTP. Every test drives its own scripted model via
+`app.dependency_overrides[get_graph]` (see tests/conftest.py for why the app
+can still start up without one)."""
 from __future__ import annotations
 
 import json
@@ -17,7 +18,7 @@ from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
 
 class ScriptedRoutingModel(FakeToolCallingChatModel):
-    """Extends the demo fake model so the supervisor's structured-output
+    """Extends FakeToolCallingChatModel so the supervisor's structured-output
     routing can be scripted too, not just tool-calling responses."""
 
     routes: list[dict]
@@ -56,31 +57,46 @@ def test_chat_page_is_served_at_root():
     assert "/chat" in response.text
 
 
-def test_demo_mode_answers_without_any_scripting():
-    with TestClient(app) as client:
-        response = client.post("/chat", json={"message": "hello, what can you do?"})
+def test_chat_endpoint_answers_using_a_simple_scripted_model():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat", json={"message": "hello, what can you do?"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed"
-    assert body["reply"]
+    assert body["reply"] == "Here's what I can do."
 
 
-def test_demo_mode_gives_the_same_canned_reply_on_a_second_turn():
-    """Regression test: the demo model's single canned response is the same
-    message object reused on every call. A prior version of
-    FakeToolCallingChatModel returned that object as-is, and LangGraph's
-    add_messages reducer assigns it an id and mutates it in place on first
-    use - so reusing the identical (already-id'd) object on a later turn of
-    the same thread got treated as an update to the earlier message instead
-    of a new one, leaving the just-sent human message last. The API then
-    read that back as "the reply", i.e. the assistant appeared to echo
-    whatever the user just typed on every turn after the first.
+def test_scripted_reply_reused_across_turns_does_not_echo_the_next_message():
+    """Regression test: FakeToolCallingChatModel's single scripted response is
+    the same message object reused on every call (e.g. a model with only one
+    item in `responses`, invoked again on a second turn of the same thread).
+    A prior version returned that object as-is, and LangGraph's add_messages
+    reducer assigns it an id and mutates it in place on first use - so
+    reusing the identical (already-id'd) object on a later turn got treated
+    as an update to the earlier message instead of a new one, leaving the
+    just-sent human message last. The API then read that back as "the
+    reply", i.e. the assistant appeared to echo whatever the user just typed
+    on every turn after the first.
     """
-    with TestClient(app) as client:
-        first = client.post("/chat", json={"message": "hello, what can you do?"})
-        thread_id = first.json()["thread_id"]
-        second = client.post("/chat", json={"message": "banana banana banana", "thread_id": thread_id})
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            first = client.post("/chat", json={"message": "hello, what can you do?"})
+            thread_id = first.json()["thread_id"]
+            second = client.post("/chat", json={"message": "banana banana banana", "thread_id": thread_id})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
 
     assert second.json()["reply"] == first.json()["reply"]
     assert second.json()["reply"] != "banana banana banana"
@@ -226,20 +242,27 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
     assert second.json()["reply"] == "On average, about 4556 per region."
 
 
-def test_stream_demo_mode_emits_status_tokens_and_a_matching_done_event():
-    with TestClient(app) as client:
-        events = _stream_events(client, {"message": "hello, what can you do?"})
+def test_stream_simple_reply_emits_status_tokens_and_a_matching_done_event():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = build_orchestrator_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            events = _stream_events(client, {"message": "hello, what can you do?"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
 
     kinds = [e["type"] for e in events]
     assert kinds[0] == "start"
     assert "status" in kinds
-    assert "token" in kinds  # FakeToolCallingChatModel._stream tokenizes the canned reply
+    assert "token" in kinds  # FakeToolCallingChatModel._stream tokenizes the scripted reply
     assert kinds[-1] == "done"
 
     done = events[-1]
     streamed_reply = "".join(e["content"] for e in events if e["type"] == "token")
     assert done["status"] == "completed"
-    assert done["reply"] == streamed_reply
+    assert done["reply"] == streamed_reply == "Here's what I can do."
 
 
 def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
