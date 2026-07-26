@@ -16,7 +16,9 @@ import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from fastapi.testclient import TestClient
+from pydantic import Field
 
+from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.orchestrator.graph import build_orchestrator_graph
 from data_analyst.app.api import PBITokens, app, get_pbi_tokens
 from data_analyst.app.dependencies import get_graph
@@ -25,18 +27,25 @@ from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_summarizecolumn
 
 
 class ScriptedRoutingModel(FakeToolCallingChatModel):
-    """Extends FakeToolCallingChatModel so the supervisor's structured-output
-    routing can be scripted too, not just tool-calling responses."""
+    """Extends FakeToolCallingChatModel so the supervisor's routing (`Route`)
+    and clarify (`Clarification`) structured outputs can be scripted too,
+    not just tool-calling responses. Each schema gets its own independent
+    call counter/list: `build_supervisor_chain` and `build_clarify_chain`
+    each call `with_structured_output` once, at chain-build time, not once
+    per turn, so a single shared counter would make the two schemas fight
+    over the same list index."""
 
-    routes: list[dict]
+    routes: list[dict] = Field(default_factory=list)
+    clarifications: list[dict] = Field(default_factory=list)
 
     def with_structured_output(self, schema, **kwargs):
+        items = self.clarifications if schema is Clarification else self.routes
         state = {"i": 0}
 
         def _invoke(*_args, **_kwargs):
-            route = self.routes[state["i"]]
+            item = items[state["i"]]
             state["i"] += 1
-            return schema(**route)
+            return schema(**item)
 
         return RunnableLambda(_invoke)
 
@@ -183,8 +192,14 @@ def test_full_flow_delegates_through_both_specialists():
 
 def test_supervisor_asks_for_clarification_when_uncertain():
     llm = ScriptedRoutingModel(
-        responses=[AIMessage(content="Which region and time period do you mean?")],
+        responses=[],
         routes=[{"next": "clarify", "reason": "ambiguous request"}],
+        clarifications=[
+            {
+                "question": "Which region and time period do you mean?",
+                "options": ["North, last month", "South, last quarter"],
+            }
+        ],
     )
     graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
@@ -199,6 +214,7 @@ def test_supervisor_asks_for_clarification_when_uncertain():
     body = response.json()
     assert body["status"] == "clarification_needed"
     assert body["reply"] == "Which region and time period do you mean?"
+    assert body["options"] == ["North, last month", "South, last quarter"]
 
 
 def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
@@ -206,7 +222,11 @@ def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
     supervisor decision after the datasource specialist ran, this would raise
     IndexError instead of returning - proving the specialist's own
     clarifying question short-circuits straight to the reply."""
-    clarify_call = {"name": "request_clarification", "args": {"question": "Which time period do you mean?"}, "id": "c1"}
+    clarify_call = {
+        "name": "request_clarification",
+        "args": {"question": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
+        "id": "c1",
+    }
     llm = ScriptedRoutingModel(
         responses=[
             AIMessage(content="", tool_calls=[clarify_call]),
@@ -227,6 +247,7 @@ def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
     body = response.json()
     assert body["status"] == "clarification_needed"
     assert body["reply"] == "Which time period do you mean?"
+    assert body["options"] == ["Last month", "Last quarter"]
 
 
 def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
@@ -352,8 +373,14 @@ def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():
 
 def test_stream_clarify_path_reports_clarification_needed():
     llm = ScriptedRoutingModel(
-        responses=[AIMessage(content="Which region and time period do you mean?")],
+        responses=[],
         routes=[{"next": "clarify", "reason": "ambiguous request"}],
+        clarifications=[
+            {
+                "question": "Which region and time period do you mean?",
+                "options": ["North, last month", "South, last quarter"],
+            }
+        ],
     )
     graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
@@ -368,3 +395,4 @@ def test_stream_clarify_path_reports_clarification_needed():
     done = events[-1]
     assert done["status"] == "clarification_needed"
     assert done["reply"] == "Which region and time period do you mean?"
+    assert done["options"] == ["North, last month", "South, last quarter"]

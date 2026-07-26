@@ -22,9 +22,11 @@ supervisor round-trip.
 
 `state.py`'s `OrchestratorState` adds `turns` (loop guard, `MAX_TURNS = 6` in
 `nodes.py`), `next` (the last routing decision - also what `app/api.py` uses
-to tell a `"clarification_needed"` response from a `"completed"` one), and
+to tell a `"clarification_needed"` response from a `"completed"` one),
 `data_context` (a human-readable summary of the most recently fetched
-dataset) on top of the shared `ChatState`.
+dataset), and `clarification_options` (the 2-3 options alongside a
+`"clarify"` outcome - see "Two places a clarifying question can come from")
+on top of the shared `ChatState`.
 
 ## Datasource (`agents/datasource/`)
 
@@ -83,9 +85,12 @@ when the requested analysis itself is ambiguous. `models.py` defines
   inside a tool, never exposed to the model.
 - `models.py::AgentResult` - what a specialist hands back to the
   orchestrator (`agent` name + `summary` text).
+- `models.py::Clarification` - a `question` plus 2-3 clearly distinct
+  options, the shape both clarifying-question paths produce (see
+  `docs/architecture.md`'s "Two places a clarifying question can come
+  from").
 - `tools.py::request_clarification` - the tool both specialists share for
-  asking the user a question instead of guessing (see
-  `docs/architecture.md`).
+  asking the user a question (with those 2-3 options) instead of guessing.
 
 ## Adding a new specialist
 

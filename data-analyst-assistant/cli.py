@@ -188,6 +188,16 @@ def stream_chat(base_url: str, message: str, thread_id: str | None, headers: dic
                 yield json.loads(line[len("data: ") :])
 
 
+def _print_options(options: list[str] | None) -> None:
+    """Prints a clarifying question's 2-3 options as a numbered list - no
+    frontend to render buttons here, but seeing the exact options (rather
+    than free-typing a guess at one) is still useful."""
+    if not options:
+        return
+    for i, option in enumerate(options, start=1):
+        print(f"    {i}) {option}")
+
+
 def run_streaming(base_url: str, message: str, thread_id: str | None, headers: dict[str, str]) -> str | None:
     printed_prefix = False
     reply = None
@@ -210,6 +220,7 @@ def run_streaming(base_url: str, message: str, thread_id: str | None, headers: d
                 label = "assistant (clarifying)" if event["status"] == "clarification_needed" else "assistant"
                 print(f"{label}> {reply}", end="")
             print("\n")
+            _print_options(event.get("options"))
         elif kind == "error":
             print(f"\nerror: {event['message']}\n")
     return new_thread_id
@@ -220,6 +231,7 @@ def run_blocking(base_url: str, message: str, thread_id: str | None, headers: di
         result = json.loads(response.read())
     label = "assistant (clarifying)" if result["status"] == "clarification_needed" else "assistant"
     print(f"{label}> {result['reply']}\n")
+    _print_options(result.get("options"))
     return result["thread_id"]
 
 

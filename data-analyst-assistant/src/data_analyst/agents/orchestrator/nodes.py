@@ -3,11 +3,13 @@ specialist subgraph from the current task and fold its answer back in.
 """
 from __future__ import annotations
 
+import json
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
-from data_analyst.agents.common.models import AgentResult
+from data_analyst.agents.common.models import AgentResult, Clarification
 from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
@@ -42,10 +44,17 @@ def _latest_user_task(messages: list[AnyMessage]) -> AnyMessage:
     return messages[-1]
 
 
-def _specialist_asked_for_clarification(messages: list[AnyMessage]) -> bool:
-    """True if the specialist called `request_clarification` during this run
-    (see agents/common/tools.py) instead of completing its task normally."""
-    return any(message.type == "tool" and message.name == request_clarification.name for message in messages)
+def _specialist_clarification(messages: list[AnyMessage]) -> Clarification | None:
+    """The `Clarification` a specialist requested during this run (see
+    agents/common/tools.py::request_clarification), if any - read directly
+    from the tool call's own structured result rather than the model's own
+    (freeform, easy-to-drift) restatement of it, so the question/options a
+    frontend renders always exactly match what the tool was actually called
+    with."""
+    for message in messages:
+        if message.type == "tool" and message.name == request_clarification.name:
+            return Clarification(**json.loads(message.content))
+    return None
 
 
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
@@ -62,18 +71,24 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             "pbi_mcp_token": state.get("pbi_mcp_token"),
         }
     )
-    last_message = result["messages"][-1]
-    summary = getattr(last_message, "content", str(last_message))
 
-    if _specialist_asked_for_clarification(result["messages"]):
+    clarification = _specialist_clarification(result["messages"])
+    if clarification is not None:
         # The specialist itself decided it couldn't proceed confidently and
         # asked its own clarifying question - surface it to the user
         # directly. Setting `next` here (rather than going back to
         # "supervisor") is what lets agents/orchestrator/graph.py route
         # straight to END: no extra supervisor round-trip, no separate
-        # "clarify" node call, just the specialist's question as the reply.
-        return {"messages": [AIMessage(content=summary)], "next": "clarify"}
+        # "clarify" node call, just the specialist's question (and options)
+        # as the reply.
+        return {
+            "messages": [AIMessage(content=clarification.question)],
+            "next": "clarify",
+            "clarification_options": clarification.options,
+        }
 
+    last_message = result["messages"][-1]
+    summary = getattr(last_message, "content", str(last_message))
     agent_result = AgentResult(agent=agent_name, summary=summary)
     update: dict = {"messages": [AIMessage(content=f"[{agent_name}] {agent_result.summary}")]}
     if agent_name == "datasource":
@@ -117,7 +132,10 @@ def build_clarify_node(llm: BaseChatModel):
     chain = build_clarify_chain(llm)
 
     async def clarify_node(state: OrchestratorState):
-        response = await chain.ainvoke(state["messages"])
-        return {"messages": [response]}
+        clarification = await chain.ainvoke(state["messages"])
+        return {
+            "messages": [AIMessage(content=clarification.question)],
+            "clarification_options": clarification.options,
+        }
 
     return clarify_node

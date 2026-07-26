@@ -17,7 +17,10 @@ from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 async def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
     llm = FakeToolCallingChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "pbi_mcp_list_semantic_models", "args": {}, "id": "c1"}]),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}],
+            ),
             AIMessage(content="There is one semantic model: Sales Analytics."),
         ]
     )
@@ -82,7 +85,11 @@ async def test_analysis_node_does_not_overwrite_data_context():
 
 
 async def test_specialist_self_clarification_sets_next_to_clarify():
-    clarify_call = {"name": "request_clarification", "args": {"question": "Which region do you mean?"}, "id": "c1"}
+    clarify_call = {
+        "name": "request_clarification",
+        "args": {"question": "Which region do you mean?", "options": ["North", "South"]},
+        "id": "c1",
+    }
     llm = FakeToolCallingChatModel(
         responses=[AIMessage(content="", tool_calls=[clarify_call]), AIMessage(content="Which region do you mean?")]
     )
@@ -99,4 +106,5 @@ async def test_specialist_self_clarification_sets_next_to_clarify():
 
     assert update["next"] == "clarify"
     assert update["messages"][0].content == "Which region do you mean?"
+    assert update["clarification_options"] == ["North", "South"]
     assert "data_context" not in update

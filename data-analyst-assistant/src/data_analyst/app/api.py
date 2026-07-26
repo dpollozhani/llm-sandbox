@@ -98,11 +98,20 @@ class ChatResponse(BaseModel):
     thread_id: str
     status: Literal["completed", "clarification_needed"]
     reply: str | None = None
+    options: list[str] | None = None
+    """2-3 clearly distinct options a frontend can render as buttons instead
+    of requiring a typed reply - only set when `status` is
+    "clarification_needed" (see agents/common/models.py::Clarification)."""
 
 
 def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
     status = "clarification_needed" if final_state.get("next") == "clarify" else "completed"
-    return ChatResponse(thread_id=thread_id, status=status, reply=final_state["messages"][-1].content)
+    return ChatResponse(
+        thread_id=thread_id,
+        status=status,
+        reply=final_state["messages"][-1].content,
+        options=final_state.get("clarification_options") if status == "clarification_needed" else None,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

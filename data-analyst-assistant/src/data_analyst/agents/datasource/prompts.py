@@ -27,8 +27,9 @@ call the tool as usual.
 If you get into building the query and still can't tell which model, table,
 columns, filters, or measures the user means (not just an error to fix, but
 genuine ambiguity in the request itself), call `request_clarification` with
-a short, specific question instead of guessing - then relay that question as
-your final answer and stop.
+a short, specific question plus 2-3 clearly distinct options (e.g. specific
+tables, columns, or time periods) instead of guessing - then relay that
+question as your final answer and stop.
 
 Get a model's schema via `pbi_mcp_get_semantic_metadata` before querying it,
 unless you've already seen it earlier in this conversation. When a query

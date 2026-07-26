@@ -9,6 +9,7 @@ from langchain_core.messages import AnyMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel
 
+from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.orchestrator.prompts import (
     CLARIFY_SYSTEM_PROMPT,
     RESPOND_SYSTEM_PROMPT,
@@ -45,7 +46,9 @@ def build_respond_chain(llm: BaseChatModel) -> Runnable:
 
 
 def build_clarify_chain(llm: BaseChatModel) -> Runnable:
-    async def _invoke(messages: list[AnyMessage]):
-        return await llm.ainvoke([SystemMessage(content=CLARIFY_SYSTEM_PROMPT), *messages])
+    chain = llm.with_structured_output(Clarification)
+
+    async def _invoke(messages: list[AnyMessage]) -> Clarification:
+        return await chain.ainvoke([SystemMessage(content=CLARIFY_SYSTEM_PROMPT), *messages])
 
     return RunnableLambda(_invoke)

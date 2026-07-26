@@ -43,6 +43,9 @@ instead of a generic pitch, and ask what they'd like to look at."""
 
 CLARIFY_SYSTEM_PROMPT = """You are a data analyst assistant. You're uncertain about how to
 proceed - either which data/columns/filters the user means, or what
-analysis would answer their question. Ask a single, short, specific
-clarifying question that would resolve the ambiguity. Don't apologize or
-explain your uncertainty at length - just ask the question."""
+analysis would answer their question. Produce a single, short, specific
+clarifying question, plus 2-3 clearly distinct, mutually exclusive options
+the user could pick from instead of typing a reply (e.g. specific regions,
+time periods, or metrics) - a frontend may render them as buttons. Don't
+apologize or explain your uncertainty at length - just the question and the
+options."""

@@ -62,6 +62,13 @@ CHAT_PAGE_HTML = """<!doctype html>
     display: inline-block; padding: 0.6rem 1.5rem; border-radius: 1.5rem;
     background: #2563eb; color: #fff; text-decoration: none; font-weight: 600;
   }
+  .options { display: flex; flex-direction: column; gap: 0.4rem; align-self: flex-start; max-width: 85%; }
+  .option-btn {
+    text-align: left; padding: 0.55rem 0.85rem; border-radius: 0.9rem;
+    border: 1px solid #d97706; background: #fff; color: #92400e;
+    font: inherit; cursor: pointer;
+  }
+  .option-btn:hover { background: #fffbeb; }
 </style>
 </head>
 <body>
@@ -103,6 +110,28 @@ CHAT_PAGE_HTML = """<!doctype html>
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     return el;
+  }
+
+  // Renders 2-3 clarifying-question options as buttons; clicking one both
+  // removes the whole set (so only one of them can ever be picked) and
+  // submits it exactly as if the user had typed and sent that option.
+  function renderOptions(options) {
+    const box = document.createElement("div");
+    box.className = "options";
+    for (const option of options) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "option-btn";
+      btn.textContent = option;
+      btn.addEventListener("click", () => {
+        box.remove();
+        input.value = option;
+        form.requestSubmit();
+      });
+      box.appendChild(btn);
+    }
+    log.appendChild(box);
+    log.scrollTop = log.scrollHeight;
   }
 
   // Parses a `text/event-stream` body by hand: EventSource can't be used
@@ -174,6 +203,9 @@ CHAT_PAGE_HTML = """<!doctype html>
           threadLabel.textContent = "thread " + threadId.slice(0, 8);
           pending.textContent = evt.reply;
           pending.className = "msg assistant" + (evt.status === "clarification_needed" ? " clarifying" : "");
+          if (evt.status === "clarification_needed" && evt.options && evt.options.length) {
+            renderOptions(evt.options);
+          }
         } else if (evt.type === "error") {
           pending.textContent = "Error: " + evt.message;
           pending.className = "msg assistant error";

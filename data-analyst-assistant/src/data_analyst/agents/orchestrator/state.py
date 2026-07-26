@@ -21,3 +21,9 @@ class OrchestratorState(ChatState):
     supervisor's routing prompt and into the analysis specialist's seed
     message, so a follow-up question can reuse already-fetched data instead
     of triggering a new datasource delegation."""
+    clarification_options: list[str] | None
+    """Set alongside a "clarify" outcome - either the supervisor's own
+    upfront decision (`build_clarify_node`) or a specialist's
+    `request_clarification` tool call (`_run_specialist`) - to the 2-3
+    options the user can pick from. Read by `app/api.py`'s `ChatResponse` so
+    a frontend can render them as buttons instead of requiring free text."""

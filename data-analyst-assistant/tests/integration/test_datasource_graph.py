@@ -115,7 +115,11 @@ async def test_run_dax_query_without_a_signed_in_token_returns_error_not_raise()
 
 
 async def test_can_ask_for_clarification_instead_of_guessing():
-    clarify_call = {"name": "request_clarification", "args": {"question": "Which time period do you mean?"}, "id": "c1"}
+    clarify_call = {
+        "name": "request_clarification",
+        "args": {"question": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
+        "id": "c1",
+    }
     llm = FakeToolCallingChatModel(
         responses=[
             AIMessage(content="", tool_calls=[clarify_call]),

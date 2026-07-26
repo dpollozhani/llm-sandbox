@@ -57,7 +57,11 @@ async def test_sandbox_execute_ref_is_scoped_to_its_own_session():
 
 
 async def test_can_ask_for_clarification_instead_of_guessing():
-    clarify_call = {"name": "request_clarification", "args": {"question": "Which metric do you want analyzed?"}, "id": "c1"}
+    clarify_call = {
+        "name": "request_clarification",
+        "args": {"question": "Which metric do you want analyzed?", "options": ["Total revenue", "Average revenue"]},
+        "id": "c1",
+    }
     llm = FakeToolCallingChatModel(
         responses=[
             AIMessage(content="", tool_calls=[clarify_call]),

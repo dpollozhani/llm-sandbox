@@ -90,10 +90,24 @@ different kinds of uncertainty at different costs:
    still delegating and hoping - so the specialist is given the tool to
    bail out itself, exactly when it discovers it needs to.
 
+Both paths produce the same shape: a `Clarification`
+(`agents/common/models.py`) - a `question` plus 2-3 clearly distinct
+options - not just free text. The supervisor's own path gets one via
+`build_clarify_chain`'s structured output; a specialist's path gets one by
+calling `request_clarification` with `question`/`options` as tool
+arguments (validated to 2-3 items at the tool-call boundary). `ChatResponse`
+(`app/api.py`) carries `options` alongside `reply` whenever `status` is
+`"clarification_needed"`, so a frontend can render them as buttons instead
+of requiring a typed reply - see `app/web.py`'s `renderOptions`, where
+picking one both removes the buttons (so only one is ever selectable) and
+submits it exactly as if it had been typed and sent.
+
 `_run_specialist` (`agents/orchestrator/nodes.py`) detects the second case
-by checking whether `request_clarification` was called during the
-specialist's run (`_specialist_asked_for_clarification`), and if so sets
-`next="clarify"` itself and returns the specialist's own question directly.
+by looking for a `request_clarification` tool call in the specialist's run
+and parsing its own structured result (`_specialist_clarification`) -
+rather than trusting the specialist's own final freeform message to
+faithfully restate the question and options - and if found sets
+`next="clarify"` and returns that `Clarification` directly.
 `agents/orchestrator/graph.py`'s conditional edges out of `datasource`/
 `analysis` check that: normally they loop back to `supervisor`, but if
 `next` is now `"clarify"`, they go straight to `END` instead. This is the
