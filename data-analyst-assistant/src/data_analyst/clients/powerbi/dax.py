@@ -79,6 +79,17 @@ def _literal(value: object) -> str:
     return str(value)
 
 
+def _bracketed(name: str) -> str:
+    """Wrap `name` in exactly one pair of square brackets - an existing
+    model measure is always referenced this way, with no table qualifier.
+    Strips a pair the caller (or an overly-helpful model) already added,
+    so a name like "[Inventory on-hand]" doesn't double up into
+    "[[Inventory on-hand]]", which Power BI would reject."""
+    if name.startswith("[") and name.endswith("]"):
+        name = name[1:-1]
+    return f"[{name}]"
+
+
 def build_summarizecolumns(spec: DaxQuerySpec) -> str:
     """Render a `DaxQuerySpec` to a `SUMMARIZECOLUMNS(...)` DAX string."""
     parts: list[str] = [f"'{spec.table}'[{col}]" for col in spec.group_by]
@@ -87,7 +98,7 @@ def build_summarizecolumns(spec: DaxQuerySpec) -> str:
         parts.append(f"FILTER(ALL('{spec.table}'), '{spec.table}'[{f.column}] {keyword} {_literal(f.value)})")
     for m in spec.measures:
         if m.aggregation is None:
-            parts.append(f'"{m.name}", [{m.name}]')
+            parts.append(f'"{m.name}", {_bracketed(m.name)}')
         else:
             parts.append(f'"{m.name}", {m.aggregation}(\'{spec.table}\'[{m.column}])')
     inner = ",\n    ".join(parts)

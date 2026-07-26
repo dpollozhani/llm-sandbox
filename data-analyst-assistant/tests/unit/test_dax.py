@@ -47,6 +47,22 @@ def test_measure_with_aggregation_requires_column():
         DaxMeasure(name="Total Revenue", aggregation="SUM")
 
 
+def test_build_summarizecolumns_does_not_double_bracket_an_already_bracketed_measure_name():
+    """If the caller (or model) already wrapped the measure name in
+    brackets, e.g. "[Inventory on-hand]", the reference must still come
+    out as a single [Inventory on-hand] - not [[Inventory on-hand]], which
+    Power BI would reject."""
+    spec = DaxQuerySpec(
+        model_name="m",
+        table="Sales",
+        group_by=["Region"],
+        measures=[DaxMeasure(name="[Inventory on-hand]")],
+    )
+    dax = build_summarizecolumns(spec)
+    assert '"[Inventory on-hand]", [Inventory on-hand]' in dax
+    assert "[[Inventory on-hand]]" not in dax
+
+
 def test_validate_rejects_non_summarizecolumns_text():
     spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
     with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
