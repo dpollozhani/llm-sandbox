@@ -34,8 +34,9 @@ BI's `executeQueries` rejects a service-principal token outright on any
 dataset with RLS configured (see
 [`clients/powerbi/auth.py`](src/data_analyst/clients/powerbi/auth.py)'s
 module docstring). So every `/chat` call needs a signed-in user: the
-browser flow (`app/auth.py`) is a standard OAuth authorization-code sign-in,
-and `cli.py` gets its own tokens via a device-code flow. The Python sandbox
+browser flow (`app/auth.py`) is a PKCE authorization-code sign-in (public
+client, no client secret anywhere - delegated permissions don't require
+one), and `cli.py` gets its own tokens via a device-code flow. The Python sandbox
 (`clients/sandbox/`) is still in-process rather than an isolated service -
 see "What's simplified" below. `LLM_PROVIDER` (`anthropic` or
 `azure_openai`, with the matching API key) is also required - there's no
@@ -44,12 +45,14 @@ offline/no-key fallback.
 ## Quickstart
 
 You'll need one Entra ID (Azure AD) app registration with:
-- a client secret (this app is a confidential OAuth client for the browser
-  sign-in flow)
-- **Allow public client flows** enabled (for `cli.py`'s device-code flow)
+- **Allow public client flows** enabled - this app is a public client (PKCE)
+  everywhere, no client secret to configure or rotate
+- `http://localhost:8000/auth/callback` registered as a redirect URI under
+  the **"Mobile and desktop applications"** platform, not "Web" - Entra
+  treats a "Web" redirect URI as confidential-client-only and will reject a
+  secret-less token exchange against it
 - delegated API permissions for the Power BI Service, and for the remote
   Power BI MCP server if you use it - with admin consent granted
-- `http://localhost:8000/auth/callback` registered as a Web redirect URI
 
 ```bash
 pip install -e ".[dev]"
@@ -107,14 +110,15 @@ builds `deploy/docker/Dockerfile`.
 
 Either way, **the service won't start without `LLM_PROVIDER` and the
 matching `ANTHROPIC_API_KEY`/`AZURE_OPENAI_*` vars, plus `ENTRA_TENANT_ID`,
-`ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_REDIRECT_URI`, set in
-the service's Environment tab** - there's no default provider or Power BI
-sign-in to fall back to. Set `ENTRA_REDIRECT_URI` to this service's public
-URL + `/auth/callback` (e.g.
+`ENTRA_CLIENT_ID`, and `ENTRA_REDIRECT_URI`, set in the service's
+Environment tab** - there's no default provider or Power BI sign-in to fall
+back to. Set `ENTRA_REDIRECT_URI` to this service's public URL +
+`/auth/callback` (e.g.
 `https://data-analyst-assistant.onrender.com/auth/callback`) and register
-that exact URI on the Entra ID app registration too. The free plan also
-spins the instance down after ~15 minutes of inactivity (30-60s cold start
-on the next request).
+that exact URI, under the "Mobile and desktop applications" platform, on
+the Entra ID app registration too. The free plan also spins the instance
+down after ~15 minutes of inactivity (30-60s cold start on the next
+request).
 
 If you just want to see the full multi-agent flow (routing, tool calls
 across both specialists) without a Power BI tenant or LLM provider at all,

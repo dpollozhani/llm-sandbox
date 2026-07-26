@@ -39,15 +39,16 @@ services:
         value: gpt-4o
       # Entra ID sign-in for Power BI access - required for every /chat
       # call, not just Power BI-specific questions (see
-      # data_analyst/clients/powerbi/auth.py's module docstring). Set
-      # ENTRA_REDIRECT_URI to this service's public URL + /auth/callback
-      # (e.g. https://data-analyst-assistant.onrender.com/auth/callback)
-      # and register that same URI on the Entra ID app registration.
+      # data_analyst/clients/powerbi/auth.py's module docstring). This app
+      # is a public client (PKCE, no client secret) - set ENTRA_REDIRECT_URI
+      # to this service's public URL + /auth/callback (e.g.
+      # https://data-analyst-assistant.onrender.com/auth/callback) and
+      # register that same URI on the Entra ID app registration under the
+      # "Mobile and desktop applications" platform (not "Web" - a Web
+      # redirect URI requires a client secret).
       - key: ENTRA_TENANT_ID
         sync: false
       - key: ENTRA_CLIENT_ID
-        sync: false
-      - key: ENTRA_CLIENT_SECRET
         sync: false
       - key: ENTRA_REDIRECT_URI
         sync: false

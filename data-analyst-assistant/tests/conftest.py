@@ -21,5 +21,4 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test-not-a-real-key")
 # app.api.get_pbi_tokens (see tests/e2e/test_api_chat.py).
 os.environ.setdefault("ENTRA_TENANT_ID", "test-tenant")
 os.environ.setdefault("ENTRA_CLIENT_ID", "test-client-id")
-os.environ.setdefault("ENTRA_CLIENT_SECRET", "test-not-a-real-secret")
 os.environ.setdefault("ENTRA_REDIRECT_URI", "http://localhost:8000/auth/callback")

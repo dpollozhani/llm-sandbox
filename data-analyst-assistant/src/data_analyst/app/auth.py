@@ -1,16 +1,18 @@
-"""Browser sign-in: Entra ID (Azure AD) OAuth authorization-code flow.
+"""Browser sign-in: Entra ID (Azure AD) OAuth authorization-code flow with
+PKCE, as a public client (no client secret) - see
+`clients/powerbi/auth.py`'s module docstring for why, and for the redirect
+URI platform-type requirement that goes with it.
 
-This app is a confidential OAuth client (it holds `entra_client_secret`).
-`/auth/login` redirects to Microsoft, requesting consent for both Power BI
-resources a chat turn might need (`PBI_REST_SCOPE` up front,
-`PBI_MCP_SCOPE` via `extra_scopes_to_consent` so the one consent screen
-covers both - see `TokenBroker.get_token` for how the second resource's
-token is later minted silently from the same refresh token).
-`/auth/callback` exchanges the resulting code for tokens and stores the
-resulting MSAL token cache server-side, keyed by an opaque session id kept
-in a cookie - the cookie itself never holds a token, only that lookup key,
-mirroring how `clients/sandbox/client.py` keys its per-session store
-(process-local; lost on restart).
+`/auth/login` starts the flow (`TokenBroker.start_login`), redirects to
+Microsoft, and stashes the returned flow dict (which carries the PKCE
+verifier and expected `state`, among other things MSAL needs to complete
+the exchange) server-side, keyed by its own `state` value.
+`/auth/callback` looks that flow back up by the `state` query param Entra
+sends back, exchanges the code for tokens (`TokenBroker.redeem_code`), and
+stores the resulting MSAL token cache server-side, keyed by an opaque
+session id kept in a cookie - the cookie itself never holds a token or the
+flow dict, only that lookup key, mirroring how `clients/sandbox/client.py`
+keys its per-session store (process-local; lost on restart).
 
 `cli.py` doesn't use any of this - it gets its own tokens directly via a
 device-code flow and sends them as request headers instead. See
@@ -23,7 +25,7 @@ import secrets
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from data_analyst.clients.powerbi.auth import PBI_MCP_SCOPE, PBI_REST_SCOPE, TokenBroker, build_msal_app
+from data_analyst.clients.powerbi.auth import TokenBroker
 from data_analyst.config.settings import Settings, get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -32,7 +34,7 @@ SESSION_COOKIE = "das_session"
 
 # Process-local, mirroring clients/sandbox/client.py's per-session registry.
 _sessions: dict[str, str] = {}  # session_id -> serialized MSAL token cache
-_pending_states: dict[str, str] = {}  # oauth "state" -> session_id
+_pending_flows: dict[str, tuple[str, dict]] = {}  # oauth "state" -> (session_id, flow)
 
 
 def get_token_broker(request: Request, settings: Settings) -> TokenBroker | None:
@@ -66,35 +68,32 @@ async def whoami(request: Request) -> dict:
 async def login(request: Request) -> RedirectResponse:
     settings = get_settings()
     session_id = request.cookies.get(SESSION_COOKIE) or secrets.token_urlsafe(32)
-    state = secrets.token_urlsafe(16)
-    _pending_states[state] = session_id
 
-    app_ = build_msal_app(settings)
-    auth_url = app_.get_authorization_request_url(
-        scopes=[PBI_REST_SCOPE],
-        state=state,
-        redirect_uri=settings.entra_redirect_uri,
-        extra_scopes_to_consent=[PBI_MCP_SCOPE],
-    )
-    response = RedirectResponse(auth_url)
+    broker = TokenBroker(settings, serialized_cache=_sessions.get(session_id))
+    flow = broker.start_login()
+    _pending_flows[flow["state"]] = (session_id, flow)
+
+    response = RedirectResponse(flow["auth_uri"])
     response.set_cookie(SESSION_COOKIE, session_id, httponly=True, samesite="lax")
     return response
 
 
 @router.get("/callback")
-async def callback(
-    request: Request, code: str | None = None, state: str | None = None, error_description: str | None = None
-) -> RedirectResponse:
-    if error_description:
-        raise HTTPException(status_code=400, detail=error_description)
-    if not code or not state or state not in _pending_states:
-        raise HTTPException(status_code=400, detail="Invalid or expired sign-in attempt")
+async def callback(request: Request) -> RedirectResponse:
+    params = dict(request.query_params)
+    if "error" in params:
+        raise HTTPException(status_code=400, detail=params.get("error_description", params["error"]))
 
-    session_id = _pending_states.pop(state)
+    state = params.get("state")
+    pending = _pending_flows.pop(state, None) if state else None
+    if pending is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired sign-in attempt")
+    session_id, flow = pending
+
     settings = get_settings()
-    broker = TokenBroker(settings)
+    broker = TokenBroker(settings, serialized_cache=_sessions.get(session_id))
     try:
-        await broker.redeem_code(code)
+        await broker.redeem_code(flow, params)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

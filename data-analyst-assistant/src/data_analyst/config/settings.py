@@ -38,10 +38,12 @@ class Settings(BaseSettings):
     # GetSemanticMetadata both enforce row-level security using the calling
     # user's own identity - a service-principal (app-only) token is rejected
     # outright on datasets with RLS - so every request needs a signed-in
-    # user's delegated token, not a client-credentials token.
+    # user's delegated token, not a client-credentials token. A public
+    # client (PKCE, no client secret) - see clients/powerbi/auth.py's module
+    # docstring for the Entra app registration requirements that go with
+    # that (redirect URI platform type, "Allow public client flows").
     entra_tenant_id: str
     entra_client_id: str
-    entra_client_secret: str
     entra_redirect_uri: str
 
     pbi_mcp_server_url: str = "https://api.fabric.microsoft.com/v1/mcp/powerbi"
