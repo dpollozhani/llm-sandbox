@@ -9,7 +9,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
-from data_analyst.agents.common.models import AgentResult, Clarification
+from data_analyst.agents.common.models import AgentResult, Clarification, FetchedDataset
 from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
@@ -57,6 +57,28 @@ def _specialist_clarification(messages: list[AnyMessage]) -> Clarification | Non
     return None
 
 
+def _fetched_dataset(messages: list[AnyMessage]) -> FetchedDataset | None:
+    """The `FetchedDataset` behind the most recent successful
+    `pbi_rest_run_dax_query` call during this run, if any - read from the
+    tool's own structured result (`dataset_id`/`model_name`/`query`/
+    `row_count`), not a specialist's own freeform summary of it, which isn't
+    guaranteed to mention all of it. Searched newest-first so a failed
+    attempt followed by a successful retry resolves to the retry."""
+    for message in reversed(messages):
+        if message.type != "tool" or message.name != "pbi_rest_run_dax_query":
+            continue
+        payload = json.loads(message.content)
+        if "dataset_id" not in payload:
+            continue  # an {"error": ...} result, not a successful fetch
+        return FetchedDataset(
+            dataset_id=payload["dataset_id"],
+            model_name=payload["model_name"],
+            row_count=payload["row_count"],
+            **payload["query"],
+        )
+    return None
+
+
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
     data_context = state.get("data_context")
 
@@ -72,7 +94,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
     else:
         task_message = _latest_user_task(state["messages"])
         seed_content = (
-            f"(Available data in this session: {data_context})\n\n{task_message.content}"
+            f"(Available data in this session: {data_context.describe()})\n\n{task_message.content}"
             if data_context
             else task_message.content
         )
@@ -111,10 +133,15 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         "awaiting_clarification": False,
     }
     if agent_name == "datasource":
-        # Lets a follow-up question route straight to "analysis" (or skip
-        # re-delegating altogether) instead of always re-fetching - see
-        # SUPERVISOR_SYSTEM_PROMPT and clients/sandbox/client.py's cache.
-        update["data_context"] = agent_result.summary
+        fetched = _fetched_dataset(result["messages"])
+        if fetched is not None:
+            # Lets a follow-up question route straight to "analysis" (or skip
+            # re-delegating altogether) instead of always re-fetching - see
+            # SUPERVISOR_SYSTEM_PROMPT and clients/sandbox/client.py's cache.
+            # Left out of `update` (not overwritten with None) when this run
+            # didn't fetch anything (e.g. only browsed the schema), so a
+            # dataset from an earlier turn stays available.
+            update["data_context"] = fetched
     return update
 
 

@@ -32,7 +32,7 @@ def build_supervisor_chain(llm: BaseChatModel) -> Runnable:
     async def _invoke(args: dict) -> Route:
         prompt = SUPERVISOR_SYSTEM_PROMPT
         if data_context := args.get("data_context"):
-            prompt += f"\n\nCurrently available data in this session: {data_context}"
+            prompt += f"\n\nCurrently available data in this session: {data_context.describe()}"
         return await router.ainvoke([SystemMessage(content=prompt), *args["messages"]])
 
     return RunnableLambda(_invoke)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from data_analyst.agents.common.models import FetchedDataset
 from data_analyst.agents.common.state import ChatState
 
 
@@ -14,13 +15,13 @@ class OrchestratorState(ChatState):
 
     turns: int
     next: str | None
-    data_context: str | None
-    """Human-readable summary of the most recently fetched dataset (set by
-    `_run_specialist` after a successful datasource call, e.g. "Sales grouped
-    by Region with Total Revenue (dataset_id=dataset_3)"). Threaded into the
-    supervisor's routing prompt and into the analysis specialist's seed
-    message, so a follow-up question can reuse already-fetched data instead
-    of triggering a new datasource delegation."""
+    data_context: FetchedDataset | None
+    """The most recently fetched dataset (set by `_run_specialist` from the
+    datasource tool's own structured result, not a specialist's freeform
+    summary of it - see `FetchedDataset`). Threaded into the supervisor's
+    routing prompt and into the analysis specialist's seed message (via
+    `.describe()`), so a follow-up question can reuse already-fetched data
+    instead of triggering a new datasource delegation."""
     clarification_options: list[str] | None
     """Set alongside a "clarify" outcome - either the supervisor's own
     upfront decision (`build_clarify_node`) or a specialist's
@@ -36,7 +37,6 @@ class OrchestratorState(ChatState):
     clarifying question needs the specialist to see the *whole* exchange
     (the original ask, its own question, the user's answer) - a specialist
     subgraph is rebuilt from scratch on every delegation and remembers
-    nothing between turns on its own, so without this it was answering each
-    clarification reply as an entirely new, context-free request (visible in
-    production as the same specialist asking near-identical questions in a
-    loop instead of ever converging)."""
+    nothing between turns on its own, so without this a clarification reply
+    would land as an entirely new, context-free request instead of a
+    continuation of the one that prompted the question."""

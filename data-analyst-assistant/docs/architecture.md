@@ -183,7 +183,13 @@ This cache is the hard guarantee against redundant fetches. On top of it,
 `SUPERVISOR_SYSTEM_PROMPT` tells the model what's already available
 (`data_context`) so it can often skip delegating to "datasource" at all for
 a follow-up that only needs analysis - a soft optimization, not something
-the correctness of "no duplicate fetch" depends on.
+the correctness of "no duplicate fetch" depends on. `data_context` is a
+`FetchedDataset` (`agents/common/models.py`) - `dataset_id`, `model_name`,
+and the query's `group_by`/`filters`/`measures`/`row_count` in one place -
+built by `_run_specialist` from `pbi_rest_run_dax_query`'s own structured
+result, not the datasource specialist's freeform final summary, which has
+no guarantee of mentioning all of it. `.describe()` renders it to the short
+line threaded into prompts.
 
 ## No mutating actions (by design)
 

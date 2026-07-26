@@ -110,6 +110,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
             df = store.peek(cached_dataset_id)
             return {
                 "dataset_id": cached_dataset_id,
+                "model_name": model_name,
                 "query": query_summary,
                 "row_count": len(df),
                 "preview": df.head(5).to_dict(orient="records"),
@@ -125,6 +126,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         store.remember(cache_key, dataset_id)
         return {
             "dataset_id": dataset_id,
+            "model_name": model_name,
             "query": query_summary,
             "row_count": len(df),
             "preview": df.head(5).to_dict(orient="records"),
