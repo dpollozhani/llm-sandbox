@@ -6,9 +6,8 @@ Each column reference (`DaxColumn`, `DaxFilter`, an ad-hoc `DaxMeasure`
 aggregation) names its own table - there is deliberately no single
 spec-level "the table" for a query. `SUMMARIZECOLUMNS` naturally mixes
 columns from different, related tables in one query - e.g. group by a
-dimension table's column while summing a fact table's column, completely
-normal for a star-schema model - so forcing every column onto one shared
-table would make that kind of query inexpressible.
+dimension table's column while summing a fact table's column - so forcing
+every column onto one shared table would make that inexpressible.
 
 - with at least one `group_by` column: `EVALUATE SUMMARIZECOLUMNS(...)`,
   filters folded in as `FILTER(ALL(...), ...)` table arguments.

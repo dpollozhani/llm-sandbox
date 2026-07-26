@@ -81,9 +81,8 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         Each `group_by`/`filters` entry, and an ad-hoc `measures` aggregation,
         names its own table - a group-by column and an aggregated measure can
         come from different, related tables in the same query (e.g. group by
-        a dimension table's column while summing a fact table's column), the
-        same way a real star-schema model works. Don't force everything onto
-        one table.
+        a dimension table's column while summing a fact table's column).
+        Don't force everything onto one table.
 
         If this exact query (same columns/filters/measures) was already
         run earlier in this conversation, the cached result is reused instead

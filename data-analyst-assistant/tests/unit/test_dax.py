@@ -27,11 +27,11 @@ def test_build_dax_query_shape():
 
 
 def test_build_dax_query_mixes_columns_from_different_related_tables():
-    """A group-by column and an aggregated measure column can (and often
-    do) belong to different, related tables in a star-schema model - e.g.
-    grouping by a dimension table's column while summing a fact table's
-    column - so each must be independently table-qualified rather than
-    sharing one table for the whole query."""
+    """A group-by column and an aggregated measure column can belong to
+    different, related tables - e.g. grouping by a dimension table's
+    column while summing a fact table's column - so each must be
+    independently table-qualified rather than sharing one table for the
+    whole query."""
     spec = DaxQuerySpec(
         model_name="m",
         group_by=[DaxColumn(table="dimItemMaster", column="BRIC")],

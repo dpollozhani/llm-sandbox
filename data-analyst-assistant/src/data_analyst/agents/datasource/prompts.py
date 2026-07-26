@@ -26,9 +26,9 @@ query from structured arguments you provide:
 Each `group_by`/`filters` entry, and an ad-hoc `measures` aggregation, names
 its own table - a group-by column and an aggregated measure can (and often
 do) come from different, related tables in the same query, e.g. group by a
-dimension table's column while summing a fact table's column. That's how
-real star-schema models work; never force every column onto the same
-table just because one measure happens to live there.
+dimension table's column while summing a fact table's column. Never force
+every column onto the same table just because one measure happens to live
+there.
 Infer these from what the user is asking for - at least one of `group_by` or
 `measures` is required. If the tool call fails (e.g. an unknown column - this
 is only caught by Power BI itself, not validated up front), fix the
