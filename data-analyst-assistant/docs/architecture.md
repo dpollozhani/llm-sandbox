@@ -164,8 +164,8 @@ problem and can correct its next tool call - the same pattern
 
 Every conversation (`thread_id`) gets its own `SandboxClient`
 (`clients/sandbox/client.py::get_sandbox_client`), which holds both the
-staged DataFrames (referenced by `sandbox_ref`) *and* a cache from a query's
-structural signature (`DaxQuerySpec.cache_key()`) to the `sandbox_ref` that
+staged DataFrames (referenced by `dataset_id`) *and* a cache from a query's
+structural signature (`DaxQuerySpec.cache_key()`) to the `dataset_id` that
 already answers it. `pbi_rest_run_dax_query` checks that cache before
 running a query at all: an unchanged data requirement - even across
 separate HTTP turns - is served from the cache (`reused: true` in the tool's

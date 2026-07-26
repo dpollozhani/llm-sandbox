@@ -8,7 +8,7 @@ from data_analyst.clients.sandbox.client import get_sandbox_client
 
 async def test_sandbox_execute_uses_staged_dataframe():
     session_id = "sess-analysis-1"
-    ref = get_sandbox_client(session_id).stage(
+    dataset_id = get_sandbox_client(session_id).stage(
         pd.DataFrame([{"Region": "North", "Revenue": 10.0}, {"Region": "South", "Revenue": 5.0}])
     )
 
@@ -19,7 +19,7 @@ async def test_sandbox_execute_uses_staged_dataframe():
                 tool_calls=[
                     {
                         "name": "python_sandbox_execute",
-                        "args": {"code": "result = df['Revenue'].sum()", "sandbox_ref": ref},
+                        "args": {"code": "result = df['Revenue'].sum()", "dataset_id": dataset_id},
                         "id": "c1",
                     }
                 ],
@@ -36,14 +36,16 @@ async def test_sandbox_execute_uses_staged_dataframe():
     assert result["messages"][-1].content == "Total revenue is 15."
 
 
-async def test_sandbox_execute_ref_is_scoped_to_its_own_session():
-    ref = get_sandbox_client("sess-analysis-owner").stage(pd.DataFrame([{"x": 1}]))
+async def test_sandbox_execute_dataset_id_is_scoped_to_its_own_session():
+    dataset_id = get_sandbox_client("sess-analysis-owner").stage(pd.DataFrame([{"x": 1}]))
 
     llm = FakeToolCallingChatModel(
         responses=[
             AIMessage(
                 content="",
-                tool_calls=[{"name": "python_sandbox_execute", "args": {"code": "result = 1", "sandbox_ref": ref}, "id": "c1"}],
+                tool_calls=[
+                    {"name": "python_sandbox_execute", "args": {"code": "result = 1", "dataset_id": dataset_id}, "id": "c1"}
+                ],
             ),
             AIMessage(content="done"),
         ]
@@ -53,7 +55,7 @@ async def test_sandbox_execute_ref_is_scoped_to_its_own_session():
     result = await graph.ainvoke({"messages": [HumanMessage(content="use it")], "session_id": "sess-analysis-other"})
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
-    assert "unknown sandbox_ref" in tool_messages[0].content.lower()
+    assert "unknown dataset_id" in tool_messages[0].content.lower()
 
 
 async def test_can_ask_for_clarification_instead_of_guessing():

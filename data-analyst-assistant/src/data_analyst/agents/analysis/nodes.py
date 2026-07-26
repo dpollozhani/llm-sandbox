@@ -15,16 +15,16 @@ from data_analyst.clients.sandbox.client import get_sandbox_client
 
 @tool
 async def python_sandbox_execute(
-    code: str, state: Annotated[AnalysisState, InjectedState], sandbox_ref: str | None = None
+    code: str, state: Annotated[AnalysisState, InjectedState], dataset_id: str | None = None
 ) -> dict:
     """Execute Python/pandas code in an isolated sandbox.
 
-    If `sandbox_ref` is given, the staged DataFrame is bound to the local
+    If `dataset_id` is given, the staged DataFrame is bound to the local
     variable `df` before running `code`. Assign to a variable named `result`
     to return a value; anything printed is captured as stdout.
     """
     store = get_sandbox_client(state["session_id"])
-    result = await store.execute(code, sandbox_ref)
+    result = await store.execute(code, dataset_id)
     return result.model_dump()
 
 

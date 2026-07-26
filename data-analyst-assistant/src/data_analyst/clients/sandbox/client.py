@@ -1,6 +1,6 @@
 """Client for the (mocked) sandbox execution service.
 
-Stages DataFrames under a reference id so tool results can be handed between
+Stages DataFrames under a dataset id so tool results can be handed between
 agents by reference instead of round-tripping full result sets through the
 LLM's context window, then delegates actual execution to `executor.py`. In
 production this class would be an HTTP client to an isolated code-execution
@@ -25,26 +25,26 @@ from data_analyst.telemetry.tracing import trace_span
 class SandboxClient:
     def __init__(self) -> None:
         self._store: dict[str, pd.DataFrame] = {}
-        self._query_cache: dict[str, str] = {}  # query cache_key -> sandbox_ref
-        self._ref_counter = itertools.count(1)
+        self._query_cache: dict[str, str] = {}  # query cache_key -> dataset_id
+        self._id_counter = itertools.count(1)
 
     def stage(self, df: pd.DataFrame) -> str:
-        ref = f"df_{next(self._ref_counter)}"
-        self._store[ref] = df
-        return ref
+        dataset_id = f"dataset_{next(self._id_counter)}"
+        self._store[dataset_id] = df
+        return dataset_id
 
-    def peek(self, sandbox_ref: str) -> pd.DataFrame | None:
-        return self._store.get(sandbox_ref)
+    def peek(self, dataset_id: str) -> pd.DataFrame | None:
+        return self._store.get(dataset_id)
 
     def find_cached(self, cache_key: str) -> str | None:
-        """Return the sandbox_ref for a previously staged result with this
+        """Return the dataset id for a previously staged result with this
         cache key, if this session has already fetched it."""
         return self._query_cache.get(cache_key)
 
-    def remember(self, cache_key: str, sandbox_ref: str) -> None:
-        self._query_cache[cache_key] = sandbox_ref
+    def remember(self, cache_key: str, dataset_id: str) -> None:
+        self._query_cache[cache_key] = dataset_id
 
-    async def execute(self, code: str, sandbox_ref: str | None = None) -> ExecutionResult:
+    async def execute(self, code: str, dataset_id: str | None = None) -> ExecutionResult:
         """Run `code` against the staged DataFrame (if any).
 
         `execute()` (executor.py) is CPU-bound - it runs arbitrary code, so
@@ -54,12 +54,12 @@ class SandboxClient:
         CPU-bound call "async-friendly": other requests keep being served
         while this one runs.
         """
-        with trace_span("sandbox.execute", sandbox_ref=sandbox_ref):
+        with trace_span("sandbox.execute", dataset_id=dataset_id):
             dataframe = None
-            if sandbox_ref is not None:
-                if sandbox_ref not in self._store:
-                    return ExecutionResult(error=f"Unknown sandbox_ref '{sandbox_ref}'")
-                dataframe = self._store[sandbox_ref]
+            if dataset_id is not None:
+                if dataset_id not in self._store:
+                    return ExecutionResult(error=f"Unknown dataset_id '{dataset_id}'")
+                dataframe = self._store[dataset_id]
             return await asyncio.to_thread(execute, code, dataframe)
 
 

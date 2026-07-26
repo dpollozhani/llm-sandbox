@@ -56,7 +56,7 @@ def _state(session_id: str, messages: list) -> dict:
     return {"messages": messages, "session_id": session_id, "pbi_token": "tok-pbi"}
 
 
-async def test_run_dax_query_stages_a_sandbox_ref():
+async def test_run_dax_query_stages_a_dataset_id():
     llm = FakeToolCallingChatModel(
         responses=[
             AIMessage(content="", tool_calls=[_DAX_TOOL_CALL]),
@@ -69,9 +69,27 @@ async def test_run_dax_query_stages_a_sandbox_ref():
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
     assert len(tool_messages) == 1
-    assert "sandbox_ref" in tool_messages[0].content
+    assert "dataset_id" in tool_messages[0].content
     assert '"reused": false' in tool_messages[0].content
     assert result["messages"][-1].content == "Fetched revenue by region."
+
+
+async def test_run_dax_query_returns_a_friendly_query_summary():
+    """For transparency: every fetch (new or reused) tells the caller
+    exactly what group-by/filters/measures were used, in plain
+    table.column form, not just the raw DAX text."""
+    llm = FakeToolCallingChatModel(
+        responses=[
+            AIMessage(content="", tool_calls=[_DAX_TOOL_CALL]),
+            AIMessage(content="Fetched revenue by region."),
+        ]
+    )
+    graph = _graph(llm)
+
+    result = await graph.ainvoke(_state("sess-dax-summary", [HumanMessage(content="revenue by region")]))
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert '"query": {"group_by": ["Sales.Region"], "filters": [], "measures": ["Total Revenue = SUM(Sales.Revenue)"]}' in tool_messages[0].content
 
 
 async def test_run_dax_query_reuses_cached_result_within_same_session():

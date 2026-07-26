@@ -264,20 +264,20 @@ def test_follow_up_reuses_fetched_data_without_a_new_datasource_call():
     llm = ScriptedRoutingModel(
         responses=[
             AIMessage(content="", tool_calls=[dax_call]),
-            AIMessage(content="Fetched revenue by region, sandbox_ref=df_1."),
+            AIMessage(content="Fetched revenue by region, dataset_id=dataset_1."),
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "python_sandbox_execute", "args": {"code": "result = df['Total Revenue'].sum()", "sandbox_ref": "df_1"}, "id": "c2"}
+                    {"name": "python_sandbox_execute", "args": {"code": "result = df['Total Revenue'].sum()", "dataset_id": "dataset_1"}, "id": "c2"}
                 ],
             ),
             AIMessage(content="Total is 18225."),
             AIMessage(content="Total revenue across regions is 18225."),
-            # follow-up: supervisor skips "datasource" entirely, reuses df_1
+            # follow-up: supervisor skips "datasource" entirely, reuses dataset_1
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "python_sandbox_execute", "args": {"code": "result = df['Total Revenue'].mean()", "sandbox_ref": "df_1"}, "id": "c3"}
+                    {"name": "python_sandbox_execute", "args": {"code": "result = df['Total Revenue'].mean()", "dataset_id": "dataset_1"}, "id": "c3"}
                 ],
             ),
             AIMessage(content="Average is 4556.25."),

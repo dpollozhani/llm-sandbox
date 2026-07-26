@@ -69,12 +69,12 @@ async def test_specialist_uses_latest_human_message_not_a_prior_specialists_fold
     state = {
         "messages": [
             HumanMessage(content="what's the average revenue by region?"),
-            AIMessage(content="[datasource] Fetched revenue by region, sandbox_ref=df_1."),
+            AIMessage(content="[datasource] Fetched revenue by region, dataset_id=dataset_1."),
         ],
         "turns": 1,
         "next": "analysis",
         "session_id": "sess-node-2",
-        "data_context": "Fetched revenue by region, sandbox_ref=df_1.",
+        "data_context": "Fetched revenue by region, dataset_id=dataset_1.",
     }
     update = await node(state)
 
@@ -90,7 +90,7 @@ async def test_analysis_node_does_not_overwrite_data_context():
         "turns": 1,
         "next": "analysis",
         "session_id": "sess-node-3",
-        "data_context": "Fetched revenue by region, sandbox_ref=df_1.",
+        "data_context": "Fetched revenue by region, dataset_id=dataset_1.",
     }
     update = await node(state)
 

@@ -17,7 +17,7 @@ class OrchestratorState(ChatState):
     data_context: str | None
     """Human-readable summary of the most recently fetched dataset (set by
     `_run_specialist` after a successful datasource call, e.g. "Sales grouped
-    by Region with Total Revenue (sandbox_ref=df_3)"). Threaded into the
+    by Region with Total Revenue (dataset_id=dataset_3)"). Threaded into the
     supervisor's routing prompt and into the analysis specialist's seed
     message, so a follow-up question can reuse already-fetched data instead
     of triggering a new datasource delegation."""

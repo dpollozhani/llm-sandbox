@@ -6,17 +6,17 @@ from data_analyst.clients.sandbox.client import SandboxClient, get_sandbox_clien
 async def test_stage_and_execute_roundtrip():
     client = SandboxClient()
     df = pd.DataFrame([{"Region": "North", "Revenue": 10.0}, {"Region": "North", "Revenue": 5.0}])
-    ref = client.stage(df)
+    dataset_id = client.stage(df)
 
-    result = await client.execute("result = df.groupby('Region')['Revenue'].sum().reset_index()", sandbox_ref=ref)
+    result = await client.execute("result = df.groupby('Region')['Revenue'].sum().reset_index()", dataset_id=dataset_id)
 
     assert result.error is None
     assert result.result == [{"Region": "North", "Revenue": 15.0}]
 
 
-async def test_execute_unknown_ref_returns_error_not_raise():
+async def test_execute_unknown_dataset_id_returns_error_not_raise():
     client = SandboxClient()
-    result = await client.execute("result = 1", sandbox_ref="does-not-exist")
+    result = await client.execute("result = 1", dataset_id="does-not-exist")
     assert result.error is not None
 
 
@@ -31,12 +31,12 @@ def test_query_cache_roundtrip():
     client = SandboxClient()
     assert client.find_cached("some-key") is None
 
-    ref = client.stage(pd.DataFrame([{"a": 1}]))
-    client.remember("some-key", ref)
+    dataset_id = client.stage(pd.DataFrame([{"a": 1}]))
+    client.remember("some-key", dataset_id)
 
-    assert client.find_cached("some-key") == ref
-    assert client.peek(ref) is not None
-    assert client.peek("unknown-ref") is None
+    assert client.find_cached("some-key") == dataset_id
+    assert client.peek(dataset_id) is not None
+    assert client.peek("unknown-id") is None
 
 
 def test_get_sandbox_client_is_session_scoped():

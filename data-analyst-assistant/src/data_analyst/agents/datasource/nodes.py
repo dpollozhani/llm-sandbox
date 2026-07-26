@@ -20,7 +20,7 @@ from langgraph.prebuilt import InjectedState, ToolNode
 from data_analyst.agents.common.tools import request_clarification
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
-from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
@@ -88,7 +88,9 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         run earlier in this conversation, the cached result is reused instead
         of issuing a new query - check the `reused` field in the response.
 
-        Returns a preview of the resulting rows plus a `sandbox_ref` that the
+        Returns a preview of the resulting rows, a `query` summary of the
+        group-by/filters/measures actually used (relay this to the user for
+        transparency about what was fetched), and a `dataset_id` that the
         analysis agent can use to load the full result as a DataFrame.
         """
         token = state.get("pbi_token")
@@ -100,13 +102,15 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         except ValueError as exc:
             return {"error": str(exc)}
 
+        query_summary = describe_query(spec)
         store = get_sandbox_client(state["session_id"])
         cache_key = spec.cache_key()
-        cached_ref = store.find_cached(cache_key)
-        if cached_ref is not None:
-            df = store.peek(cached_ref)
+        cached_dataset_id = store.find_cached(cache_key)
+        if cached_dataset_id is not None:
+            df = store.peek(cached_dataset_id)
             return {
-                "sandbox_ref": cached_ref,
+                "dataset_id": cached_dataset_id,
+                "query": query_summary,
                 "row_count": len(df),
                 "preview": df.head(5).to_dict(orient="records"),
                 "reused": True,
@@ -117,10 +121,11 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
             return {"error": f"Power BI query failed: {_describe(exc)}"}
 
-        ref = store.stage(df)
-        store.remember(cache_key, ref)
+        dataset_id = store.stage(df)
+        store.remember(cache_key, dataset_id)
         return {
-            "sandbox_ref": ref,
+            "dataset_id": dataset_id,
+            "query": query_summary,
             "row_count": len(df),
             "preview": df.head(5).to_dict(orient="records"),
             "reused": False,

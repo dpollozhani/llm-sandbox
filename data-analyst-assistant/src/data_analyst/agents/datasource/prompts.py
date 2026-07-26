@@ -65,8 +65,10 @@ arguments and retry instead of asking another question.
 
 Get a model's schema via `pbi_mcp_get_semantic_metadata` before querying it,
 unless you've already seen it earlier in this conversation. When a query
-returns a `sandbox_ref`, mention it in your final summary so the caller can
-hand it to the analysis agent. Do not attempt any data analysis yourself -
+returns a `dataset_id`, mention it in your final summary so the caller can
+hand it to the analysis agent. Always relay the `query` field too (the
+group-by/filters/measures actually used, in plain language) so the user can
+see exactly what was fetched. Do not attempt any data analysis yourself -
 that's the analysis agent's job. Be concise.
 
 Any tool response containing an `error` about not being signed in means the

@@ -48,7 +48,7 @@ learns valid `model_name` values from the static catalog
 | Tool | Backing client | Notes |
 |---|---|---|
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
-| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `sandbox_ref` |
+| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `dataset_id` plus a friendly `query` summary |
 | `request_clarification` | `agents/common/tools.py` | shared with the analysis agent; asks the user a question when the specialist itself is unsure what's meant - see `docs/architecture.md`'s "Two places a clarifying question can come from" |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
