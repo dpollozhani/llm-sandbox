@@ -51,8 +51,14 @@ def _find_semantic_metadata_tool(tools: list[Tool]) -> Tool | None:
 def _dataset_arg_name(tool: Tool) -> str:
     properties = (tool.inputSchema or {}).get("properties", {})
     for key in properties:
-        if any(word in key.lower() for word in ("dataset", "model", "semantic")):
+        if any(word in key.lower() for word in ("dataset", "model", "semantic", "artifact")):
             return key
+    if len(properties) == 1:
+        # Whatever it's called, a single-argument tool has nowhere else the
+        # dataset id could go (e.g. Fabric's MCP server calls it
+        # "artifactId" - its term for a workspace item, not a keyword we'd
+        # otherwise think to look for).
+        return next(iter(properties))
     return "datasetId"  # best-effort fallback if the schema doesn't say
 
 

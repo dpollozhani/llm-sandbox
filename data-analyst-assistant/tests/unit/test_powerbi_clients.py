@@ -174,6 +174,42 @@ async def test_get_semantic_metadata_adapts_to_a_differently_named_server_tool(m
     assert args == {"semanticModelId": "ds-test"}
 
 
+async def test_get_semantic_metadata_recognizes_the_artifact_id_argument(monkeypatch):
+    """Live regression: Microsoft's Fabric MCP server names the tool
+    "GetSemanticModelSchema" with a single argument, "artifactId" (Fabric's
+    term for a workspace item), which the original keyword list ("dataset",
+    "model", "semantic") didn't recognize - the client fell back to a
+    hardcoded "datasetId" key the live server rejected."""
+    tools = [_FakeTool("GetSemanticModelSchema", {"artifactId": {"type": "string"}})]
+    fake_session = _FakeSession(_FakeToolResult(json.dumps({"tables": []})), tools=tools)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _fake_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+
+    result = await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert result == {"tables": []}
+    tool_name, args = fake_session.calls[0]
+    assert tool_name == "GetSemanticModelSchema"
+    assert args == {"artifactId": "ds-test"}
+
+
+async def test_get_semantic_metadata_uses_the_sole_argument_when_its_name_is_unrecognized(monkeypatch):
+    """Belt-and-suspenders for a name we haven't seen yet: with only one
+    argument in the schema, it's the only place the dataset id could go
+    regardless of what it's called."""
+    tools = [_FakeTool("GetSemanticModelSchema", {"itemId": {"type": "string"}})]
+    fake_session = _FakeSession(_FakeToolResult(json.dumps({"tables": []})), tools=tools)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _fake_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+
+    result = await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert result == {"tables": []}
+    tool_name, args = fake_session.calls[0]
+    assert tool_name == "GetSemanticModelSchema"
+    assert args == {"itemId": "ds-test"}
+
+
 async def test_get_semantic_metadata_raises_clearly_when_no_matching_tool_is_advertised(monkeypatch):
     tools = [_FakeTool("SomeUnrelatedTool", {})]
     fake_session = _FakeSession(_FakeToolResult("unused"), tools=tools)
