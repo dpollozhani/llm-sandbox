@@ -43,9 +43,10 @@ services:
       # is a public client (PKCE, no client secret) - set ENTRA_REDIRECT_URI
       # to this service's public URL + /auth/callback (e.g.
       # https://data-analyst-assistant.onrender.com/auth/callback) and
-      # register that same URI on the Entra ID app registration under the
-      # "Mobile and desktop applications" platform (not "Web" - a Web
-      # redirect URI requires a client secret).
+      # register that same URI on the Entra ID app registration under a
+      # public-client platform - "Single-page application" or "Mobile and
+      # desktop applications" both work (not "Web" - a Web redirect URI
+      # requires a client secret).
       - key: ENTRA_TENANT_ID
         sync: false
       - key: ENTRA_CLIENT_ID

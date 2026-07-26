@@ -21,8 +21,9 @@ protect here, a public client is simpler and one less thing to configure/
 rotate.
 
 This does require the Entra ID app registration's `ENTRA_REDIRECT_URI` to be
-registered under the **"Mobile and desktop applications"** platform, not
-"Web" - Entra classifies a "Web" redirect URI as belonging to a confidential
+registered under a public-client platform - either **"Single-page
+application"** or **"Mobile and desktop applications"** both work - not
+"Web": Entra classifies a "Web" redirect URI as belonging to a confidential
 client and will reject a secret-less token exchange against it
 (`AADSTS7000218`) regardless of what MSAL class the code uses. "Allow public
 client flows" also needs to be enabled (already required for `cli.py`'s
