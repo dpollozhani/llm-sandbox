@@ -5,14 +5,10 @@ free-form DAX text from the model - as one of two query shapes:
 Each column reference (`DaxColumn`, `DaxFilter`, an ad-hoc `DaxMeasure`
 aggregation) names its own table - there is deliberately no single
 spec-level "the table" for a query. `SUMMARIZECOLUMNS` naturally mixes
-columns from different, related tables in one query (e.g. group by a
-dimension table's column while summing a fact table's column - completely
-normal for a star-schema model); an earlier version of this module forced
-every column onto one `spec.table`, which meant a query needing columns
-from two tables had no correct way to express that and instead produced
-invalid, doubly-qualified column references like `'Facts'[dimItemMaster[Article key]]`
-(confirmed in production - the model kept trying workarounds for a table
-mismatch the schema itself forced, until it hit LangGraph's recursion limit).
+columns from different, related tables in one query - e.g. group by a
+dimension table's column while summing a fact table's column, completely
+normal for a star-schema model - so forcing every column onto one shared
+table would make that kind of query inexpressible.
 
 - with at least one `group_by` column: `EVALUATE SUMMARIZECOLUMNS(...)`,
   filters folded in as `FILTER(ALL(...), ...)` table arguments.
@@ -137,9 +133,8 @@ def build_dax_query(spec: DaxQuerySpec) -> str:
     why the shape (`SUMMARIZECOLUMNS` vs `ROW`) depends on whether
     `group_by` is empty. The `EVALUATE` is not optional decoration either
     way - `executeQueries` parses the query text as a full DAX query, and
-    every live call without it failed with a generic "Invalid query syntax.
-    A valid MDX or DAX query was expected." (confirmed against Power BI, and
-    matching every official request-body example in Microsoft's own docs)."""
+    every official Power BI request-body example wraps the query in it;
+    omitting it fails as invalid syntax."""
     measure_parts = [f'"{m.name}", {_measure_expr(spec, m)}' for m in spec.measures]
 
     if spec.group_by:

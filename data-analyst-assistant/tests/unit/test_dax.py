@@ -27,13 +27,11 @@ def test_build_dax_query_shape():
 
 
 def test_build_dax_query_mixes_columns_from_different_related_tables():
-    """The real bug this guards against: a group-by column and an
-    aggregated measure column can (and often do) belong to different,
-    related tables in a star-schema model - e.g. grouping by a dimension
-    table's column while summing a fact table's column. An earlier design
-    forced every column onto one spec-level table, which had no correct way
-    to express this and produced invalid, doubly-qualified references like
-    'Facts'[dimItemMaster[Article key]] in production."""
+    """A group-by column and an aggregated measure column can (and often
+    do) belong to different, related tables in a star-schema model - e.g.
+    grouping by a dimension table's column while summing a fact table's
+    column - so each must be independently table-qualified rather than
+    sharing one table for the whole query."""
     spec = DaxQuerySpec(
         model_name="m",
         group_by=[DaxColumn(table="dimItemMaster", column="BRIC")],
@@ -48,8 +46,8 @@ def test_build_dax_query_references_an_existing_model_measure_directly():
     """A measure with no `aggregation` is a reference to a measure that
     already exists in the model (e.g. under a "_Measures" table) - it's
     addressed directly by name, never wrapped in an aggregation function
-    (wrapping it, as if it were a raw column, is what Power BI's
-    executeQueries rejected with a 400 in production)."""
+    (Power BI's executeQueries rejects wrapping one as if it were a raw
+    column)."""
     spec = DaxQuerySpec(
         model_name="m",
         group_by=[DaxColumn(table="Sales", column="Region")],

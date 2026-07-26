@@ -145,8 +145,7 @@ async def test_specialist_resumes_full_history_when_awaiting_clarification_reply
     """A reply to a clarifying question isn't a fresh task - the specialist
     needs to see the whole exchange (the original ask, its own question, the
     user's answer), not just the isolated reply, or it re-derives (or
-    re-asks) everything from scratch each time - the production bug this
-    guards against."""
+    re-asks) everything from scratch each time."""
     llm = _RecordingLLM(responses=[AIMessage(content="Got it.")])
     node = build_datasource_node(llm)
 

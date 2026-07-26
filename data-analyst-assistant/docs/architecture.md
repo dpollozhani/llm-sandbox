@@ -74,11 +74,11 @@ For a **reply to a clarifying question**, though, a single isolated message
 isn't enough - a specialist subgraph is rebuilt from scratch on every
 delegation, so with only "Total across all products and locations" (say) and
 none of the preceding exchange, it has no way to know that's an answer about
-the "Inventory on-hand" measure asked about three messages ago. This was a
-real production bug: the specialist kept asking near-identical clarifying
-questions in a loop, each one genuinely reasonable in isolation but
-disconnected from the one before it, because every reply started an entirely
-new, context-free task instead of continuing the old one.
+the "Inventory on-hand" measure asked about three messages ago. Without the
+full exchange, a reply like that risks landing as an entirely new,
+context-free task instead of a continuation of the old one - each
+clarifying question reasonable in isolation, but disconnected from the one
+before it, with no way to ever converge.
 `state["awaiting_clarification"]` (set whenever a clarifying question - the
 supervisor's own upfront one, or a specialist's mid-task one - was just
 asked, cleared once a turn resolves without asking another) tells
