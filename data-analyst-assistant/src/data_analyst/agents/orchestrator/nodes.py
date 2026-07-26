@@ -26,7 +26,7 @@ def build_supervisor_node(llm: BaseChatModel):
     async def supervisor_node(state: OrchestratorState):
         turns = state.get("turns", 0)
         if turns >= MAX_TURNS:
-            return {"next": "respond", "turns": turns}
+            return {"next": "respond", "turns": turns, "awaiting_clarification": False}
         route = await chain.ainvoke({"messages": state["messages"], "data_context": state.get("data_context")})
         return {"next": route.next, "turns": turns + 1}
 
@@ -58,14 +58,30 @@ def _specialist_clarification(messages: list[AnyMessage]) -> Clarification | Non
 
 
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
-    task_message = _latest_user_task(state["messages"])
     data_context = state.get("data_context")
-    seed_content = f"(Available data in this session: {data_context})\n\n{task_message.content}" if data_context else task_message.content
+
+    if state.get("awaiting_clarification"):
+        # The latest human message is a reply to a clarifying question
+        # (this specialist's own, or the supervisor's upfront one), not a
+        # fresh request - a rebuilt-from-scratch specialist subgraph has no
+        # memory of that question (or the original ask before it) unless we
+        # hand it the whole exchange, so it can actually use the answer
+        # instead of re-deriving (or re-asking) everything from one isolated
+        # reply.
+        messages = list(state["messages"])
+    else:
+        task_message = _latest_user_task(state["messages"])
+        seed_content = (
+            f"(Available data in this session: {data_context})\n\n{task_message.content}"
+            if data_context
+            else task_message.content
+        )
+        messages = [HumanMessage(content=seed_content)]
 
     child_graph = build_graph_fn(llm)
     result = await child_graph.ainvoke(
         {
-            "messages": [HumanMessage(content=seed_content)],
+            "messages": messages,
             "session_id": state["session_id"],
             "pbi_token": state.get("pbi_token"),
         }
@@ -84,12 +100,16 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             "messages": [AIMessage(content=clarification.question)],
             "next": "clarify",
             "clarification_options": clarification.options,
+            "awaiting_clarification": True,
         }
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
     agent_result = AgentResult(agent=agent_name, summary=summary)
-    update: dict = {"messages": [AIMessage(content=f"[{agent_name}] {agent_result.summary}")]}
+    update: dict = {
+        "messages": [AIMessage(content=f"[{agent_name}] {agent_result.summary}")],
+        "awaiting_clarification": False,
+    }
     if agent_name == "datasource":
         # Lets a follow-up question route straight to "analysis" (or skip
         # re-delegating altogether) instead of always re-fetching - see
@@ -122,7 +142,7 @@ def build_respond_node(llm: BaseChatModel):
 
     async def respond_node(state: OrchestratorState):
         response = await chain.ainvoke(state["messages"])
-        return {"messages": [response]}
+        return {"messages": [response], "awaiting_clarification": False}
 
     return respond_node
 
@@ -135,6 +155,7 @@ def build_clarify_node(llm: BaseChatModel):
         return {
             "messages": [AIMessage(content=clarification.question)],
             "clarification_options": clarification.options,
+            "awaiting_clarification": True,
         }
 
     return clarify_node

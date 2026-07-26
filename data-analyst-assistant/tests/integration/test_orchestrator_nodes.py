@@ -9,9 +9,22 @@ short-circuits straight to a clarifying question if the specialist asks one.
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import Field
 
 from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
+
+
+class _RecordingLLM(FakeToolCallingChatModel):
+    """Records the message list of every `_generate` call, so a test can
+    check what a specialist was actually seeded with - `FakeToolCallingChatModel`
+    itself only scripts responses, it doesn't expose its inputs."""
+
+    recorded_messages: list = Field(default_factory=list)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.recorded_messages.append(list(messages))
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
 async def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
@@ -107,4 +120,71 @@ async def test_specialist_self_clarification_sets_next_to_clarify():
     assert update["next"] == "clarify"
     assert update["messages"][0].content == "Which region do you mean?"
     assert update["clarification_options"] == ["North", "South"]
+    assert update["awaiting_clarification"] is True
     assert "data_context" not in update
+
+
+async def test_successful_result_clears_awaiting_clarification():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Done.")])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="q")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-5",
+        "data_context": None,
+        "awaiting_clarification": True,
+    }
+    update = await node(state)
+
+    assert update["awaiting_clarification"] is False
+
+
+async def test_specialist_resumes_full_history_when_awaiting_clarification_reply():
+    """A reply to a clarifying question isn't a fresh task - the specialist
+    needs to see the whole exchange (the original ask, its own question, the
+    user's answer), not just the isolated reply, or it re-derives (or
+    re-asks) everything from scratch each time - the production bug this
+    guards against."""
+    llm = _RecordingLLM(responses=[AIMessage(content="Got it.")])
+    node = build_datasource_node(llm)
+
+    history = [
+        HumanMessage(content="top 10 by inventory"),
+        AIMessage(content="Which metric do you mean?"),
+        HumanMessage(content="Inventory on-hand"),
+    ]
+    state = {
+        "messages": history,
+        "turns": 1,
+        "next": "datasource",
+        "session_id": "sess-node-6",
+        "data_context": None,
+        "awaiting_clarification": True,
+    }
+    await node(state)
+
+    seeded = llm.recorded_messages[0][1:]  # drop the chain's own prepended SystemMessage
+    assert [m.content for m in seeded] == [m.content for m in history]
+
+
+async def test_specialist_seeds_only_the_latest_task_for_a_fresh_request():
+    llm = _RecordingLLM(responses=[AIMessage(content="Answer.")])
+    node = build_datasource_node(llm)
+
+    state = {
+        "messages": [
+            HumanMessage(content="irrelevant earlier turn, should not reach the specialist"),
+            HumanMessage(content="what semantic models are available?"),
+        ],
+        "turns": 1,
+        "next": "datasource",
+        "session_id": "sess-node-7",
+        "data_context": None,
+        "awaiting_clarification": False,
+    }
+    await node(state)
+
+    seeded = llm.recorded_messages[0][1:]
+    assert [m.content for m in seeded] == ["what semantic models are available?"]

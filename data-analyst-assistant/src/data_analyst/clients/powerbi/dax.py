@@ -1,6 +1,7 @@
 """Structured DAX query support: every query the datasource agent can run is
-built as a single `SUMMARIZECOLUMNS(...)` call from structured group-by
-columns, filters, and measures - never free-form DAX text from the model.
+built as a single `EVALUATE SUMMARIZECOLUMNS(...)` call from structured
+group-by columns, filters, and measures - never free-form DAX text from the
+model.
 
 `DaxQuerySpec` is the structural request; `build_summarizecolumns` renders it
 to DAX text; `validate_dax_query` checks that text (and the spec behind it)
@@ -91,7 +92,12 @@ def _bracketed(name: str) -> str:
 
 
 def build_summarizecolumns(spec: DaxQuerySpec) -> str:
-    """Render a `DaxQuerySpec` to a `SUMMARIZECOLUMNS(...)` DAX string."""
+    """Render a `DaxQuerySpec` to an `EVALUATE SUMMARIZECOLUMNS(...)` DAX
+    query. The `EVALUATE` is not optional decoration - `executeQueries`
+    parses the query text as a full DAX query, and every live call without
+    it failed with a generic "Invalid query syntax. A valid MDX or DAX
+    query was expected." (confirmed against Power BI, and matching every
+    official request-body example in Microsoft's own docs)."""
     parts: list[str] = [f"'{spec.table}'[{col}]" for col in spec.group_by]
     for f in spec.filters:
         keyword = "IN" if f.operator == "IN" else f.operator
@@ -102,15 +108,15 @@ def build_summarizecolumns(spec: DaxQuerySpec) -> str:
         else:
             parts.append(f'"{m.name}", {m.aggregation}(\'{spec.table}\'[{m.column}])')
     inner = ",\n    ".join(parts)
-    return f"SUMMARIZECOLUMNS(\n    {inner}\n)"
+    return f"EVALUATE SUMMARIZECOLUMNS(\n    {inner}\n)"
 
 
 def validate_dax_query(dax_query: str, spec: DaxQuerySpec) -> None:
     """Structural validation before the query would be sent to the REST
     endpoint. Raises ValueError with a specific reason on failure."""
     text = dax_query.strip()
-    if not text.startswith("SUMMARIZECOLUMNS(") or not text.endswith(")"):
-        raise ValueError("DAX query must be a single SUMMARIZECOLUMNS(...) call")
+    if not text.startswith("EVALUATE SUMMARIZECOLUMNS(") or not text.endswith(")"):
+        raise ValueError("DAX query must be a single EVALUATE SUMMARIZECOLUMNS(...) call")
     if text.count("(") != text.count(")"):
         raise ValueError("DAX query has unbalanced parentheses")
     if not spec.group_by and not spec.measures:

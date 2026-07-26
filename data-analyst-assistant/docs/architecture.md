@@ -51,24 +51,39 @@ FastAPI (app/api.py)
 ## How delegation works
 
 `agents/orchestrator/nodes.py`'s `_run_specialist` seeds a **fresh** child
-conversation from only the user's actual latest question (not the
-orchestrator's full history), builds the specialist's compiled subgraph, and
-invokes it. This is a deliberate choice over LangGraph's native "add a
-compiled graph directly as a node" support: every graph here shares the same
-`messages`/`ChatState` convention, so a native subgraph node would silently
-pass the orchestrator's *entire* transcript into the specialist and merge
-the specialist's *entire* transcript back - the opposite of "delegate one
-scoped task, get back one summary." Manual invocation from a plain node
-function is what makes that translation possible.
+conversation (not the orchestrator's full history), builds the specialist's
+compiled subgraph, and invokes it. This is a deliberate choice over
+LangGraph's native "add a compiled graph directly as a node" support: every
+graph here shares the same `messages`/`ChatState` convention, so a native
+subgraph node would silently pass the orchestrator's *entire* transcript into
+the specialist and merge the specialist's *entire* transcript back - the
+opposite of "delegate one scoped task, get back one summary." Manual
+invocation from a plain node function is what makes that translation
+possible.
 
-"The user's actual latest question" is deliberately not just
-`state["messages"][-1]`: once a first specialist has already run within the
-same supervisor turn (e.g. datasource, then analysis), the last message is
-that specialist's own folded-back summary, not the user's question.
-`_latest_user_task` walks backward to find the most recent human message
-instead. Alongside it, `_run_specialist` threads `state["data_context"]`
-(see below) into the seed message, so a specialist with no memory of earlier
-turns still knows what data is already available.
+For a **fresh task**, the seed is only the user's actual latest question -
+deliberately not just `state["messages"][-1]`, since once a first specialist
+has already run within the same supervisor turn (e.g. datasource, then
+analysis), the last message is that specialist's own folded-back summary, not
+the user's question. `_latest_user_task` walks backward to find the most
+recent human message instead. Alongside it, `_run_specialist` threads
+`state["data_context"]` (see below) into the seed message, so a specialist
+with no memory of earlier turns still knows what data is already available.
+
+For a **reply to a clarifying question**, though, a single isolated message
+isn't enough - a specialist subgraph is rebuilt from scratch on every
+delegation, so with only "Total across all products and locations" (say) and
+none of the preceding exchange, it has no way to know that's an answer about
+the "Inventory on-hand" measure asked about three messages ago. This was a
+real production bug: the specialist kept asking near-identical clarifying
+questions in a loop, each one genuinely reasonable in isolation but
+disconnected from the one before it, because every reply started an entirely
+new, context-free task instead of continuing the old one.
+`state["awaiting_clarification"]` (set whenever a clarifying question - the
+supervisor's own upfront one, or a specialist's mid-task one - was just
+asked, cleared once a turn resolves without asking another) tells
+`_run_specialist` which case it's in: seed just the latest task, or seed the
+whole exchange so the specialist can actually use the answer.
 
 ## Two places a clarifying question can come from
 

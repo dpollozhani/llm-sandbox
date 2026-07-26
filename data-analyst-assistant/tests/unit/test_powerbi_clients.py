@@ -81,13 +81,13 @@ async def test_run_dax_query_executes_and_parses_the_response():
         assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeQueries"
         assert request.headers["authorization"] == "Bearer tok-123"
         body = json.loads(request.content)
-        assert body["queries"][0]["query"].startswith("SUMMARIZECOLUMNS(")
+        assert body["queries"][0]["query"].startswith("EVALUATE SUMMARIZECOLUMNS(")
         return httpx.Response(200, json=_EXECUTE_QUERIES_RESPONSE)
 
     spec = DaxQuerySpec(model_name="Test Model", table="Products", group_by=["Category"])
     dax_query, df = await _rest_client(handler).run_dax_query("tok-123", spec)
 
-    assert dax_query.startswith("SUMMARIZECOLUMNS(")
+    assert dax_query.startswith("EVALUATE SUMMARIZECOLUMNS(")
     assert df.to_dict(orient="records") == [{"Category": "Hardware"}, {"Category": "Premium"}]
 
 

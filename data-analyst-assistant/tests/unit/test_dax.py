@@ -19,7 +19,7 @@ def test_build_summarizecolumns_shape():
         measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", column="Revenue")],
     )
     dax = build_summarizecolumns(spec)
-    assert dax.startswith("SUMMARIZECOLUMNS(")
+    assert dax.startswith("EVALUATE SUMMARIZECOLUMNS(")
     assert dax.endswith(")")
     assert "'Sales'[Region]" in dax
     assert 'FILTER(ALL(\'Sales\'), \'Sales\'[Region] != "South")' in dax
