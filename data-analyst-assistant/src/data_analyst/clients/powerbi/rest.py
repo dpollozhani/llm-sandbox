@@ -22,9 +22,11 @@ from data_analyst.clients.powerbi.dax import (
     validate_dax_query,
 )
 from data_analyst.config.settings import PowerBiCatalog, get_catalog
+from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
 
 _BASE_URL = "https://api.powerbi.com/v1.0/myorg"
+_logger = get_logger("clients.powerbi.rest")
 
 
 class PBIRestClient:
@@ -72,6 +74,11 @@ class PBIRestClient:
             async with self._client(access_token) as client:
                 response = await client.post(f"/datasets/{model.dataset_id}/executeQueries", json=body)
                 if response.status_code >= 400:
+                    # INFO, not DEBUG (trace_span's own logging is DEBUG-only,
+                    # and LOG_LEVEL defaults to INFO) - httpx's own request
+                    # logging shows the status code but never the body, which
+                    # is where Power BI's actual reason lives.
+                    _logger.info("executeQueries %s failed: query=%s body=%s", response.status_code, dax_query, response.text)
                     raise ValueError(f"Power BI query failed ({response.status_code}): {response.text}")
                 df = parse_execute_queries_response(response.json(), spec)
             return dax_query, df

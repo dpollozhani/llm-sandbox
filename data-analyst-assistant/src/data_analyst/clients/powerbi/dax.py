@@ -17,7 +17,7 @@ import json
 from typing import Literal
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
 Aggregation = Literal["SUM", "AVERAGE", "COUNT", "MIN", "MAX"]
@@ -32,9 +32,23 @@ class DaxFilter(BaseModel):
 
 
 class DaxMeasure(BaseModel):
-    name: str = Field(description="Output name for the aggregated value, e.g. 'Total Revenue'.")
-    aggregation: Aggregation = Field(description="Aggregation function to apply.")
-    column: str = Field(description="Column to aggregate, e.g. 'Revenue'.")
+    """Either a reference to a measure that already exists in the model
+    (give `name` only - schemas commonly ship these, e.g. under a
+    "_Measures" table - and it's addressed directly, never re-aggregated),
+    or an ad-hoc aggregation over a raw column (`aggregation` + `column`,
+    with `name` as the output label)."""
+
+    name: str = Field(description="An existing model measure's name, or an output label for the aggregation below.")
+    aggregation: Aggregation | None = Field(
+        default=None, description="Omit to reference an existing model measure by `name`; set to aggregate `column`."
+    )
+    column: str | None = Field(default=None, description="Column to aggregate. Required only if `aggregation` is set.")
+
+    @model_validator(mode="after")
+    def _check_aggregation_needs_column(self) -> "DaxMeasure":
+        if self.aggregation is not None and self.column is None:
+            raise ValueError("`column` is required when `aggregation` is set")
+        return self
 
 
 class DaxQuerySpec(BaseModel):
@@ -72,7 +86,10 @@ def build_summarizecolumns(spec: DaxQuerySpec) -> str:
         keyword = "IN" if f.operator == "IN" else f.operator
         parts.append(f"FILTER(ALL('{spec.table}'), '{spec.table}'[{f.column}] {keyword} {_literal(f.value)})")
     for m in spec.measures:
-        parts.append(f'"{m.name}", {m.aggregation}(\'{spec.table}\'[{m.column}])')
+        if m.aggregation is None:
+            parts.append(f'"{m.name}", [{m.name}]')
+        else:
+            parts.append(f'"{m.name}", {m.aggregation}(\'{spec.table}\'[{m.column}])')
     inner = ",\n    ".join(parts)
     return f"SUMMARIZECOLUMNS(\n    {inner}\n)"
 

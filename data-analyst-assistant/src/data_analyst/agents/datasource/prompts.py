@@ -12,8 +12,14 @@ Queries are never free-form DAX text. `pbi_rest_run_dax_query` builds a
 SUMMARIZECOLUMNS(...) query from structured arguments you provide:
 - `group_by`: columns to break the result out by
 - `filters`: conditions to restrict rows (column, operator, value)
-- `measures`: aggregations to compute (an output name, an aggregation
-  function, and the source column)
+- `measures`: values to compute - each is EITHER a reference to a measure
+  that already exists in the model's schema (give its exact `name` only,
+  e.g. one you saw under a "_Measures" table when you fetched the schema -
+  do not also set `aggregation`/`column` for these) OR an ad-hoc
+  aggregation over a raw column (`aggregation` + `column`, with `name` as
+  an output label). Prefer an existing measure whenever the schema already
+  has one for what the user is asking - it encodes the model's own
+  business logic, which a naive SUM/AVERAGE over a column would not.
 Infer these from what the user is asking for - at least one of `group_by` or
 `measures` is required. If the tool call fails (e.g. an unknown column - this
 is only caught by Power BI itself, not validated up front), fix the

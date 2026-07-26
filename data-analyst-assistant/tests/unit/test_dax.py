@@ -26,6 +26,27 @@ def test_build_summarizecolumns_shape():
     assert '"Total Revenue", SUM(\'Sales\'[Revenue])' in dax
 
 
+def test_build_summarizecolumns_references_an_existing_model_measure_directly():
+    """A measure with no `aggregation` is a reference to a measure that
+    already exists in the model (e.g. under a "_Measures" table) - it's
+    addressed directly by name, never wrapped in an aggregation function
+    (wrapping it, as if it were a raw column, is what Power BI's
+    executeQueries rejected with a 400 in production)."""
+    spec = DaxQuerySpec(
+        model_name="m",
+        table="Sales",
+        group_by=["Region"],
+        measures=[DaxMeasure(name="Inventory on-hand")],
+    )
+    dax = build_summarizecolumns(spec)
+    assert '"Inventory on-hand", [Inventory on-hand]' in dax
+
+
+def test_measure_with_aggregation_requires_column():
+    with pytest.raises(ValueError, match="column"):
+        DaxMeasure(name="Total Revenue", aggregation="SUM")
+
+
 def test_validate_rejects_non_summarizecolumns_text():
     spec = DaxQuerySpec(model_name="m", table="Sales", group_by=["Region"])
     with pytest.raises(ValueError, match="SUMMARIZECOLUMNS"):
