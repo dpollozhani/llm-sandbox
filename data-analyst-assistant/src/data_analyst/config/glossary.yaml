@@ -7,6 +7,13 @@
 terms:
   - term: BRIC
     definition: >-
-      An item attribute in the semantic model.
+      An item attribute that identifies the item independent of company/source system.
       Short fort Beijer Ref Item Code, not the BRIC/BRICS country grouping (Brazil, Russia, India, China,
       South Africa). Can be used to group by instead of/together with other item attributes and/or for filtering.
+  - term: Company
+    definition: >-
+       The entity who does the sale to a customer, has the stock in a warehouse/facility, or receives the purchase from a supplier.
+  - term: Branch
+    definition: Refers to a facility/warehouse. 
+     
+    
