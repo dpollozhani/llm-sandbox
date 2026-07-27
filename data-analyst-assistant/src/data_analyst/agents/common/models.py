@@ -47,11 +47,24 @@ class FetchedDataset(BaseModel):
 class Clarification(BaseModel):
     """A clarifying question with 2-3 clearly distinct options a user can
     pick from, so a frontend can render them as buttons instead of relying
-    on free text. Produced two ways, both read into this same shape by
-    `agents/orchestrator/nodes.py`: the supervisor's own upfront "clarify"
+    on free text. Produced by the supervisor's own upfront "clarify"
     decision (`agents/orchestrator/chains.py::build_clarify_chain`, via
-    structured output) and a specialist's `request_clarification` tool call
-    (`agents/common/tools.py`)."""
+    structured output) - see `Ambiguity` for what a specialist reports
+    instead, mid-task."""
 
     question: str = ""
+    options: list[str] = Field(default_factory=lambda: ["", ""], min_length=2, max_length=3)
+
+
+class Ambiguity(BaseModel):
+    """What a specialist reports when it can't proceed confidently, via the
+    `flag_ambiguity` tool (`agents/common/tools.py`) - a `reason` (a
+    complete, user-readable sentence describing the ambiguity) plus 2-3
+    clearly distinct candidate options. Unlike `Clarification`, this is not
+    itself a user-facing question: `agents/orchestrator/nodes.py::_run_specialist`
+    is the only place that decides how (and whether) to surface it, composing
+    the final message deterministically rather than relaying the specialist's
+    own phrasing as an LLM-authored question would imply."""
+
+    reason: str = ""
     options: list[str] = Field(default_factory=lambda: ["", ""], min_length=2, max_length=3)

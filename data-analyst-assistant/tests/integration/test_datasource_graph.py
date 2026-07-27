@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -46,6 +48,15 @@ class _FailingRestClient:
 class _FailingMcpClient:
     async def get_semantic_metadata(self, access_token: str, model_name: str):
         raise ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("boom")])
+
+
+class _CountingMcpClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def get_semantic_metadata(self, access_token: str, model_name: str):
+        self.calls += 1
+        return {"tables": [{"name": "Sales"}]}
 
 
 def _graph(llm):
@@ -174,16 +185,41 @@ async def test_get_semantic_metadata_network_failure_returns_error_not_raise():
     assert result["messages"][-1].content == "Something went wrong."
 
 
-async def test_can_ask_for_clarification_instead_of_guessing():
-    clarify_call = {
-        "name": "request_clarification",
-        "args": {"question": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
+async def test_get_semantic_metadata_is_cached_across_fresh_specialist_delegations():
+    """A specialist subgraph is rebuilt from scratch on every delegation and
+    has no memory of an earlier delegation's own tool calls - without a
+    session-scoped cache, a follow-up question needing the same model's
+    schema would re-fetch it from the MCP server every single time."""
+    call = {"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}
+    mcp_client = _CountingMcpClient()
+
+    llm1 = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[call]), AIMessage(content="Here's the schema.")]
+    )
+    graph1 = build_datasource_graph(llm1, mcp_client=mcp_client)
+    await graph1.ainvoke(_state("sess-metadata-cache", [HumanMessage(content="show schema")]))
+
+    llm2 = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[call]), AIMessage(content="Here's the schema again.")]
+    )
+    graph2 = build_datasource_graph(llm2, mcp_client=mcp_client)
+    result2 = await graph2.ainvoke(_state("sess-metadata-cache", [HumanMessage(content="show schema again")]))
+
+    assert mcp_client.calls == 1
+    tool_messages = [m for m in result2["messages"] if m.type == "tool"]
+    assert tool_messages[0].content == '{"tables": [{"name": "Sales"}]}'
+
+
+async def test_can_flag_ambiguity_instead_of_guessing():
+    ambiguity_call = {
+        "name": "flag_ambiguity",
+        "args": {"reason": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
         "id": "c1",
     }
     llm = FakeToolCallingChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[clarify_call]),
-            AIMessage(content="Which time period do you mean?"),
+            AIMessage(content="", tool_calls=[ambiguity_call]),
+            AIMessage(content="I need to know which time period."),
         ]
     )
     graph = _graph(llm)
@@ -191,5 +227,9 @@ async def test_can_ask_for_clarification_instead_of_guessing():
     result = await graph.ainvoke(_state("sess-clarify", [HumanMessage(content="how much revenue")]))
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
-    assert tool_messages[0].name == "request_clarification"
-    assert result["messages"][-1].content == "Which time period do you mean?"
+    assert tool_messages[0].name == "flag_ambiguity"
+    assert '"error"' not in tool_messages[0].content
+    assert json.loads(tool_messages[0].content) == {
+        "reason": "Which time period do you mean?",
+        "options": ["Last month", "Last quarter"],
+    }

@@ -13,7 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import Field
 
 from data_analyst.agents.common.models import FetchedDataset
-from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node
+from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
 _FETCHED = FetchedDataset(
@@ -106,14 +106,14 @@ async def test_analysis_node_does_not_overwrite_data_context():
     assert "data_context" not in update
 
 
-async def test_specialist_self_clarification_sets_next_to_clarify():
-    clarify_call = {
-        "name": "request_clarification",
-        "args": {"question": "Which region do you mean?", "options": ["North", "South"]},
+async def test_specialist_flagged_ambiguity_sets_next_to_clarify():
+    ambiguity_call = {
+        "name": "flag_ambiguity",
+        "args": {"reason": "Which region do you mean?", "options": ["North", "South"]},
         "id": "c1",
     }
     llm = FakeToolCallingChatModel(
-        responses=[AIMessage(content="", tool_calls=[clarify_call]), AIMessage(content="Which region do you mean?")]
+        responses=[AIMessage(content="", tool_calls=[ambiguity_call]), AIMessage(content="I need more detail.")]
     )
     node = build_datasource_node(llm)
 
@@ -127,54 +127,98 @@ async def test_specialist_self_clarification_sets_next_to_clarify():
     update = await node(state)
 
     assert update["next"] == "clarify"
-    assert update["messages"][0].content == "Which region do you mean?"
-    assert update["clarification_options"] == ["North", "South"]
-    assert update["awaiting_clarification"] is True
+    # Composed deterministically from the tool call's own reason/options -
+    # not the specialist's own final freeform message ("I need more detail.")
+    assert update["messages"][0].content == "Which region do you mean? (North / South)"
+    assert update["pending_clarification"] == {
+        "agent": "datasource",
+        "reason": "Which region do you mean?",
+        "options": ["North", "South"],
+    }
     assert "data_context" not in update
 
 
-async def test_successful_result_clears_awaiting_clarification():
+async def test_successful_result_clears_pending_clarification_and_records_it_resolved():
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Done.")])
     node = build_analysis_node(llm)
 
     state = {
-        "messages": [HumanMessage(content="q")],
+        "messages": [
+            HumanMessage(content="top 10 by inventory"),
+            AIMessage(content="Which metric do you mean?"),
+            HumanMessage(content="Inventory on-hand"),
+        ],
         "turns": 1,
         "next": "analysis",
         "session_id": "sess-node-5",
         "data_context": None,
-        "awaiting_clarification": True,
+        "pending_clarification": {"agent": "analysis", "reason": "Which metric do you mean?", "options": ["a", "b"]},
     }
     update = await node(state)
 
-    assert update["awaiting_clarification"] is False
+    assert update["pending_clarification"] is None
+    assert update["resolved_clarifications"] == [
+        {"question": "Which metric do you mean?", "answer": "Inventory on-hand"}
+    ]
 
 
-async def test_specialist_resumes_full_history_when_awaiting_clarification_reply():
+async def test_specialist_seeds_original_task_and_resolved_clarifications_not_full_history():
     """A reply to a clarifying question isn't a fresh task - the specialist
-    needs to see the whole exchange (the original ask, its own question, the
-    user's answer), not just the isolated reply, or it re-derives (or
-    re-asks) everything from scratch each time."""
+    needs the original ask plus what's now been answered, not just the
+    isolated reply. Unlike the old design, it's seeded with a compact
+    rendering of what's resolved, never the full raw message history (which
+    would forward - and re-pay for - every prior turn's content forever)."""
     llm = _RecordingLLM(responses=[AIMessage(content="Got it.")])
     node = build_datasource_node(llm)
 
-    history = [
-        HumanMessage(content="top 10 by inventory"),
-        AIMessage(content="Which metric do you mean?"),
-        HumanMessage(content="Inventory on-hand"),
-    ]
     state = {
-        "messages": history,
+        "messages": [
+            HumanMessage(content="top 10 by inventory"),
+            AIMessage(content="Which metric do you mean?"),
+            HumanMessage(content="Inventory on-hand"),
+        ],
         "turns": 1,
         "next": "datasource",
         "session_id": "sess-node-6",
         "data_context": None,
-        "awaiting_clarification": True,
+        "pending_clarification": {
+            "agent": "datasource",
+            "reason": "Which metric do you mean?",
+            "options": ["Inventory on-hand", "Inventory in-transit"],
+        },
+        "resolved_clarifications": [{"question": "Which region?", "answer": "North"}],
     }
     await node(state)
 
     seeded = llm.recorded_messages[0][1:]  # drop the chain's own prepended SystemMessage
-    assert [m.content for m in seeded] == [m.content for m in history]
+    assert len(seeded) == 1
+    content = seeded[0].content
+    assert "top 10 by inventory" in content  # the original task, not the reply alone
+    assert "Which region? -> North" in content  # already-resolved, from an earlier round
+    assert "Inventory on-hand" in content  # this round's reply
+    # The full raw exchange (the specialist's own prior clarifying-question
+    # message) is not forwarded verbatim - only the compact renderings above.
+    assert "Which metric do you mean?" in content  # referenced, but via the compact note
+    assert content.count("Which metric do you mean?") == 1
+
+
+async def test_supervisor_resumes_directly_into_the_specialist_awaiting_a_reply():
+    """No fresh routing decision (and no extra LLM call) when a specific
+    specialist is the one waiting on a clarification reply - resuming
+    straight into it also avoids the risk of the supervisor routing
+    somewhere else."""
+    llm = FakeToolCallingChatModel(responses=[])  # never called - would raise if it were
+    node = build_supervisor_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="North")],
+        "turns": 2,
+        "session_id": "sess-node-7",
+        "pending_clarification": {"agent": "analysis", "reason": "Which region?", "options": ["North", "South"]},
+    }
+    update = await node(state)
+
+    assert update == {"next": "analysis", "turns": 3}
 
 
 async def test_specialist_seeds_only_the_latest_task_for_a_fresh_request():
@@ -190,7 +234,7 @@ async def test_specialist_seeds_only_the_latest_task_for_a_fresh_request():
         "next": "datasource",
         "session_id": "sess-node-7",
         "data_context": None,
-        "awaiting_clarification": False,
+        "pending_clarification": None,
     }
     await node(state)
 
@@ -263,5 +307,5 @@ async def test_specialist_hitting_the_recursion_limit_returns_a_clean_failure_no
     update = await node(state)
 
     assert "couldn't complete this" in update["messages"][0].content.lower()
-    assert update["awaiting_clarification"] is False
+    assert update["pending_clarification"] is None
     assert "data_context" not in update

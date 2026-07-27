@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from data_analyst.clients.powerbi.dax import DaxColumn, DaxQuerySpec
-from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.config.settings import PowerBiCatalog, SemanticModelConfig
 
@@ -218,3 +218,22 @@ async def test_get_semantic_metadata_raises_clearly_when_no_matching_tool_is_adv
 
     with pytest.raises(ValueError, match="No semantic-metadata tool"):
         await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+
+def test_metadata_cache_remembers_by_model_name():
+    cache = get_metadata_cache("sess-cache-1")
+    assert cache.get("Sales Analytics") is None
+
+    cache.remember("Sales Analytics", {"tables": ["Sales"]})
+
+    assert cache.get("Sales Analytics") == {"tables": ["Sales"]}
+    assert cache.get("Other Model") is None
+
+
+def test_metadata_cache_is_scoped_per_session():
+    get_metadata_cache("sess-cache-owner").remember("Sales Analytics", {"tables": ["Sales"]})
+
+    assert get_metadata_cache("sess-cache-other").get("Sales Analytics") is None
+    # Same session id returns the same cache instance, so what was
+    # remembered is still there on a later call.
+    assert get_metadata_cache("sess-cache-owner").get("Sales Analytics") == {"tables": ["Sales"]}

@@ -17,11 +17,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
-from data_analyst.agents.common.tools import request_clarification
+from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
 from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
-from data_analyst.clients.powerbi.mcp import PBIMcpClient
+from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import Glossary, PowerBiCatalog
@@ -56,10 +56,20 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         token = state.get("pbi_token")
         if not token:
             return {"error": _NOT_SIGNED_IN}
+        cache = get_metadata_cache(state["session_id"])
+        if (cached := cache.get(model_name)) is not None:
+            # A fresh specialist subgraph is rebuilt on every delegation and
+            # has no memory of a schema it already fetched earlier in this
+            # conversation - this cache is what actually makes the "unless
+            # you've already seen it" guidance in this agent's system prompt
+            # true across delegations, not just within one.
+            return cached
         try:
-            return await mcp.get_semantic_metadata(token, model_name)
+            metadata = await mcp.get_semantic_metadata(token, model_name)
         except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
             return {"error": f"Power BI MCP call failed: {_describe(exc)}"}
+        cache.remember(model_name, metadata)
+        return metadata
 
     @tool
     async def pbi_rest_run_dax_query(
@@ -137,7 +147,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
     return [
         pbi_mcp_get_semantic_metadata,
         pbi_rest_run_dax_query,
-        request_clarification,
+        flag_ambiguity,
     ]
 
 

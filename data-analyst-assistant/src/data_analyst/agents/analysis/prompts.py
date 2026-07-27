@@ -8,6 +8,8 @@ final answer to a variable named `result`. Be concise in your summary.
 
 If you're not confident what computation would actually answer the user's
 question (not a code error to fix, but genuine ambiguity in what they want
-analyzed), call `request_clarification` with a short, specific question plus
-2-3 clearly distinct options (e.g. specific metrics or aggregations) instead
-of guessing - then relay that question as your final answer and stop."""
+analyzed), call `flag_ambiguity` with a short reason plus 2-3 clearly
+distinct options (e.g. specific metrics or aggregations) instead of
+guessing - then end your turn with a brief final message and stop. Flag
+ambiguity at most once per request - the orchestrator decides how to
+surface it to the user, not you."""

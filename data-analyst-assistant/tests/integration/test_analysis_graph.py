@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -58,16 +60,16 @@ async def test_sandbox_execute_dataset_id_is_scoped_to_its_own_session():
     assert "unknown dataset_id" in tool_messages[0].content.lower()
 
 
-async def test_can_ask_for_clarification_instead_of_guessing():
-    clarify_call = {
-        "name": "request_clarification",
-        "args": {"question": "Which metric do you want analyzed?", "options": ["Total revenue", "Average revenue"]},
+async def test_can_flag_ambiguity_instead_of_guessing():
+    ambiguity_call = {
+        "name": "flag_ambiguity",
+        "args": {"reason": "Which metric do you want analyzed?", "options": ["Total revenue", "Average revenue"]},
         "id": "c1",
     }
     llm = FakeToolCallingChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[clarify_call]),
-            AIMessage(content="Which metric do you want analyzed?"),
+            AIMessage(content="", tool_calls=[ambiguity_call]),
+            AIMessage(content="I need to know which metric."),
         ]
     )
     graph = build_analysis_graph(llm)
@@ -75,5 +77,9 @@ async def test_can_ask_for_clarification_instead_of_guessing():
     result = await graph.ainvoke({"messages": [HumanMessage(content="analyze it")], "session_id": "sess-analysis-clarify"})
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
-    assert tool_messages[0].name == "request_clarification"
-    assert result["messages"][-1].content == "Which metric do you want analyzed?"
+    assert tool_messages[0].name == "flag_ambiguity"
+    assert '"error"' not in tool_messages[0].content
+    assert json.loads(tool_messages[0].content) == {
+        "reason": "Which metric do you want analyzed?",
+        "options": ["Total revenue", "Average revenue"],
+    }
