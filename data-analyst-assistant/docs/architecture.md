@@ -98,11 +98,13 @@ the orchestrator ever decides what the user actually sees:
    `agents/common/tools.py`): for narrower ambiguity only visible once a
    specialist is actually trying to build the query or pick the
    computation - which the supervisor has no good way to predict before
-   delegating. The tool's result is an `Ambiguity` (`reason` + options), not
-   a ready-to-send question: `_run_specialist` composes the actual
-   user-facing message deterministically (`_compose_ambiguity_message`, no
-   extra LLM call) rather than relaying the specialist's own tool-call
-   arguments as if a model had phrased them for the user. Requiring the
+   delegating. The tool's result is read into the same `Clarification`
+   shape as the supervisor's own path, but its `question` field is really
+   just the specialist's own reason for the ambiguity, not a ready-to-send
+   question: `_run_specialist` composes the actual user-facing message
+   deterministically (`_compose_ambiguity_message`, no extra LLM call)
+   rather than relaying the specialist's own tool-call arguments as if a
+   model had phrased them for the user. Requiring the
    supervisor to anticipate every possible query-building or analysis
    ambiguity upfront would mean either being overcautious (clarifying when
    the specialist would have managed fine) or still delegating and hoping -

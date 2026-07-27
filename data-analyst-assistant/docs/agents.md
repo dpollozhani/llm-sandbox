@@ -96,13 +96,13 @@ when the requested analysis itself is ambiguous. `models.py` defines
 - `models.py::AgentResult` - what a specialist hands back to the
   orchestrator (`agent` name + `summary` text).
 - `models.py::Clarification` - a `question` plus 2-3 clearly distinct
-  options; produced only by the supervisor's own upfront `clarify` path
-  (see `docs/architecture.md`'s "Clarifications are the orchestrator's
-  alone to surface").
-- `models.py::Ambiguity` - a `reason` plus 2-3 clearly distinct options;
-  what a specialist's `flag_ambiguity` tool call produces - an internal
-  signal the orchestrator turns into the actual user-facing message, not a
-  ready-to-send question itself.
+  options, shared by both clarification paths (see `docs/architecture.md`'s
+  "Clarifications are the orchestrator's alone to surface"): the
+  supervisor's own upfront `clarify` path, where `question` is already
+  ready-to-send text, and a specialist's `flag_ambiguity` tool call, where
+  `question` is really just the specialist's own reason for the ambiguity -
+  an internal signal the orchestrator turns into the actual user-facing
+  message, not a ready-to-send question itself.
 - `tools.py::flag_ambiguity` - the tool both specialists share for
   flagging that they can't proceed confidently (with 2-3 candidate
   options) instead of guessing.

@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
-from data_analyst.agents.common.models import AgentResult, Ambiguity, FetchedDataset
+from data_analyst.agents.common.models import AgentResult, Clarification, FetchedDataset
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
@@ -98,16 +98,17 @@ def _original_task(messages: list[AnyMessage]) -> AnyMessage:
     return messages[-1]
 
 
-def _specialist_ambiguity(messages: list[AnyMessage]) -> Ambiguity | None:
-    """The `Ambiguity` a specialist flagged during this run (see
+def _specialist_ambiguity(messages: list[AnyMessage]) -> Clarification | None:
+    """The `Clarification` a specialist flagged during this run (see
     agents/common/tools.py::flag_ambiguity), if any - read directly from
     the tool call's own structured result rather than the model's own
     (freeform, easy-to-drift) restatement of it, so the orchestrator always
     composes the user-facing message from exactly what the tool was called
-    with."""
+    with. `.question` here is really just the specialist's own reason for
+    the ambiguity, not ready-to-send text - see `_compose_ambiguity_message`."""
     for message in messages:
         if message.type == "tool" and message.name == flag_ambiguity.name:
-            return Ambiguity(**json.loads(message.content))
+            return Clarification(**json.loads(message.content))
     return None
 
 
@@ -133,7 +134,7 @@ def _fetched_dataset(messages: list[AnyMessage]) -> FetchedDataset | None:
     return None
 
 
-def _compose_ambiguity_message(ambiguity: Ambiguity) -> str:
+def _compose_ambiguity_message(ambiguity: Clarification) -> str:
     """The user-facing text for a specialist's flagged ambiguity, composed
     deterministically - no extra LLM call. The whole point of a specialist
     reporting ambiguity (`flag_ambiguity`) rather than phrasing a question
@@ -141,7 +142,7 @@ def _compose_ambiguity_message(ambiguity: Ambiguity) -> str:
     the user sees; doing that with a template here keeps this path exactly
     as cheap as the specialist's own final answer, matching the supervisor's
     own upfront `clarify` path only in shape, not in cost."""
-    return f"{ambiguity.reason} ({' / '.join(ambiguity.options)})"
+    return f"{ambiguity.question} ({' / '.join(ambiguity.options)})"
 
 
 def _append_resolved(state: OrchestratorState) -> list[dict]:
@@ -250,7 +251,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         return {
             "messages": [AIMessage(content=_compose_ambiguity_message(ambiguity))],
             "next": "clarify",
-            "pending_clarification": {"agent": agent_name, "reason": ambiguity.reason, "options": ambiguity.options},
+            "pending_clarification": {"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
             "resolved_clarifications": _append_resolved(state),
         }
 

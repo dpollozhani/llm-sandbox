@@ -80,6 +80,9 @@ async def test_can_flag_ambiguity_instead_of_guessing():
     assert tool_messages[0].name == "flag_ambiguity"
     assert '"error"' not in tool_messages[0].content
     assert json.loads(tool_messages[0].content) == {
-        "reason": "Which metric do you want analyzed?",
+        # Serialized from the shared Clarification model (see
+        # agents/common/tools.py::flag_ambiguity) - "question" here is
+        # really just the specialist's own reason, not ready-to-send text.
+        "question": "Which metric do you want analyzed?",
         "options": ["Total revenue", "Average revenue"],
     }

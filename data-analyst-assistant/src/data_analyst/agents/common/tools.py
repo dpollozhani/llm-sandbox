@@ -7,7 +7,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 from pydantic import Field
 
-from data_analyst.agents.common.models import Ambiguity
+from data_analyst.agents.common.models import Clarification
 
 
 @tool
@@ -34,4 +34,9 @@ async def flag_ambiguity(
     surface it. After calling it, end your turn with a brief final message;
     don't call another tool afterwards.
     """
-    return Ambiguity(reason=reason, options=options).model_dump()
+    # The tool's own parameter is named `reason` (what a specialist gives),
+    # but it's read back into the same `Clarification` shape the
+    # supervisor's own upfront path produces - see that model's docstring
+    # for why one shape serves both without implying this is already
+    # ready-to-send text.
+    return Clarification(question=reason, options=options).model_dump()
