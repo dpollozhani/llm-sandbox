@@ -7,6 +7,6 @@
 terms:
   - term: BRIC
     definition: >-
-      An item attribute in the semantic model (a global item code) -
-      not the BRIC/BRICS country grouping (Brazil, Russia, India, China,
-      South Africa).
+      An item attribute in the semantic model.
+      Short fort Beijer Ref Item Code, not the BRIC/BRICS country grouping (Brazil, Russia, India, China,
+      South Africa). Can be used to group by instead of/together with other item attributes and/or for filtering.
