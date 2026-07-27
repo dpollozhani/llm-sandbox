@@ -40,7 +40,7 @@ async def test_respond_chain_injects_glossary():
     llm = _RecordingLLM(responses=[AIMessage(content="ok")])
     chain = build_respond_chain(llm, glossary=_GLOSSARY)
 
-    await chain.ainvoke([HumanMessage(content="hi")])
+    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
 
@@ -49,7 +49,7 @@ async def test_respond_chain_has_no_glossary_section_when_absent():
     llm = _RecordingLLM(responses=[AIMessage(content="ok")])
     chain = build_respond_chain(llm)
 
-    await chain.ainvoke([HumanMessage(content="hi")])
+    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
 
     assert "Glossary:" not in llm.recorded_messages[0][0].content
 
@@ -71,6 +71,23 @@ async def test_clarify_chain_injects_glossary():
     llm = _RecordingStructuredLLM(responses=[])
     chain = build_clarify_chain(llm, glossary=_GLOSSARY)
 
-    await chain.ainvoke([HumanMessage(content="hi")])
+    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
+
+
+async def test_clarify_chain_mentions_already_resolved_clarifications():
+    """So the supervisor's own upfront path doesn't re-ask something a
+    specialist (or an earlier upfront clarify) already settled."""
+    llm = _RecordingStructuredLLM(responses=[])
+    chain = build_clarify_chain(llm)
+
+    await chain.ainvoke(
+        {
+            "messages": [HumanMessage(content="hi")],
+            "resolved_clarifications": [{"question": "Which region?", "answer": "North"}],
+        }
+    )
+
+    prompt = llm.recorded_messages[0][0].content
+    assert '"Which region?" -> "North"' in prompt

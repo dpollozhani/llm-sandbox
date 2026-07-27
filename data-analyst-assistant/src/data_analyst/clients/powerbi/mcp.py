@@ -24,7 +24,24 @@ The exact shape of the tool's JSON payload (tables/columns/measures/
 relationships) isn't pinned down here beyond "valid JSON" - it's passed
 through as-is for the datasource agent's model to read, rather than forced
 into a schema that might not match the live server.
-"""
+
+`get_metadata_cache` (below) caches that payload per `(session_id,
+model_name)`, mirroring `clients/sandbox/client.py::get_sandbox_client`'s
+per-session registry - so a specialist subgraph rebuilt fresh for a later
+delegation in the same conversation (it has no memory of an earlier
+delegation's own tool calls) doesn't repeat the network round trip for a
+schema it - or an earlier delegation in the same session - already
+fetched. Scoped to `session_id`, never wider: `clients/powerbi/auth.py`'s
+own module docstring notes both this call and `executeQueries` enforce
+access control using the calling user's own identity, so a schema view
+cached for one session must never be served to another - the same
+"sessions never see each other's data" guarantee `SandboxClient` already
+provides for staged data, inherited here rather than reinvented. No payload
+filtering: the cached value is exactly what the server returned, preserving
+the full fidelity described above - this only removes the redundant
+network/tool-call round trip, not the payload's actual size once it does
+reach a specialist's own context (that's still full schema fidelity, by
+design)."""
 from __future__ import annotations
 
 import json
@@ -110,3 +127,31 @@ class PBIMcpClient:
             if not texts:
                 raise ValueError(f"{tool.name} returned no content")
             return json.loads(texts[0])
+
+
+class SemanticMetadataCache:
+    """One session's cache of `PBIMcpClient.get_semantic_metadata` results,
+    keyed by `model_name`. See this module's docstring for why this is
+    session-scoped rather than global."""
+
+    def __init__(self) -> None:
+        self._by_model: dict[str, dict] = {}
+
+    def get(self, model_name: str) -> dict | None:
+        return self._by_model.get(model_name)
+
+    def remember(self, model_name: str, metadata: dict) -> None:
+        self._by_model[model_name] = metadata
+
+
+_metadata_caches: dict[str, SemanticMetadataCache] = {}
+
+
+def get_metadata_cache(session_id: str) -> SemanticMetadataCache:
+    """Process-wide registry of one `SemanticMetadataCache` per session -
+    mirrors `clients/sandbox/client.py::get_sandbox_client` exactly, for the
+    same reasons (process-local, lost on restart; swap in a shared backing
+    store for a real multi-instance deployment)."""
+    if session_id not in _metadata_caches:
+        _metadata_caches[session_id] = SemanticMetadataCache()
+    return _metadata_caches[session_id]

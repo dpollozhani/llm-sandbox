@@ -6,5 +6,5 @@ def test_datasource_has_no_mutating_tools():
     assert tool_names == {
         "pbi_mcp_get_semantic_metadata",
         "pbi_rest_run_dax_query",
-        "request_clarification",
+        "flag_ambiguity",
     }

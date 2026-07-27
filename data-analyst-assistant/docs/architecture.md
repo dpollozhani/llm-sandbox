@@ -28,17 +28,18 @@ FastAPI (app/api.py)
   - `clarify` asks the user a short clarifying question instead - used when
     the supervisor can't even tell which specialist should handle the
     request. Narrower ambiguity (which table/columns/filters/measures, or
-    which computation) is instead handled by the specialist itself asking -
-    see "Two places a clarifying question can come from" below. Either way
-    the API surfaces it as `status: "clarification_needed"`; the user's
-    reply continues the same conversation (same `thread_id`).
+    which computation) is instead flagged by the specialist itself - see
+    "Clarifications are the orchestrator's alone to surface" below. Either way the
+    API surfaces it as `status: "clarification_needed"`; the user's reply
+    continues the same conversation (same `thread_id`).
 - **`agents/datasource`** and **`agents/analysis`**: each is an independent,
   small ReAct-style `StateGraph` - an `agent` node bound to a scoped set of
   tools via `bind_tools`, and a `ToolNode`, looping through
   `tools_condition` until the model answers without calling a tool. The
   datasource agent is read-only: metadata lookups and structured queries
   only, no tool that changes anything in Power BI. Both specialists also
-  have a `request_clarification` tool (`agents/common/tools.py`).
+  have a `flag_ambiguity` tool (`agents/common/tools.py`) to report - not
+  ask - an ambiguity they can't resolve themselves.
 - **`agents/common`**: the `ChatState` shape (`messages` + `session_id` with
   LangGraph's `add_messages` reducer) shared by all three graphs, and
   `AgentResult`, the small model a specialist hands back to the
@@ -74,62 +75,82 @@ For a **reply to a clarifying question**, though, a single isolated message
 isn't enough - a specialist subgraph is rebuilt from scratch on every
 delegation, so with only "Total across all products and locations" (say) and
 none of the preceding exchange, it has no way to know that's an answer about
-the "Inventory on-hand" measure asked about three messages ago. Without the
-full exchange, a reply like that risks landing as an entirely new,
-context-free task instead of a continuation of the old one - each
-clarifying question reasonable in isolation, but disconnected from the one
-before it, with no way to ever converge.
-`state["awaiting_clarification"]` (set whenever a clarifying question - the
-supervisor's own upfront one, or a specialist's mid-task one - was just
-asked, cleared once a turn resolves without asking another) tells
-`_run_specialist` which case it's in: seed just the latest task, or seed the
-whole exchange so the specialist can actually use the answer.
+the "Inventory on-hand" measure asked about three messages ago. Rather than
+forwarding the *entire* raw orchestrator history to solve this (which would
+also mean forwarding it - and re-paying for it - every subsequent turn),
+`state["pending_clarification"]` (see below) tells `_run_specialist` exactly
+what's outstanding, so it can seed the specialist with the original task
+plus a one-line "replying to: X -> Y" note instead of the whole transcript.
 
-## Two places a clarifying question can come from
+## Clarifications are the orchestrator's alone to surface
 
 Asking for clarification isn't only a supervisor-level decision. There are
-two distinct paths, deliberately kept separate because they resolve
-different kinds of uncertainty at different costs:
+two distinct paths that can produce one, deliberately kept separate because
+they resolve different kinds of uncertainty at different costs - but only
+the orchestrator ever decides what the user actually sees:
 
 1. **The supervisor asks upfront** (`Route(next="clarify")`,
    `build_clarify_node`/`clarify` node): for when the request is so vague
    the supervisor can't even tell which specialist should handle it. This
-   costs one supervisor call and ends the turn.
-2. **A specialist asks mid-task** (`request_clarification` tool,
+   costs one supervisor call (`build_clarify_chain`'s structured output,
+   producing a `Clarification` - `question` + options) and ends the turn.
+2. **A specialist flags ambiguity mid-task** (`flag_ambiguity` tool,
    `agents/common/tools.py`): for narrower ambiguity only visible once a
    specialist is actually trying to build the query or pick the
    computation - which the supervisor has no good way to predict before
-   delegating. Requiring the supervisor to anticipate every possible
-   query-building or analysis ambiguity upfront would mean either being
-   overcautious (clarifying when the specialist would have managed fine) or
-   still delegating and hoping - so the specialist is given the tool to
-   bail out itself, exactly when it discovers it needs to.
+   delegating. The tool's result is read into the same `Clarification`
+   shape as the supervisor's own path, but its `question` field is really
+   just the specialist's own reason for the ambiguity, not a ready-to-send
+   question: `_run_specialist` composes the actual user-facing message
+   deterministically (`_compose_ambiguity_message`, no extra LLM call)
+   rather than relaying the specialist's own tool-call arguments as if a
+   model had phrased them for the user. Requiring the
+   supervisor to anticipate every possible query-building or analysis
+   ambiguity upfront would mean either being overcautious (clarifying when
+   the specialist would have managed fine) or still delegating and hoping -
+   so the specialist is given the tool to bail out itself, exactly when it
+   discovers it needs to, at the same cost as its own final answer.
 
-Both paths produce the same shape: a `Clarification`
-(`agents/common/models.py`) - a `question` plus 2-3 clearly distinct
-options - not just free text. The supervisor's own path gets one via
-`build_clarify_chain`'s structured output; a specialist's path gets one by
-calling `request_clarification` with `question`/`options` as tool
-arguments (validated to 2-3 items at the tool-call boundary). `ChatResponse`
-(`app/api.py`) carries `options` alongside `reply` whenever `status` is
-`"clarification_needed"`, so a frontend can render them as buttons instead
-of requiring a typed reply - see `app/web.py`'s `renderOptions`, where
-picking one both removes the buttons (so only one is ever selectable) and
-submits it exactly as if it had been typed and sent.
+Both paths converge on one field: `state["pending_clarification"]`
+(`agents/orchestrator/state.py`) - `{"agent", "reason", "options"}`,
+identifying who's waiting on a reply and why. This replaced a former
+`awaiting_clarification`/`clarification_options` pair so that fact lives in
+one place, not two that could drift out of sync. `ChatResponse`
+(`app/api.py`) carries `pending_clarification["options"]` as `options`
+alongside `reply` whenever `status` is `"clarification_needed"`, so a
+frontend can render them as buttons instead of requiring a typed reply -
+see `app/web.py`'s `renderOptions`, where picking one both removes the
+buttons (so only one is ever selectable) and submits it exactly as if it
+had been typed and sent.
 
-`_run_specialist` (`agents/orchestrator/nodes.py`) detects the second case
-by looking for a `request_clarification` tool call in the specialist's run
-and parsing its own structured result (`_specialist_clarification`) -
-rather than trusting the specialist's own final freeform message to
-faithfully restate the question and options - and if found sets
-`next="clarify"` and returns that `Clarification` directly.
-`agents/orchestrator/graph.py`'s conditional edges out of `datasource`/
-`analysis` check that: normally they loop back to `supervisor`, but if
-`next` is now `"clarify"`, they go straight to `END` instead. This is the
-cheaper path precisely because it skips the extra supervisor call *and* the
-separate `clarify` node entirely - one specialist invocation, one reply -
-rather than always paying for a full supervisor round-trip regardless of
-where the ambiguity was actually discovered.
+`_run_specialist` (`agents/orchestrator/nodes.py`) detects the specialist's
+own case by looking for a `flag_ambiguity` tool call in the specialist's run
+and parsing its own structured result (`_specialist_ambiguity`) - rather
+than trusting the specialist's own final freeform message to faithfully
+restate the reason and options - and if found sets `next="clarify"` and
+`pending_clarification` directly.  `agents/orchestrator/graph.py`'s
+conditional edges out of `datasource`/`analysis` check that: normally they
+loop back to `supervisor`, but if `next` is now `"clarify"`, they go
+straight to `END` instead. This is the cheaper path precisely because it
+skips the extra supervisor call *and* the separate `clarify` node entirely -
+one specialist invocation, one reply, zero extra LLM calls - rather than
+always paying for a full supervisor round-trip (or an extra rephrasing call)
+regardless of where the ambiguity was actually discovered.
+
+Once a `pending_clarification` is resolved (or superseded by a new one),
+`_append_resolved` folds it into `state["resolved_clarifications"]` - a
+running `[{"question", "answer"}, ...]` list. Every specialist delegation
+(`_seed_content`) and the supervisor's own routing/clarify prompts
+(`_render_resolved` in `agents/orchestrator/chains.py`) are given a compact
+rendering of this list, so nothing re-asks (or re-derives from scratch)
+something already settled earlier in the conversation - without needing the
+full raw message history to do so.
+
+On resume, `build_supervisor_node` checks `pending_clarification` before
+doing anything else: if a specific specialist (not the supervisor itself)
+is the one awaiting a reply, it routes straight back to that specialist -
+skipping the routing chain's LLM call entirely - rather than re-deciding
+from scratch and risking a mis-route.
 
 ## Structured, validated DAX queries
 

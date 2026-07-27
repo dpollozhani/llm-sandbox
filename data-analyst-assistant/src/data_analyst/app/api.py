@@ -101,12 +101,13 @@ class ChatResponse(BaseModel):
 
 
 def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
-    status = "clarification_needed" if final_state.get("next") == "clarify" else "completed"
+    pending = final_state.get("pending_clarification")
+    status = "clarification_needed" if pending is not None else "completed"
     return ChatResponse(
         thread_id=thread_id,
         status=status,
         reply=final_state["messages"][-1].content,
-        options=final_state.get("clarification_options") if status == "clarification_needed" else None,
+        options=pending["options"] if pending is not None else None,
     )
 
 

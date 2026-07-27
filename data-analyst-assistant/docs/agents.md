@@ -21,12 +21,15 @@ ambiguity than the supervisor could have caught upfront) without an extra
 supervisor round-trip.
 
 `state.py`'s `OrchestratorState` adds `turns` (loop guard, `MAX_TURNS = 6` in
-`nodes.py`), `next` (the last routing decision - also what `app/api.py` uses
-to tell a `"clarification_needed"` response from a `"completed"` one),
-`data_context` (a human-readable summary of the most recently fetched
-dataset), and `clarification_options` (the 2-3 options alongside a
-`"clarify"` outcome - see "Two places a clarifying question can come from")
-on top of the shared `ChatState`.
+`nodes.py`), `next` (the last routing decision), `data_context` (a
+human-readable summary of the most recently fetched dataset),
+`pending_clarification` (who's awaiting a reply and why - what
+`app/api.py` reads to tell a `"clarification_needed"` response from a
+`"completed"` one, and where its `options` come from - see "Clarifications
+are the orchestrator's alone to surface" in `docs/architecture.md`), and
+`resolved_clarifications` (every clarification settled so far, so a
+specialist doesn't re-derive or re-ask about one) on top of the shared
+`ChatState`.
 
 ## Datasource (`agents/datasource/`)
 
@@ -56,7 +59,7 @@ query-building.
 |---|---|---|
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `dataset_id` plus a friendly `query` summary |
-| `request_clarification` | `agents/common/tools.py` | shared with the analysis agent; asks the user a question when the specialist itself is unsure what's meant - see `docs/architecture.md`'s "Two places a clarifying question can come from" |
+| `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
 to the model's tool schema - see `tool_call_schema` vs. `args_schema`): to
@@ -80,7 +83,7 @@ Sandbox specialist, two tools: `python_sandbox_execute`, which runs pandas
 code against a DataFrame staged earlier (by the datasource agent, possibly
 in an earlier turn) via `clients/sandbox/client.py`, reached the same way as
 the datasource agent - `state["session_id"]` injected via `InjectedState`;
-and the same shared `request_clarification` as the datasource agent, for
+and the same shared `flag_ambiguity` as the datasource agent, for
 when the requested analysis itself is ambiguous. `models.py` defines
 `SandboxExecutionResult` for the same reason as above.
 
@@ -93,11 +96,16 @@ when the requested analysis itself is ambiguous. `models.py` defines
 - `models.py::AgentResult` - what a specialist hands back to the
   orchestrator (`agent` name + `summary` text).
 - `models.py::Clarification` - a `question` plus 2-3 clearly distinct
-  options, the shape both clarifying-question paths produce (see
-  `docs/architecture.md`'s "Two places a clarifying question can come
-  from").
-- `tools.py::request_clarification` - the tool both specialists share for
-  asking the user a question (with those 2-3 options) instead of guessing.
+  options, shared by both clarification paths (see `docs/architecture.md`'s
+  "Clarifications are the orchestrator's alone to surface"): the
+  supervisor's own upfront `clarify` path, where `question` is already
+  ready-to-send text, and a specialist's `flag_ambiguity` tool call, where
+  `question` is really just the specialist's own reason for the ambiguity -
+  an internal signal the orchestrator turns into the actual user-facing
+  message, not a ready-to-send question itself.
+- `tools.py::flag_ambiguity` - the tool both specialists share for
+  flagging that they can't proceed confidently (with 2-3 candidate
+  options) instead of guessing.
 
 ## Adding a new specialist
 
@@ -125,7 +133,9 @@ when the requested analysis itself is ambiguous. `models.py` defines
    LangGraph populates it from the graph state and strips it from the
    schema shown to the model, so it can't be spoofed or need to be supplied
    by the LLM.
-5. Add `agents/common/tools.py::request_clarification` to the new
-   specialist's `TOOLS` list (see `docs/architecture.md`'s "Two places a
-   clarifying question can come from") and mention it in the specialist's
-   own system prompt, following `agents/datasource/prompts.py`.
+5. Add `agents/common/tools.py::flag_ambiguity` to the new specialist's
+   `TOOLS` list (see `docs/architecture.md`'s "Clarifications are the
+   orchestrator's alone to surface") and mention it in the specialist's own
+   system prompt, following `agents/datasource/prompts.py` - phrase it as
+   *reporting* ambiguity, not asking the user a question; the orchestrator
+   composes and surfaces the actual message.

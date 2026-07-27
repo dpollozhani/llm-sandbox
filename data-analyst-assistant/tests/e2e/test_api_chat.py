@@ -220,17 +220,18 @@ def test_supervisor_asks_for_clarification_when_uncertain():
 def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
     """A single scripted route is enough: if the orchestrator needed a second
     supervisor decision after the datasource specialist ran, this would raise
-    IndexError instead of returning - proving the specialist's own
-    clarifying question short-circuits straight to the reply."""
-    clarify_call = {
-        "name": "request_clarification",
-        "args": {"question": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
+    IndexError instead of returning - proving the specialist's own flagged
+    ambiguity short-circuits straight to a reply, composed by the
+    orchestrator, at zero extra LLM-call cost."""
+    ambiguity_call = {
+        "name": "flag_ambiguity",
+        "args": {"reason": "Which time period do you mean?", "options": ["Last month", "Last quarter"]},
         "id": "c1",
     }
     llm = ScriptedRoutingModel(
         responses=[
-            AIMessage(content="", tool_calls=[clarify_call]),
-            AIMessage(content="Which time period do you mean?"),
+            AIMessage(content="", tool_calls=[ambiguity_call]),
+            AIMessage(content="I need to know which time period."),
         ],
         routes=[{"next": "datasource"}],
     )
@@ -246,7 +247,10 @@ def test_specialist_asks_for_clarification_without_a_second_supervisor_call():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "clarification_needed"
-    assert body["reply"] == "Which time period do you mean?"
+    # Composed deterministically from the tool call's own reason/options -
+    # not the specialist's own final freeform message above, which is
+    # discarded in favor of this.
+    assert body["reply"] == "Which time period do you mean? (Last month / Last quarter)"
     assert body["options"] == ["Last month", "Last quarter"]
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing_extensions import NotRequired
+
 from data_analyst.agents.common.state import ChatState
 
 
@@ -26,21 +28,35 @@ class OrchestratorState(ChatState):
     backend. Threaded into the supervisor's routing prompt and into the
     analysis specialist's seed message, so a follow-up question can reuse
     already-fetched data instead of triggering a new datasource delegation."""
-    clarification_options: list[str] | None
-    """Set alongside a "clarify" outcome - either the supervisor's own
-    upfront decision (`build_clarify_node`) or a specialist's
-    `request_clarification` tool call (`_run_specialist`) - to the 2-3
-    options the user can pick from. Read by `app/api.py`'s `ChatResponse` so
-    a frontend can render them as buttons instead of requiring free text."""
-    awaiting_clarification: bool
-    """True right after any clarifying question was asked (supervisor's own
-    upfront one, or a specialist's mid-task one), cleared once a turn
-    finishes without asking another. `_run_specialist` reads this to decide
-    how much history to seed a specialist with: a fresh task gets only the
-    latest user message (see `_latest_user_task`), but a reply to a
-    clarifying question needs the specialist to see the *whole* exchange
-    (the original ask, its own question, the user's answer) - a specialist
-    subgraph is rebuilt from scratch on every delegation and remembers
-    nothing between turns on its own, so without this a clarification reply
-    would land as an entirely new, context-free request instead of a
-    continuation of the one that prompted the question."""
+    pending_clarification: dict | None
+    """{"agent": "datasource" | "analysis" | "supervisor", "reason": str,
+    "options": list[str]} - who is waiting on a reply and why, whether from
+    the supervisor's own upfront decision (`build_clarify_node`) or a
+    specialist's `flag_ambiguity` tool call (`_run_specialist`). The single
+    source of truth for "is a clarification outstanding": replaces the
+    former separate `awaiting_clarification`/`clarification_options` pair
+    so this fact lives in one place, not two that can drift out of sync.
+    Read by `build_supervisor_node` to resume straight into the specialist
+    that asked (skipping a fresh routing decision) and by `app/api.py`'s
+    `ChatResponse` (`options`) so a frontend can render buttons instead of
+    requiring free text. Cleared (set to `None`) once the reply resolves it."""
+    resolved_clarifications: list[dict]
+    """[{"question": str, "answer": str}, ...] - every clarification
+    settled so far this conversation, appended to (read-append-overwrite,
+    same convention as `turns`) by `_run_specialist` right before it clears
+    `pending_clarification`. Given to a specialist at seed time (in place of
+    the full raw message history a clarification reply used to be seeded
+    with) so it knows what's already been settled instead of re-deriving -
+    or re-asking about - it from scratch."""
+    history_summary: NotRequired[str]
+    """A running summary of conversation turns old enough to have been
+    folded out of the supervisor/respond/clarify chains' own prompt context
+    (see `agents/orchestrator/history.py`) - `messages` itself is never
+    trimmed (it's the checkpointed record), only what gets sent to the
+    model each call. `NotRequired`: absent until a conversation is long
+    enough to need one."""
+    history_summarized_through: NotRequired[int]
+    """How many of `messages` (by index) are already folded into
+    `history_summary` - lets `maybe_summarize_history` only ever summarize
+    the delta since the last summary, not the whole history again each
+    time. `NotRequired` for the same reason as `history_summary`."""
