@@ -38,6 +38,10 @@ import pandas as pd
 import pyarrow as pa
 from pydantic import BaseModel, Field, model_validator
 
+from data_analyst.telemetry.logging import get_logger
+
+_logger = get_logger("clients.powerbi.dax")
+
 FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
 Aggregation = Literal["SUM", "AVERAGE", "COUNT", "MIN", "MAX"]
 
@@ -226,7 +230,19 @@ def _read_arrow_tables(content: bytes) -> list[pa.Table]:
     `rest.py::PBIRestClient.run_dax_query` still checks separately via
     `response.status_code`). A data rowset carries no `IsError` key at all,
     per Microsoft's docs - not `IsError: false` - hence the equality check
-    below, not a truthiness one."""
+    below, not a truthiness one.
+
+    A stream with zero columns is never kept: every query this client
+    builds requests at least one group-by column or measure
+    (`validate_dax_query`), so a genuine answer to one of them always has at
+    least one column - a schema-less stream can only be some other kind of
+    stream this client doesn't otherwise recognize (observed live: Power BI
+    returning a legitimate, non-error stream with an empty schema alongside
+    the real data), never itself the answer. Logs every stream's shape
+    (INFO, not DEBUG - see `agents/datasource/nodes.py`'s exception logging
+    for why) since this endpoint's exact multi-stream behavior hasn't been
+    confirmed against a live tenant.
+    """
     stream = io.BytesIO(content)
     tables: list[pa.Table] = []
     while stream.tell() < len(content):
@@ -237,12 +253,16 @@ def _read_arrow_tables(content: bytes) -> list[pa.Table]:
             break  # trailing padding after the last real stream, not another one
 
         metadata = {k.decode(): v.decode() for k, v in (reader.schema.metadata or {}).items()}
+        _logger.info(
+            "Arrow IPC stream: columns=%s rows=%d metadata=%s", table.column_names, table.num_rows, metadata
+        )
         if metadata.get("IsError") == "true":
             raise ValueError(f"Power BI query failed [{metadata.get('FaultCode')}]: {metadata.get('FaultString')}")
-        tables.append(table)
+        if table.column_names:
+            tables.append(table)
 
     if not tables:
-        raise ValueError("Unexpected Arrow executeQueries response: no valid Arrow IPC stream found")
+        raise ValueError("Unexpected Arrow executeQueries response: no valid (non-empty) Arrow IPC stream found")
     return tables
 
 
