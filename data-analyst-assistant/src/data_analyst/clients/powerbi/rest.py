@@ -9,6 +9,16 @@ rejects a service-principal token outright on any dataset with row-level
 security). Queries are always structured `SUMMARIZECOLUMNS(...)`/`ROW(...)` calls built
 and validated from a `DaxQuerySpec` (see `dax.py`) - never free-form DAX text
 handed in directly.
+
+Uses the Execute DAX Queries (Arrow) endpoint (`/executeQueries/arrow`, not
+the older plain `/executeQueries`) - the request body is unchanged, but the
+response comes back as Apache Arrow IPC stream bytes instead of a JSON
+envelope (see `dax.py::parse_arrow_query_response`), avoiding JSON's
+per-row/per-value serialization overhead for larger result sets and raising
+the server-side row cap from 100k to 1M rows by default. This requires the
+tenant setting "Dataset Execute Queries REST API" (Admin portal - Integration
+settings) to be enabled; a tenant without it enabled will see this fail
+where the older JSON endpoint would have worked.
 """
 from __future__ import annotations
 
@@ -18,7 +28,7 @@ import pandas as pd
 from data_analyst.clients.powerbi.dax import (
     DaxQuerySpec,
     build_dax_query,
-    parse_execute_queries_response,
+    parse_arrow_query_response,
     validate_dax_query,
 )
 from data_analyst.config.settings import PowerBiCatalog, get_catalog
@@ -72,13 +82,19 @@ class PBIRestClient:
 
             body = {"queries": [{"query": dax_query}], "serializerSettings": {"includeNulls": True}}
             async with self._client(access_token) as client:
-                response = await client.post(f"/datasets/{model.dataset_id}/executeQueries", json=body)
+                response = await client.post(f"/datasets/{model.dataset_id}/executeQueries/arrow", json=body)
                 if response.status_code >= 400:
+                    # A transport/auth-level failure (unknown dataset, bad
+                    # token, malformed request) - still a normal HTTP error
+                    # status either way. A *query* error (e.g. an unknown
+                    # column) is different: it comes back as a 200 with an
+                    # error rowset embedded in the Arrow body itself, caught
+                    # inside parse_arrow_query_response below instead.
                     # INFO, not DEBUG (trace_span's own logging is DEBUG-only,
                     # and LOG_LEVEL defaults to INFO) - httpx's own request
                     # logging shows the status code but never the body, which
                     # is where Power BI's actual reason lives.
                     _logger.info("executeQueries %s failed: query=%s body=%s", response.status_code, dax_query, response.text)
                     raise ValueError(f"Power BI query failed ({response.status_code}): {response.text}")
-                df = parse_execute_queries_response(response.json(), spec)
+                df = parse_arrow_query_response(response.content, spec)
             return dax_query, df

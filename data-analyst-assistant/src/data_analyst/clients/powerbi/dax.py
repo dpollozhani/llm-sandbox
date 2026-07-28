@@ -23,16 +23,19 @@ DAX text; `validate_dax_query` checks that text (and the spec behind it)
 structurally before it would be sent to the REST endpoint - it doesn't know
 the real model's columns, so an unknown column still comes back as an error
 from Power BI itself (see `rest.py::PBIRestClient.run_dax_query`), just like
-any other query mistake the agent can retry after; `parse_execute_queries_response`
-turns the REST API's `executeQueries` response back into a DataFrame.
+any other query mistake the agent can retry after; `parse_arrow_query_response`
+turns the Execute DAX Queries (Arrow) REST API's response back into a
+DataFrame.
 """
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from typing import Literal
 
 import pandas as pd
+import pyarrow as pa
 from pydantic import BaseModel, Field, model_validator
 
 FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
@@ -195,21 +198,65 @@ def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
     raise ValueError(f"Column '{name}' not found in query result columns: {keys}")
 
 
-def parse_execute_queries_response(response: dict, spec: DaxQuerySpec) -> pd.DataFrame:
-    """Turn a Power BI REST `executeQueries` response body back into a
-    DataFrame with friendly column names (the spec's own `group_by`/measure
-    names), for the analysis agent to work with by `dataset_id`."""
+def _is_error_rowset(table: pa.Table) -> bool:
+    """A query error comes back as HTTP 200 with an "error rowset" embedded
+    in the Arrow stream itself, signaled by an `IsError` schema metadata
+    flag - not an HTTP error status - so a caller has to check for it
+    explicitly rather than relying on `response.status_code` (see
+    `rest.py::PBIRestClient.run_dax_query`, which still checks that
+    separately for transport-level failures). Matched case-insensitively
+    since the exact casing isn't pinned down by a live-endpoint check."""
+    metadata = table.schema.metadata or {}
+    value = next((v for k, v in metadata.items() if k.lower() == b"iserror"), None)
+    return value is not None and value.lower() == b"true"
+
+
+def _error_rowset_message(table: pa.Table) -> str:
+    """A readable message for an error rowset (see `_is_error_rowset`) -
+    prefers the schema's own `FaultCode`/`FaultString` metadata, falling
+    back to the error rowset's own row columns if that metadata is missing
+    or differently named than expected."""
+    metadata = table.schema.metadata or {}
+    fault_code = metadata.get(b"FaultCode", b"").decode(errors="replace")
+    fault_string = metadata.get(b"FaultString", b"").decode(errors="replace")
+    if fault_string:
+        return f"Power BI query failed ({fault_code}): {fault_string}" if fault_code else f"Power BI query failed: {fault_string}"
+
+    df = table.to_pandas()
+    for column in ("ErrorMessage", "ErrorDescription"):
+        if column in df.columns and not df.empty:
+            return f"Power BI query failed: {df[column].iloc[0]}"
+    return "Power BI query failed: unknown error (error rowset returned with no readable message)"
+
+
+def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFrame:
+    """Turn the Execute DAX Queries (Arrow) REST API's response body back
+    into a DataFrame with friendly column names (the spec's own
+    `group_by`/measure names), for the analysis agent to work with by
+    `dataset_id`.
+
+    The response body is one or more concatenated Apache Arrow IPC streams
+    (record batches LZ4_FRAME-compressed, decompressed transparently by
+    pyarrow) - only the first is read here, since this client only ever
+    submits a single query per request (`rest.py`'s request body has one
+    `queries` entry) and the API returns one result stream per submitted
+    query; a batched multi-query request, which this client doesn't make,
+    would produce more.
+    """
     try:
-        rows = response["results"][0]["tables"][0]["rows"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError(f"Unexpected executeQueries response shape: {response!r}") from exc
+        table = pa.ipc.open_stream(io.BytesIO(content)).read_all()
+    except pa.ArrowInvalid as exc:
+        raise ValueError(f"Unexpected Arrow executeQueries response: {exc}") from exc
+
+    if _is_error_rowset(table):
+        raise ValueError(_error_rowset_message(table))
 
     wanted = [*(c.column for c in spec.group_by), *(m.name for m in spec.measures)]
-    if not rows:
+    if table.num_rows == 0:
         return pd.DataFrame(columns=wanted)
 
-    keys = list(rows[0].keys())
+    keys = table.column_names
     rename = {_result_key(keys, c.column, table=c.table): c.column for c in spec.group_by}
     rename.update({_result_key(keys, m.name): m.name for m in spec.measures})
 
-    return pd.DataFrame(rows).rename(columns=rename)[wanted]
+    return table.to_pandas().rename(columns=rename)[wanted]

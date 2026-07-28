@@ -1,3 +1,6 @@
+import io
+
+import pyarrow as pa
 import pytest
 
 from data_analyst.clients.powerbi.dax import (
@@ -6,9 +9,22 @@ from data_analyst.clients.powerbi.dax import (
     DaxMeasure,
     DaxQuerySpec,
     build_dax_query,
-    parse_execute_queries_response,
+    parse_arrow_query_response,
     validate_dax_query,
 )
+
+
+def _arrow_bytes(rows: list[dict], schema: pa.Schema | None = None, is_error: bool = False) -> bytes:
+    """Build an in-memory Apache Arrow IPC stream matching what the Execute
+    DAX Queries (Arrow) endpoint returns, for tests with no live Power BI
+    tenant to call against. `schema` is required when `rows` is empty (there's
+    nothing to infer column types/names from otherwise)."""
+    table = pa.Table.from_pylist(rows, schema=schema)
+    table = table.replace_schema_metadata({b"IsError": b"true" if is_error else b"false"})
+    buf = io.BytesIO()
+    with pa.ipc.new_stream(buf, table.schema) as writer:
+        writer.write_table(table)
+    return buf.getvalue()
 
 
 def test_build_dax_query_shape():
@@ -139,27 +155,19 @@ def test_validate_rejects_summarizecolumns_text_when_group_by_is_absent():
         validate_dax_query('EVALUATE SUMMARIZECOLUMNS(\n    "Total", [Total]\n)', spec)
 
 
-def test_parse_execute_queries_response_renames_group_by_and_measures():
+def test_parse_arrow_query_response_renames_group_by_and_measures():
     spec = DaxQuerySpec(
         model_name="m",
         group_by=[DaxColumn(table="Sales", column="Region")],
         measures=[DaxMeasure(name="Total Revenue", aggregation="SUM", table="Sales", column="Revenue")],
     )
-    response = {
-        "results": [
-            {
-                "tables": [
-                    {
-                        "rows": [
-                            {"Sales[Region]": "North", "Total Revenue": 150},
-                            {"Sales[Region]": "South", "Total Revenue": 30},
-                        ]
-                    }
-                ]
-            }
+    content = _arrow_bytes(
+        [
+            {"Sales[Region]": "North", "Total Revenue": 150},
+            {"Sales[Region]": "South", "Total Revenue": 30},
         ]
-    }
-    df = parse_execute_queries_response(response, spec)
+    )
+    df = parse_arrow_query_response(content, spec)
     assert list(df.columns) == ["Region", "Total Revenue"]
     assert df.to_dict(orient="records") == [
         {"Region": "North", "Total Revenue": 150},
@@ -167,29 +175,40 @@ def test_parse_execute_queries_response_renames_group_by_and_measures():
     ]
 
 
-def test_parse_execute_queries_response_handles_quoted_table_column_headers():
+def test_parse_arrow_query_response_handles_quoted_table_column_headers():
     spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
-    response = {"results": [{"tables": [{"rows": [{"'Sales'[Region]": "North"}]}]}]}
-    df = parse_execute_queries_response(response, spec)
+    content = _arrow_bytes([{"'Sales'[Region]": "North"}])
+    df = parse_arrow_query_response(content, spec)
     assert df.to_dict(orient="records") == [{"Region": "North"}]
 
 
-def test_parse_execute_queries_response_empty_rows_returns_empty_frame_with_expected_columns():
+def test_parse_arrow_query_response_empty_rows_returns_empty_frame_with_expected_columns():
     spec = DaxQuerySpec(
         model_name="m",
         group_by=[DaxColumn(table="Sales", column="Region")],
         measures=[DaxMeasure(name="Total", aggregation="SUM", table="Sales", column="Revenue")],
     )
-    response = {"results": [{"tables": [{"rows": []}]}]}
-    df = parse_execute_queries_response(response, spec)
+    schema = pa.schema([("Sales[Region]", pa.string()), ("Total", pa.float64())])
+    content = _arrow_bytes([], schema=schema)
+    df = parse_arrow_query_response(content, spec)
     assert list(df.columns) == ["Region", "Total"]
     assert len(df) == 0
 
 
-def test_parse_execute_queries_response_unexpected_shape_raises():
+def test_parse_arrow_query_response_unexpected_bytes_raises():
     spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
-    with pytest.raises(ValueError, match="Unexpected executeQueries response"):
-        parse_execute_queries_response({"unexpected": True}, spec)
+    with pytest.raises(ValueError, match="Unexpected Arrow executeQueries response"):
+        parse_arrow_query_response(b"not a valid arrow stream", spec)
+
+
+def test_parse_arrow_query_response_raises_on_error_rowset():
+    """A query error comes back as HTTP 200 with an error rowset embedded in
+    the Arrow stream (an `IsError` schema metadata flag), not an HTTP error
+    status - the parser has to surface that itself."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"ErrorMessage": "Column 'Bogus' does not exist"}], is_error=True)
+    with pytest.raises(ValueError, match="Column 'Bogus' does not exist"):
+        parse_arrow_query_response(content, spec)
 
 
 def test_cache_key_ignores_list_order():
