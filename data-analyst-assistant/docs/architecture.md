@@ -389,15 +389,23 @@ cheap to confirm on first real use - the first would surface as an
 unexpected error status, the second as a specific, documented error rather
 than a silent failure.
 
-A live tenant call did surface one real problem: `_result_key`
-(`clients/powerbi/dax.py`) failed to match columns that are confirmed to
-exist in the semantic model, meaning the Arrow endpoint's actual header
-format for at least some columns doesn't match the shapes this client
-originally checked for - a live-tenant detail no unit test built from this
-client's own assumptions could have caught. `_result_key` now also tries a
-case-insensitive match, a `Table.Column` (dot, not just bracket) shape, and
-an unambiguous substring match before giving up, and the datasource tool's
-exception handlers (`agents/datasource/nodes.py`) now log the failure
-(previously silent - visible nowhere but the model's own paraphrase of the
-`{"error": ...}` tool result) so a future mismatch is diagnosable from
-production logs instead of guesswork.
+A live tenant call did surface a real problem, in two rounds. The first
+symptom - `_result_key` (`clients/powerbi/dax.py`) failing to match columns
+confirmed to exist in the semantic model - first looked like a header-format
+mismatch, so `_result_key` was given a case-insensitive match, a
+`Table.Column` (dot, not just bracket) shape, and an unambiguous substring
+fallback. The added logging from that round (the datasource tool's
+exception handlers, `agents/datasource/nodes.py`, previously logged
+nothing - a failure was visible nowhere but the model's own paraphrase of
+the `{"error": ...}` tool result) then showed the real cause on the next
+occurrence: `_result_key` was being handed an *empty* column list, not a
+mismatched one. The actual response, for at least some queries, contains a
+non-error stream with zero columns (no `IsError` metadata at all) alongside
+the real data stream - not something either this client's own assumptions
+or Microsoft's public documentation predicted. `_read_arrow_tables` now
+skips any zero-column stream when assembling the result (never a legitimate
+answer to one of this client's own queries, which always request at least
+one column) and logs every stream's shape unconditionally, so a live-tenant
+detail no test built from this client's own assumptions could catch is at
+least immediately diagnosable from production logs the next time one
+surfaces.

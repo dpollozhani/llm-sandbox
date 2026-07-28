@@ -34,6 +34,18 @@ def _arrow_bytes(
     return buf.getvalue()
 
 
+def _empty_schema_arrow_bytes() -> bytes:
+    """A non-error Arrow IPC stream with zero columns - observed live
+    alongside a real data stream in a genuine Power BI response, not
+    something this client's own assumptions predicted."""
+    schema = pa.schema([])
+    table = pa.table({}, schema=schema)
+    buf = io.BytesIO()
+    with pa.ipc.new_stream(buf, schema) as writer:
+        writer.write_table(table)
+    return buf.getvalue()
+
+
 def test_build_dax_query_shape():
     spec = DaxQuerySpec(
         model_name="m",
@@ -273,6 +285,26 @@ def test_parse_arrow_query_response_concatenates_multiple_streams():
     content = _arrow_bytes([{"Sales[Region]": "North"}]) + _arrow_bytes([{"Sales[Region]": "South"}])
     df = parse_arrow_query_response(content, spec)
     assert df.to_dict(orient="records") == [{"Region": "North"}, {"Region": "South"}]
+
+
+def test_parse_arrow_query_response_ignores_a_leading_empty_schema_stream():
+    """Observed live: a non-error stream with zero columns preceding the
+    real data stream in the same response - it must not be mistaken for (or
+    block reading) the actual answer. This is what was actually behind
+    _result_key's "not found in query result columns: []" failures - not a
+    header-format mismatch, an empty-schema stream taken as the whole
+    result."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _empty_schema_arrow_bytes() + _arrow_bytes([{"Sales[Region]": "North"}])
+    df = parse_arrow_query_response(content, spec)
+    assert df.to_dict(orient="records") == [{"Region": "North"}]
+
+
+def test_parse_arrow_query_response_raises_clearly_when_every_stream_is_empty():
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _empty_schema_arrow_bytes()
+    with pytest.raises(ValueError, match="no valid \\(non-empty\\) Arrow IPC stream"):
+        parse_arrow_query_response(content, spec)
 
 
 def test_cache_key_ignores_list_order():
