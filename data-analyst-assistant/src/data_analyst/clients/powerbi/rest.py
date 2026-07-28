@@ -10,8 +10,8 @@ security). Queries are always structured `SUMMARIZECOLUMNS(...)`/`ROW(...)` call
 and validated from a `DaxQuerySpec` (see `dax.py`) - never free-form DAX text
 handed in directly.
 
-Uses the Execute DAX Queries (Arrow) endpoint (`/executeQueries/arrow`, not
-the older plain `/executeQueries`) - the request body is unchanged, but the
+Uses the Execute DAX Queries (Arrow) endpoint (`/executeDaxQueries`, not the
+older plain `/executeQueries`) - the request body is unchanged, but the
 response comes back as Apache Arrow IPC stream bytes instead of a JSON
 envelope (see `dax.py::parse_arrow_query_response`), avoiding JSON's
 per-row/per-value serialization overhead for larger result sets and raising
@@ -82,7 +82,7 @@ class PBIRestClient:
 
             body = {"queries": [{"query": dax_query}], "serializerSettings": {"includeNulls": True}}
             async with self._client(access_token) as client:
-                response = await client.post(f"/datasets/{model.dataset_id}/executeQueries/arrow", json=body)
+                response = await client.post(f"/datasets/{model.dataset_id}/executeDaxQueries", json=body)
                 if response.status_code >= 400:
                     # A transport/auth-level failure (unknown dataset, bad
                     # token, malformed request) - still a normal HTTP error

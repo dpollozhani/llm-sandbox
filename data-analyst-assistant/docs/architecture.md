@@ -171,7 +171,7 @@ text from the model - only structured `group_by` columns, `filters`, and
    - so that class of error surfaces from Power BI's own response instead
    (see next point).
 3. Sends it to the Power BI REST **Execute DAX Queries (Arrow)** endpoint
-   (`PBIRestClient.run_dax_query`, `POST .../executeQueries/arrow` - not the
+   (`PBIRestClient.run_dax_query`, `POST .../executeDaxQueries` - not the
    older plain `/executeQueries`) using the caller's delegated access token.
    The request body is the same `{"queries": [{"query": dax_query}], ...}`
    shape as the older JSON endpoint, but the response comes back as one or
@@ -373,16 +373,17 @@ it:
   executes code via `exec()`, but against an in-process dict of staged
   DataFrames rather than an isolated execution service.
 
-**A note on the Execute DAX Queries (Arrow) switch specifically**: this was
-implemented from Microsoft's public documentation and community write-ups
-(the primary Microsoft Learn pages weren't directly reachable from the
-environment this was built in), not verified against a live tenant call.
-The request body, endpoint path, LZ4-compressed Arrow IPC response shape,
-and the `IsError` in-band error signal are corroborated by multiple
-independent sources, but exact details this repo's tests can't catch (the
-precise `IsError`/`FaultCode`/`FaultString` metadata key casing, whether an
-explicit `Accept` header is also required alongside the `/arrow` URL suffix)
-should be confirmed against a real Power BI tenant before relying on this in
-production - `parse_arrow_query_response` (`clients/powerbi/dax.py`) was
-written defensively (case-insensitive metadata matching, a fallback to the
-error rowset's own columns) specifically because of this.
+**A note on the Execute DAX Queries (Arrow) switch specifically**: the
+endpoint path (`/executeDaxQueries`) was confirmed directly; the rest -
+the request body being unchanged, the LZ4-compressed Arrow IPC response
+shape, and the `IsError` in-band error signal - was implemented from
+Microsoft's public documentation and community write-ups (the primary
+Microsoft Learn pages weren't directly reachable from the environment this
+was built in), corroborated by multiple independent sources but not
+verified against a live tenant call. Exact details this repo's tests can't
+catch (the precise `IsError`/`FaultCode`/`FaultString` metadata key casing,
+whether an explicit `Accept` header is also required) should be confirmed
+against a real Power BI tenant before relying on this in production -
+`parse_arrow_query_response` (`clients/powerbi/dax.py`) was written
+defensively (case-insensitive metadata matching, a fallback to the error
+rowset's own columns) specifically because of this.

@@ -215,7 +215,11 @@ def _error_rowset_message(table: pa.Table) -> str:
     """A readable message for an error rowset (see `_is_error_rowset`) -
     prefers the schema's own `FaultCode`/`FaultString` metadata, falling
     back to the error rowset's own row columns if that metadata is missing
-    or differently named than expected."""
+    or differently named than expected. Plain `to_pandas()` (not
+    `types_mapper=pd.ArrowDtype`, unlike `parse_arrow_query_response` below)
+    - this is a rare, small failure path where the copy-avoidance the
+    Arrow-backed dtype buys doesn't matter, and a plain Python `str`/scalar
+    is simpler to format into a message than an Arrow-backed one."""
     metadata = table.schema.metadata or {}
     fault_code = metadata.get(b"FaultCode", b"").decode(errors="replace")
     fault_string = metadata.get(b"FaultString", b"").decode(errors="replace")
@@ -242,6 +246,13 @@ def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFra
     `queries` entry) and the API returns one result stream per submitted
     query; a batched multi-query request, which this client doesn't make,
     would produce more.
+
+    Converts via `types_mapper=pd.ArrowDtype` rather than plain
+    `to_pandas()`: with the server-side row cap now 1M (up from the old
+    JSON endpoint's 100k), avoiding a numpy-backed copy of a result that
+    size is worth the (mostly cosmetic - pandas' arrow-backed dtypes behave
+    like their numpy equivalents for the indexing/rename/arithmetic this
+    codebase does with them) dtype difference downstream.
     """
     try:
         table = pa.ipc.open_stream(io.BytesIO(content)).read_all()
@@ -251,12 +262,14 @@ def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFra
     if _is_error_rowset(table):
         raise ValueError(_error_rowset_message(table))
 
+    # Unlike the old JSON response, an empty result still carries its full
+    # schema (column names/types) via `table.column_names` regardless of row
+    # count, so there's no need to special-case "zero rows" separately (the
+    # old parser had to, since an empty `rows: []` JSON list carries no
+    # header information at all).
     wanted = [*(c.column for c in spec.group_by), *(m.name for m in spec.measures)]
-    if table.num_rows == 0:
-        return pd.DataFrame(columns=wanted)
-
     keys = table.column_names
     rename = {_result_key(keys, c.column, table=c.table): c.column for c in spec.group_by}
     rename.update({_result_key(keys, m.name): m.name for m in spec.measures})
 
-    return table.to_pandas().rename(columns=rename)[wanted]
+    return table.to_pandas(types_mapper=pd.ArrowDtype).rename(columns=rename)[wanted]

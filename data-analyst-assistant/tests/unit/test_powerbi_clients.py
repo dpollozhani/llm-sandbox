@@ -90,7 +90,7 @@ def _rest_client(handler) -> PBIRestClient:
 
 async def test_run_dax_query_executes_and_parses_the_response():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeQueries/arrow"
+        assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeDaxQueries"
         assert request.headers["authorization"] == "Bearer tok-123"
         body = json.loads(request.content)
         assert body["queries"][0]["query"].startswith("EVALUATE SUMMARIZECOLUMNS(")
