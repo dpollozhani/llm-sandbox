@@ -36,8 +36,8 @@ specialist doesn't re-derive or re-ask about one) on top of the shared
 Power BI specialist, **read-only by design**: metadata lookups and
 structured queries only, nothing that changes state in Power BI. Query
 execution goes through the REST client (the Power BI REST API's
-"Execute Queries" endpoint), not MCP - the MCP client only calls the remote
-Power BI MCP server's `GetSemanticMetadata` tool. Both clients require the
+"Execute DAX Queries" Arrow endpoint), not MCP - the MCP client only calls
+the remote Power BI MCP server's `GetSemanticMetadata` tool. Both clients require the
 caller's own delegated access token (see `clients/powerbi/auth.py`'s module
 docstring - RLS requires it), read from `state` via `InjectedState`, not a
 client-held credential. Tools (`nodes.py::build_tools`):
@@ -58,7 +58,7 @@ query-building.
 | Tool | Backing client | Notes |
 |---|---|---|
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
-| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `dataset_id` plus a friendly `query` summary |
+| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeDaxQueries` endpoint (Arrow IPC response, parsed by `parse_arrow_query_response` - see `docs/architecture.md`'s "Structured, validated DAX queries"), stages the parsed result and returns a `dataset_id` plus a friendly `query` summary |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible

@@ -170,16 +170,38 @@ text from the model - only structured `group_by` columns, `filters`, and
    actually exists on the target table - there's no live schema lookup here
    - so that class of error surfaces from Power BI's own response instead
    (see next point).
-3. Sends it to the Power BI REST `executeQueries` endpoint
-   (`PBIRestClient.run_dax_query`) using the caller's delegated access
-   token, and parses the JSON response back into a DataFrame
-   (`parse_execute_queries_response`).
+3. Sends it to the Power BI REST **Execute DAX Queries (Arrow)** endpoint
+   (`PBIRestClient.run_dax_query`, `POST .../executeDaxQueries` - not the
+   older plain `/executeQueries`) using the caller's delegated access token.
+   The request body is the same `{"queries": [{"query": dax_query}], ...}`
+   shape as the older JSON endpoint, but the response comes back as one or
+   more concatenated Apache Arrow IPC streams (record batches
+   LZ4_FRAME-compressed, decompressed transparently by `pyarrow`) instead of
+   a JSON envelope - a single query's result can itself be split across more
+   than one stream, so `_read_arrow_tables` (`clients/powerbi/dax.py`, mirroring
+   Microsoft's own reference implementation) reads every stream and
+   `parse_arrow_query_response` concatenates them before converting to a
+   DataFrame. This trades JSON's per-row/per-value serialization overhead for
+   a columnar binary format, and raises the server-side row cap from 100k to
+   1M rows by default - both aimed at the same problem as the token/context
+   work above: keeping a single fetch cheap even as result sizes grow.
+   Requires the tenant setting **"Dataset Execute Queries REST API"** (Admin
+   portal → Integration settings) to be enabled - a tenant without it will
+   see this fail where the older JSON endpoint would have worked.
 
 Failures (a validation problem, an unknown model, or Power BI's own error
 response - e.g. an unknown column) are caught inside the tool and returned
 as `{"error": ...}` rather than raised, so the model sees the specific
 problem and can correct its next tool call - the same pattern
-`clients/sandbox/executor.py` already uses for sandbox code errors.
+`clients/sandbox/executor.py` already uses for sandbox code errors. A query
+error is *not* always an HTTP error status here, though: the Arrow endpoint
+can return HTTP 200 with an "error rowset" embedded in the stream itself -
+identified by `IsError = true` in that stream's own schema metadata, with
+the message in `FaultCode`/`FaultString` (always present on an error
+rowset, per Microsoft's docs) - rather than the status code.
+`_read_arrow_tables` checks for that explicitly, per stream, rather than
+relying solely on `response.status_code >= 400`, which only catches
+transport/auth-level failures now.
 
 ## Session-bound data reuse
 
@@ -352,3 +374,17 @@ it:
 - **Mocked**: only the Python sandbox's data layer - `clients/sandbox/`
   executes code via `exec()`, but against an in-process dict of staged
   DataFrames rather than an isolated execution service.
+
+**A note on the Execute DAX Queries (Arrow) switch specifically**: the
+endpoint path (`/executeDaxQueries`), the request/response rowset shape (a
+data rowset carries no special metadata; an error rowset is identified by
+`IsError = true` plus `FaultCode`/`FaultString` schema metadata and
+`ErrorCode`/`ErrorMessage`/`ErrorDescription` row columns), and the
+LZ4-compressed Arrow IPC framing were all confirmed directly against
+Microsoft's documentation. What's still unverified against a live tenant
+call: whether an explicit `Accept` header is required alongside the request
+body (this client doesn't send one), and the exact behavior of the tenant
+setting "Dataset Execute Queries REST API" when it's disabled. Both are
+cheap to confirm on first real use - the first would surface as an
+unexpected error status, the second as a specific, documented error rather
+than a silent failure.
