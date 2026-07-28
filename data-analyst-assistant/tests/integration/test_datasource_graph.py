@@ -171,6 +171,32 @@ async def test_run_dax_query_network_failure_returns_error_not_raise():
     assert result["messages"][-1].content == "Something went wrong."
 
 
+async def test_run_dax_query_failure_is_logged_with_the_query_that_triggered_it(caplog):
+    """A `run_dax_query` failure (e.g. dax.py's `_result_key` not
+    recognizing a returned column header) used to be visible nowhere but
+    the tool's own `{"error": ...}` result, folded into the model's
+    paraphrase - invisible in production logs. This also guards against a
+    regression where logging it crashed instead: the query text has to be
+    rebuilt independently for the log line, since `run_dax_query` raising
+    before returning means it never got the chance to hand one back."""
+
+    class _ColumnMismatchRestClient:
+        async def run_dax_query(self, access_token: str, spec):
+            raise ValueError("Column 'Region' not found in query result columns: ['NewRegion']")
+
+    llm = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[_DAX_TOOL_CALL]), AIMessage(content="Something went wrong.")]
+    )
+    graph = build_datasource_graph(llm, rest_client=_ColumnMismatchRestClient())
+
+    with caplog.at_level("INFO"):
+        result = await graph.ainvoke(_state("sess-dax-column-mismatch", [HumanMessage(content="revenue by region")]))
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert "not found in query result columns" in tool_messages[0].content
+    assert any("not found in query result columns" in r.message and "EVALUATE" in r.message for r in caplog.records)
+
+
 async def test_get_semantic_metadata_network_failure_returns_error_not_raise():
     call = {"name": "pbi_mcp_get_semantic_metadata", "args": {"model_name": "Sales Analytics"}, "id": "c1"}
     llm = FakeToolCallingChatModel(

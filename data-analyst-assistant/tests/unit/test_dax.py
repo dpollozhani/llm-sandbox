@@ -189,6 +189,37 @@ def test_parse_arrow_query_response_handles_quoted_table_column_headers():
     assert df.to_dict(orient="records") == [{"Region": "North"}]
 
 
+def test_parse_arrow_query_response_matches_headers_case_insensitively():
+    """DAX identifiers are themselves case-insensitive, but a returned
+    header isn't guaranteed to preserve the exact casing used in the
+    query - a live tenant regression this client wasn't verified against."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="BRIC")])
+    content = _arrow_bytes([{"Sales[bric]": "north"}])
+    df = parse_arrow_query_response(content, spec)
+    assert df.to_dict(orient="records") == [{"BRIC": "north"}]
+
+
+def test_parse_arrow_query_response_handles_dotted_table_column_headers():
+    """A `Table.Column` header, not just bracketed `Table[Column]` -
+    another shape this client hasn't been verified against a live tenant
+    for, covered by the same fallback matching as the case-insensitive one
+    above."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"Sales.Region": "North"}])
+    df = parse_arrow_query_response(content, spec)
+    assert df.to_dict(orient="records") == [{"Region": "North"}]
+
+
+def test_parse_arrow_query_response_raises_on_ambiguous_substring_match():
+    """The last-resort substring fallback only fires when it's unambiguous -
+    two headers both containing the name still raise, rather than silently
+    picking the wrong one."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"NewRegion": "North", "OldRegion": "South"}])
+    with pytest.raises(ValueError, match="not found in query result columns"):
+        parse_arrow_query_response(content, spec)
+
+
 def test_parse_arrow_query_response_empty_rows_returns_empty_frame_with_expected_columns():
     spec = DaxQuerySpec(
         model_name="m",
