@@ -388,3 +388,16 @@ setting "Dataset Execute Queries REST API" when it's disabled. Both are
 cheap to confirm on first real use - the first would surface as an
 unexpected error status, the second as a specific, documented error rather
 than a silent failure.
+
+A live tenant call did surface one real problem: `_result_key`
+(`clients/powerbi/dax.py`) failed to match columns that are confirmed to
+exist in the semantic model, meaning the Arrow endpoint's actual header
+format for at least some columns doesn't match the shapes this client
+originally checked for - a live-tenant detail no unit test built from this
+client's own assumptions could have caught. `_result_key` now also tries a
+case-insensitive match, a `Table.Column` (dot, not just bracket) shape, and
+an unambiguous substring match before giving up, and the datasource tool's
+exception handlers (`agents/datasource/nodes.py`) now log the failure
+(previously silent - visible nowhere but the model's own paraphrase of the
+`{"error": ...}` tool result) so a future mismatch is diagnosable from
+production logs instead of guesswork.

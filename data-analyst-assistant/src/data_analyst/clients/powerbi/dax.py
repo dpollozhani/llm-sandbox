@@ -181,20 +181,38 @@ def validate_dax_query(dax_query: str, spec: DaxQuerySpec) -> None:
 def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
     """Match `name` (a group-by column or measure name from the spec) against
     one of the column headers Power BI actually returned. Group-by columns
-    can come back as `'Table'[Column]`, `Table[Column]`, or bare `[Column]`
-    depending on the model; measures come back as the plain name given in
-    the query. Raises ValueError (surfaced to the agent, not raised past the
-    tool) if nothing matches."""
+    can come back as `'Table'[Column]`, `Table[Column]`, `Table.Column`, or
+    bare `[Column]` depending on the model/endpoint; measures come back as
+    the plain name given in the query. Tried, in order: an exact match
+    against one of the expected shapes; the same, case-insensitively (DAX
+    identifiers are themselves case-insensitive, but a returned header isn't
+    guaranteed to preserve the exact casing used in the query); a
+    case-insensitive suffix match (a table-qualified header this client
+    hasn't explicitly listed a shape for); and, last resort, an unambiguous
+    case-insensitive substring match. Raises ValueError (surfaced to the
+    agent, not raised past the tool) only if none of those find exactly one
+    candidate."""
     candidates = [name, f"[{name}]"]
     if table:
-        candidates += [f"'{table}'[{name}]", f"{table}[{name}]"]
+        candidates += [f"'{table}'[{name}]", f"{table}[{name}]", f"{table}.{name}", f"'{table}'.{name}"]
     for candidate in candidates:
         if candidate in keys:
             return candidate
-    suffix = f"[{name}]"
+
+    lowered_candidates = {c.lower() for c in candidates}
     for key in keys:
-        if key.endswith(suffix):
+        if key.lower() in lowered_candidates:
             return key
+
+    suffixes = (f"[{name}]".lower(), f".{name}".lower())
+    for key in keys:
+        if key.lower().endswith(suffixes):
+            return key
+
+    contains = [key for key in keys if name.lower() in key.lower()]
+    if len(contains) == 1:
+        return contains[0]
+
     raise ValueError(f"Column '{name}' not found in query result columns: {keys}")
 
 
