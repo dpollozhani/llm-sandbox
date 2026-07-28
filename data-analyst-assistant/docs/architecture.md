@@ -177,10 +177,11 @@ text from the model - only structured `group_by` columns, `filters`, and
    shape as the older JSON endpoint, but the response comes back as one or
    more concatenated Apache Arrow IPC streams (record batches
    LZ4_FRAME-compressed, decompressed transparently by `pyarrow`) instead of
-   a JSON envelope - parsed back into a DataFrame by
-   `parse_arrow_query_response` (`clients/powerbi/dax.py`), which reads only
-   the first stream since this client only ever submits one query per
-   request. This trades JSON's per-row/per-value serialization overhead for
+   a JSON envelope - a single query's result can itself be split across more
+   than one stream, so `_read_arrow_tables` (`clients/powerbi/dax.py`, mirroring
+   Microsoft's own reference implementation) reads every stream and
+   `parse_arrow_query_response` concatenates them before converting to a
+   DataFrame. This trades JSON's per-row/per-value serialization overhead for
    a columnar binary format, and raises the server-side row cap from 100k to
    1M rows by default - both aimed at the same problem as the token/context
    work above: keeping a single fetch cheap even as result sizes grow.
@@ -194,12 +195,13 @@ as `{"error": ...}` rather than raised, so the model sees the specific
 problem and can correct its next tool call - the same pattern
 `clients/sandbox/executor.py` already uses for sandbox code errors. A query
 error is *not* always an HTTP error status here, though: the Arrow endpoint
-can return HTTP 200 with an "error rowset" embedded in the stream itself,
-signaled by an `IsError` schema-metadata flag rather than the status code -
-`parse_arrow_query_response` checks for that explicitly
-(`_is_error_rowset`/`_error_rowset_message`) rather than relying solely on
-`response.status_code >= 400`, which only catches transport/auth-level
-failures now.
+can return HTTP 200 with an "error rowset" embedded in the stream itself -
+identified by `IsError = true` in that stream's own schema metadata, with
+the message in `FaultCode`/`FaultString` (always present on an error
+rowset, per Microsoft's docs) - rather than the status code.
+`_read_arrow_tables` checks for that explicitly, per stream, rather than
+relying solely on `response.status_code >= 400`, which only catches
+transport/auth-level failures now.
 
 ## Session-bound data reuse
 

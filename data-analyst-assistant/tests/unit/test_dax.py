@@ -211,25 +211,16 @@ def test_parse_arrow_query_response_unexpected_bytes_raises():
 def test_parse_arrow_query_response_raises_on_error_rowset_fault_metadata():
     """A query error comes back as HTTP 200 with an error rowset embedded in
     the Arrow stream (`IsError = true` in schema metadata), not an HTTP
-    error status - the parser has to surface that itself. `FaultCode`/
-    `FaultString` schema metadata is Microsoft's documented primary source
-    for the message - always present on an error rowset."""
+    error status - the parser has to surface that itself, from the schema's
+    own `FaultCode`/`FaultString` metadata (Microsoft's documented, always-
+    present source for the message - no row-column fallback needed, per
+    Microsoft's own reference implementation)."""
     spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
     content = _arrow_bytes(
         [{"ErrorCode": 1, "ErrorMessage": "Column 'Bogus' does not exist"}],
         is_error=True,
         metadata={b"FaultCode": b"0x80131500", b"FaultString": b"Column 'Bogus' does not exist"},
     )
-    with pytest.raises(ValueError, match="Column 'Bogus' does not exist"):
-        parse_arrow_query_response(content, spec)
-
-
-def test_parse_arrow_query_response_falls_back_to_error_rowset_columns():
-    """If `FaultCode`/`FaultString` schema metadata is ever absent, fall
-    back to the error rowset's own `ErrorCode`/`ErrorMessage` row columns
-    rather than raising an unhelpful generic message."""
-    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
-    content = _arrow_bytes([{"ErrorCode": 1, "ErrorMessage": "Column 'Bogus' does not exist"}], is_error=True)
     with pytest.raises(ValueError, match="Column 'Bogus' does not exist"):
         parse_arrow_query_response(content, spec)
 
@@ -241,6 +232,16 @@ def test_parse_arrow_query_response_success_has_no_iserror_metadata():
     content = _arrow_bytes([{"Sales[Region]": "North"}])
     df = parse_arrow_query_response(content, spec)
     assert df.to_dict(orient="records") == [{"Region": "North"}]
+
+
+def test_parse_arrow_query_response_concatenates_multiple_streams():
+    """A single query's result can itself be split across more than one
+    concatenated Arrow IPC stream, not just one stream per query - all of
+    them need to be read and combined, not just the first."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"Sales[Region]": "North"}]) + _arrow_bytes([{"Sales[Region]": "South"}])
+    df = parse_arrow_query_response(content, spec)
+    assert df.to_dict(orient="records") == [{"Region": "North"}, {"Region": "South"}]
 
 
 def test_cache_key_ignores_list_order():

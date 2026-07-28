@@ -69,14 +69,19 @@ class _FakeSession:
 async def _fake_streamablehttp_client(url, headers=None):
     yield (None, None, None)
 
-def _arrow_bytes(rows: list[dict], is_error: bool = False) -> bytes:
+def _arrow_bytes(rows: list[dict], is_error: bool = False, fault_string: str | None = None) -> bytes:
     """Build an in-memory Apache Arrow IPC stream matching what the Execute
     DAX Queries (Arrow) endpoint returns, for tests with no live Power BI
     tenant to call against. A data rowset (the default) carries no `IsError`
-    metadata key at all per Microsoft's docs - not `IsError: false`."""
+    metadata key at all per Microsoft's docs - not `IsError: false`. An error
+    rowset's `FaultString` (always present per Microsoft's docs) defaults to
+    `fault_string` when given."""
     table = pa.Table.from_pylist(rows)
     if is_error:
-        table = table.replace_schema_metadata({b"IsError": b"true"})
+        metadata = {b"IsError": b"true", b"FaultCode": b"0x80131500"}
+        if fault_string is not None:
+            metadata[b"FaultString"] = fault_string.encode()
+        table = table.replace_schema_metadata(metadata)
     buf = io.BytesIO()
     with pa.ipc.new_stream(buf, table.schema) as writer:
         writer.write_table(table)
@@ -125,11 +130,13 @@ async def test_run_dax_query_surfaces_power_bi_error_response():
 
 async def test_run_dax_query_surfaces_an_in_band_error_rowset():
     """A query error comes back as HTTP 200 with an error rowset embedded in
-    the Arrow stream itself (see dax.py::_is_error_rowset) - not an HTTP
+    the Arrow stream itself (see dax.py::_read_arrow_tables) - not an HTTP
     error status - so this has to be caught downstream of the status check."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        content = _arrow_bytes([{"ErrorMessage": "Column 'Bogus' does not exist"}], is_error=True)
+        content = _arrow_bytes(
+            [{"ErrorCode": 1}], is_error=True, fault_string="Column 'Bogus' does not exist"
+        )
         return httpx.Response(200, content=content)
 
     spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])

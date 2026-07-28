@@ -198,57 +198,42 @@ def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
     raise ValueError(f"Column '{name}' not found in query result columns: {keys}")
 
 
-def _is_error_rowset(table: pa.Table) -> bool:
-    """A query error comes back as HTTP 200 with an "error rowset" embedded
-    in the Arrow stream itself, identified by `IsError = true` in the
-    schema's own metadata - not an HTTP error status - so a caller has to
-    check for it explicitly rather than relying on `response.status_code`
-    (see `rest.py::PBIRestClient.run_dax_query`, which still checks that
-    separately for transport-level failures). A data rowset (the normal
-    case) carries no such key at all, per Microsoft's docs - not `IsError:
-    false` - so this is an equality check against the one documented value,
-    not a truthiness check."""
-    return (table.schema.metadata or {}).get(b"IsError") == b"true"
+def _read_arrow_tables(content: bytes) -> list[pa.Table]:
+    """Read every concatenated Apache Arrow IPC stream in `content` - a
+    single query's result can itself be split across more than one stream,
+    not just one stream per query - following Microsoft's own reference
+    implementation for this endpoint. Raises ValueError immediately on the
+    first error rowset found (`IsError = true` in a stream's own schema
+    metadata - a query error, not a transport/auth failure, which
+    `rest.py::PBIRestClient.run_dax_query` still checks separately via
+    `response.status_code`). A data rowset carries no `IsError` key at all,
+    per Microsoft's docs - not `IsError: false` - hence the equality check
+    below, not a truthiness one."""
+    stream = io.BytesIO(content)
+    tables: list[pa.Table] = []
+    while stream.tell() < len(content):
+        try:
+            reader = pa.ipc.open_stream(stream)
+            table = reader.read_all()
+        except pa.ArrowInvalid:
+            break  # trailing padding after the last real stream, not another one
 
+        metadata = {k.decode(): v.decode() for k, v in (reader.schema.metadata or {}).items()}
+        if metadata.get("IsError") == "true":
+            raise ValueError(f"Power BI query failed [{metadata.get('FaultCode')}]: {metadata.get('FaultString')}")
+        tables.append(table)
 
-def _error_rowset_message(table: pa.Table) -> str:
-    """A readable message for an error rowset (see `_is_error_rowset`),
-    from the schema's own `FaultCode`/`FaultString` metadata (per Microsoft's
-    docs, always present on an error rowset) - falling back to the rowset's
-    own `ErrorCode`/`ErrorMessage`/`ErrorDescription` row columns only if
-    that metadata is ever missing. Plain `to_pandas()` (not
-    `types_mapper=pd.ArrowDtype`, unlike `parse_arrow_query_response` below)
-    - this is a rare, small failure path where the copy-avoidance the
-    Arrow-backed dtype buys doesn't matter, and a plain Python `str`/scalar
-    is simpler to format into a message than an Arrow-backed one."""
-    metadata = table.schema.metadata or {}
-    fault_code = metadata.get(b"FaultCode", b"").decode(errors="replace")
-    fault_string = metadata.get(b"FaultString", b"").decode(errors="replace")
-    if fault_string:
-        return f"Power BI query failed ({fault_code}): {fault_string}" if fault_code else f"Power BI query failed: {fault_string}"
-
-    df = table.to_pandas()
-    if not df.empty:
-        code = df["ErrorCode"].iloc[0] if "ErrorCode" in df.columns else None
-        message = next((df[c].iloc[0] for c in ("ErrorMessage", "ErrorDescription") if c in df.columns), None)
-        if message is not None:
-            return f"Power BI query failed ({code}): {message}" if code is not None else f"Power BI query failed: {message}"
-    return "Power BI query failed: unknown error (error rowset returned with no readable message)"
+    if not tables:
+        raise ValueError("Unexpected Arrow executeQueries response: no valid Arrow IPC stream found")
+    return tables
 
 
 def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFrame:
     """Turn the Execute DAX Queries (Arrow) REST API's response body back
     into a DataFrame with friendly column names (the spec's own
     `group_by`/measure names), for the analysis agent to work with by
-    `dataset_id`.
-
-    The response body is one or more concatenated Apache Arrow IPC streams
-    (record batches LZ4_FRAME-compressed, decompressed transparently by
-    pyarrow) - only the first is read here, since this client only ever
-    submits a single query per request (`rest.py`'s request body has one
-    `queries` entry) and the API returns one result stream per submitted
-    query; a batched multi-query request, which this client doesn't make,
-    would produce more.
+    `dataset_id`. See `_read_arrow_tables` for the response's own shape
+    (concatenated IPC streams, in-band error signaling).
 
     Converts via `types_mapper=pd.ArrowDtype` rather than plain
     `to_pandas()`: with the server-side row cap now 1M (up from the old
@@ -257,13 +242,8 @@ def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFra
     like their numpy equivalents for the indexing/rename/arithmetic this
     codebase does with them) dtype difference downstream.
     """
-    try:
-        table = pa.ipc.open_stream(io.BytesIO(content)).read_all()
-    except pa.ArrowInvalid as exc:
-        raise ValueError(f"Unexpected Arrow executeQueries response: {exc}") from exc
-
-    if _is_error_rowset(table):
-        raise ValueError(_error_rowset_message(table))
+    tables = _read_arrow_tables(content)
+    table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
 
     # Unlike the old JSON response, an empty result still carries its full
     # schema (column names/types) via `table.column_names` regardless of row
