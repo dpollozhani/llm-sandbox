@@ -23,24 +23,17 @@ DAX text; `validate_dax_query` checks that text (and the spec behind it)
 structurally before it would be sent to the REST endpoint - it doesn't know
 the real model's columns, so an unknown column still comes back as an error
 from Power BI itself (see `rest.py::PBIRestClient.run_dax_query`), just like
-any other query mistake the agent can retry after; `parse_arrow_query_response`
-turns the Execute DAX Queries (Arrow) REST API's response back into a
-DataFrame.
+any other query mistake the agent can retry after; `parse_execute_queries_response`
+turns the REST API's `executeQueries` response back into a DataFrame.
 """
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 from typing import Literal
 
 import pandas as pd
-import pyarrow as pa
 from pydantic import BaseModel, Field, model_validator
-
-from data_analyst.telemetry.logging import get_logger
-
-_logger = get_logger("clients.powerbi.dax")
 
 FilterOperator = Literal["=", "!=", ">", ">=", "<", "<=", "IN"]
 Aggregation = Literal["SUM", "AVERAGE", "COUNT", "MIN", "MAX"]
@@ -185,112 +178,38 @@ def validate_dax_query(dax_query: str, spec: DaxQuerySpec) -> None:
 def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
     """Match `name` (a group-by column or measure name from the spec) against
     one of the column headers Power BI actually returned. Group-by columns
-    can come back as `'Table'[Column]`, `Table[Column]`, `Table.Column`, or
-    bare `[Column]` depending on the model/endpoint; measures come back as
-    the plain name given in the query. Tried, in order: an exact match
-    against one of the expected shapes; the same, case-insensitively (DAX
-    identifiers are themselves case-insensitive, but a returned header isn't
-    guaranteed to preserve the exact casing used in the query); a
-    case-insensitive suffix match (a table-qualified header this client
-    hasn't explicitly listed a shape for); and, last resort, an unambiguous
-    case-insensitive substring match. Raises ValueError (surfaced to the
-    agent, not raised past the tool) only if none of those find exactly one
-    candidate."""
+    can come back as `'Table'[Column]`, `Table[Column]`, or bare `[Column]`
+    depending on the model; measures come back as the plain name given in
+    the query. Raises ValueError (surfaced to the agent, not raised past the
+    tool) if nothing matches."""
     candidates = [name, f"[{name}]"]
     if table:
-        candidates += [f"'{table}'[{name}]", f"{table}[{name}]", f"{table}.{name}", f"'{table}'.{name}"]
+        candidates += [f"'{table}'[{name}]", f"{table}[{name}]"]
     for candidate in candidates:
         if candidate in keys:
             return candidate
-
-    lowered_candidates = {c.lower() for c in candidates}
+    suffix = f"[{name}]"
     for key in keys:
-        if key.lower() in lowered_candidates:
+        if key.endswith(suffix):
             return key
-
-    suffixes = (f"[{name}]".lower(), f".{name}".lower())
-    for key in keys:
-        if key.lower().endswith(suffixes):
-            return key
-
-    contains = [key for key in keys if name.lower() in key.lower()]
-    if len(contains) == 1:
-        return contains[0]
-
     raise ValueError(f"Column '{name}' not found in query result columns: {keys}")
 
 
-def _read_arrow_tables(content: bytes) -> list[pa.Table]:
-    """Read every concatenated Apache Arrow IPC stream in `content` - a
-    single query's result can itself be split across more than one stream,
-    not just one stream per query - following Microsoft's own reference
-    implementation for this endpoint. Raises ValueError immediately on the
-    first error rowset found (`IsError = true` in a stream's own schema
-    metadata - a query error, not a transport/auth failure, which
-    `rest.py::PBIRestClient.run_dax_query` still checks separately via
-    `response.status_code`). A data rowset carries no `IsError` key at all,
-    per Microsoft's docs - not `IsError: false` - hence the equality check
-    below, not a truthiness one.
+def parse_execute_queries_response(response: dict, spec: DaxQuerySpec) -> pd.DataFrame:
+    """Turn a Power BI REST `executeQueries` response body back into a
+    DataFrame with friendly column names (the spec's own `group_by`/measure
+    names), for the analysis agent to work with by `dataset_id`."""
+    try:
+        rows = response["results"][0]["tables"][0]["rows"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f"Unexpected executeQueries response shape: {response!r}") from exc
 
-    A stream with zero columns is never kept: every query this client
-    builds requests at least one group-by column or measure
-    (`validate_dax_query`), so a genuine answer to one of them always has at
-    least one column - a schema-less stream can only be some other kind of
-    stream this client doesn't otherwise recognize (observed live: Power BI
-    returning a legitimate, non-error stream with an empty schema alongside
-    the real data), never itself the answer. Logs every stream's shape
-    (INFO, not DEBUG - see `agents/datasource/nodes.py`'s exception logging
-    for why) since this endpoint's exact multi-stream behavior hasn't been
-    confirmed against a live tenant.
-    """
-    stream = io.BytesIO(content)
-    tables: list[pa.Table] = []
-    while stream.tell() < len(content):
-        try:
-            reader = pa.ipc.open_stream(stream)
-            table = reader.read_all()
-        except pa.ArrowInvalid:
-            break  # trailing padding after the last real stream, not another one
-
-        metadata = {k.decode(): v.decode() for k, v in (reader.schema.metadata or {}).items()}
-        _logger.info(
-            "Arrow IPC stream: columns=%s rows=%d metadata=%s", table.column_names, table.num_rows, metadata
-        )
-        if metadata.get("IsError") == "true":
-            raise ValueError(f"Power BI query failed [{metadata.get('FaultCode')}]: {metadata.get('FaultString')}")
-        if table.column_names:
-            tables.append(table)
-
-    if not tables:
-        raise ValueError("Unexpected Arrow executeQueries response: no valid (non-empty) Arrow IPC stream found")
-    return tables
-
-
-def parse_arrow_query_response(content: bytes, spec: DaxQuerySpec) -> pd.DataFrame:
-    """Turn the Execute DAX Queries (Arrow) REST API's response body back
-    into a DataFrame with friendly column names (the spec's own
-    `group_by`/measure names), for the analysis agent to work with by
-    `dataset_id`. See `_read_arrow_tables` for the response's own shape
-    (concatenated IPC streams, in-band error signaling).
-
-    Converts via `types_mapper=pd.ArrowDtype` rather than plain
-    `to_pandas()`: with the server-side row cap now 1M (up from the old
-    JSON endpoint's 100k), avoiding a numpy-backed copy of a result that
-    size is worth the (mostly cosmetic - pandas' arrow-backed dtypes behave
-    like their numpy equivalents for the indexing/rename/arithmetic this
-    codebase does with them) dtype difference downstream.
-    """
-    tables = _read_arrow_tables(content)
-    table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
-
-    # Unlike the old JSON response, an empty result still carries its full
-    # schema (column names/types) via `table.column_names` regardless of row
-    # count, so there's no need to special-case "zero rows" separately (the
-    # old parser had to, since an empty `rows: []` JSON list carries no
-    # header information at all).
     wanted = [*(c.column for c in spec.group_by), *(m.name for m in spec.measures)]
-    keys = table.column_names
+    if not rows:
+        return pd.DataFrame(columns=wanted)
+
+    keys = list(rows[0].keys())
     rename = {_result_key(keys, c.column, table=c.table): c.column for c in spec.group_by}
     rename.update({_result_key(keys, m.name): m.name for m in spec.measures})
 
-    return table.to_pandas(types_mapper=pd.ArrowDtype).rename(columns=rename)[wanted]
+    return pd.DataFrame(rows).rename(columns=rename)[wanted]

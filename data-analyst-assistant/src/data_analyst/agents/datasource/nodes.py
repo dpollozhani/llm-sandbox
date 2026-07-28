@@ -20,16 +20,13 @@ from langgraph.prebuilt import InjectedState, ToolNode
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.chains import build_agent_chain
 from data_analyst.agents.datasource.state import DatasourceState
-from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, build_dax_query, describe_query
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
 from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import Glossary, PowerBiCatalog
-from data_analyst.telemetry.logging import get_logger
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
-
-_logger = get_logger("agents.datasource.nodes")
 
 
 def _describe(exc: BaseException) -> str:
@@ -70,14 +67,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         try:
             metadata = await mcp.get_semantic_metadata(token, model_name)
         except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
-            message = f"Power BI MCP call failed: {_describe(exc)}"
-            # INFO, not DEBUG (LOG_LEVEL defaults to INFO) - this is the only
-            # place this failure is ever recorded anywhere; the model only
-            # sees the same text folded into its own paraphrase, so without
-            # this log line the actual detail (e.g. which model/columns) is
-            # invisible in production once it's left this function.
-            _logger.info(message)
-            return {"error": message}
+            return {"error": f"Power BI MCP call failed: {_describe(exc)}"}
         cache.remember(model_name, metadata)
         return metadata
 
@@ -140,18 +130,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         try:
             dax_query, df = await rest.run_dax_query(token, spec)
         except Exception as exc:  # noqa: BLE001 - network/protocol boundary, see module docstring
-            message = f"Power BI query failed: {_describe(exc)}"
-            # INFO, not DEBUG (LOG_LEVEL defaults to INFO) - this is the only
-            # place this failure is ever recorded anywhere; the model only
-            # sees the same text folded into its own paraphrase, so without
-            # this log line the actual detail (e.g. a _result_key mismatch's
-            # real column list from the Arrow response) is invisible in
-            # production once it's left this function. Rebuilds the query
-            # text (a pure function of `spec`, cheap) for the log line since
-            # `run_dax_query` raising before returning means its own
-            # `dax_query` was never bound here.
-            _logger.info("%s | query=%s", message, build_dax_query(spec))
-            return {"error": message}
+            return {"error": f"Power BI query failed: {_describe(exc)}"}
 
         dataset_id = store.stage(df)
         store.remember(cache_key, dataset_id)

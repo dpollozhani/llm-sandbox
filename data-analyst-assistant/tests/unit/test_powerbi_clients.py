@@ -1,9 +1,7 @@
-import io
 import json
 from contextlib import asynccontextmanager
 
 import httpx
-import pyarrow as pa
 import pytest
 
 from data_analyst.clients.powerbi.dax import DaxColumn, DaxQuerySpec
@@ -69,26 +67,9 @@ class _FakeSession:
 async def _fake_streamablehttp_client(url, headers=None):
     yield (None, None, None)
 
-def _arrow_bytes(rows: list[dict], is_error: bool = False, fault_string: str | None = None) -> bytes:
-    """Build an in-memory Apache Arrow IPC stream matching what the Execute
-    DAX Queries (Arrow) endpoint returns, for tests with no live Power BI
-    tenant to call against. A data rowset (the default) carries no `IsError`
-    metadata key at all per Microsoft's docs - not `IsError: false`. An error
-    rowset's `FaultString` (always present per Microsoft's docs) defaults to
-    `fault_string` when given."""
-    table = pa.Table.from_pylist(rows)
-    if is_error:
-        metadata = {b"IsError": b"true", b"FaultCode": b"0x80131500"}
-        if fault_string is not None:
-            metadata[b"FaultString"] = fault_string.encode()
-        table = table.replace_schema_metadata(metadata)
-    buf = io.BytesIO()
-    with pa.ipc.new_stream(buf, table.schema) as writer:
-        writer.write_table(table)
-    return buf.getvalue()
-
-
-_EXECUTE_QUERIES_RESPONSE = _arrow_bytes([{"Products[Category]": "Hardware"}, {"Products[Category]": "Premium"}])
+_EXECUTE_QUERIES_RESPONSE = {
+    "results": [{"tables": [{"rows": [{"Products[Category]": "Hardware"}, {"Products[Category]": "Premium"}]}]}]
+}
 
 
 def _rest_client(handler) -> PBIRestClient:
@@ -97,11 +78,11 @@ def _rest_client(handler) -> PBIRestClient:
 
 async def test_run_dax_query_executes_and_parses_the_response():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeDaxQueries"
+        assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeQueries"
         assert request.headers["authorization"] == "Bearer tok-123"
         body = json.loads(request.content)
         assert body["queries"][0]["query"].startswith("EVALUATE SUMMARIZECOLUMNS(")
-        return httpx.Response(200, content=_EXECUTE_QUERIES_RESPONSE)
+        return httpx.Response(200, json=_EXECUTE_QUERIES_RESPONSE)
 
     spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Products", column="Category")])
     dax_query, df = await _rest_client(handler).run_dax_query("tok-123", spec)
@@ -122,22 +103,6 @@ async def test_run_dax_query_unknown_model_raises_without_any_http_call():
 async def test_run_dax_query_surfaces_power_bi_error_response():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, text="Column 'Bogus' does not exist")
-
-    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])
-    with pytest.raises(ValueError, match="Bogus"):
-        await _rest_client(handler).run_dax_query("tok-123", spec)
-
-
-async def test_run_dax_query_surfaces_an_in_band_error_rowset():
-    """A query error comes back as HTTP 200 with an error rowset embedded in
-    the Arrow stream itself (see dax.py::_read_arrow_tables) - not an HTTP
-    error status - so this has to be caught downstream of the status check."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        content = _arrow_bytes(
-            [{"ErrorCode": 1}], is_error=True, fault_string="Column 'Bogus' does not exist"
-        )
-        return httpx.Response(200, content=content)
 
     spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])
     with pytest.raises(ValueError, match="Bogus"):
