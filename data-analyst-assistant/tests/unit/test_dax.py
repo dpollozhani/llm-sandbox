@@ -14,13 +14,20 @@ from data_analyst.clients.powerbi.dax import (
 )
 
 
-def _arrow_bytes(rows: list[dict], schema: pa.Schema | None = None, is_error: bool = False) -> bytes:
+def _arrow_bytes(
+    rows: list[dict], schema: pa.Schema | None = None, is_error: bool = False, metadata: dict[bytes, bytes] | None = None
+) -> bytes:
     """Build an in-memory Apache Arrow IPC stream matching what the Execute
     DAX Queries (Arrow) endpoint returns, for tests with no live Power BI
     tenant to call against. `schema` is required when `rows` is empty (there's
-    nothing to infer column types/names from otherwise)."""
+    nothing to infer column types/names from otherwise). A data rowset (the
+    default, `is_error=False`) carries no `IsError` metadata key at all per
+    Microsoft's docs - not `IsError: false` - so this only ever sets the key
+    when `is_error=True`, plus any extra `metadata` (e.g. `FaultCode`/
+    `FaultString`) a test wants to include alongside it."""
     table = pa.Table.from_pylist(rows, schema=schema)
-    table = table.replace_schema_metadata({b"IsError": b"true" if is_error else b"false"})
+    if is_error:
+        table = table.replace_schema_metadata({b"IsError": b"true", **(metadata or {})})
     buf = io.BytesIO()
     with pa.ipc.new_stream(buf, table.schema) as writer:
         writer.write_table(table)
@@ -201,14 +208,39 @@ def test_parse_arrow_query_response_unexpected_bytes_raises():
         parse_arrow_query_response(b"not a valid arrow stream", spec)
 
 
-def test_parse_arrow_query_response_raises_on_error_rowset():
+def test_parse_arrow_query_response_raises_on_error_rowset_fault_metadata():
     """A query error comes back as HTTP 200 with an error rowset embedded in
-    the Arrow stream (an `IsError` schema metadata flag), not an HTTP error
-    status - the parser has to surface that itself."""
+    the Arrow stream (`IsError = true` in schema metadata), not an HTTP
+    error status - the parser has to surface that itself. `FaultCode`/
+    `FaultString` schema metadata is Microsoft's documented primary source
+    for the message - always present on an error rowset."""
     spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
-    content = _arrow_bytes([{"ErrorMessage": "Column 'Bogus' does not exist"}], is_error=True)
+    content = _arrow_bytes(
+        [{"ErrorCode": 1, "ErrorMessage": "Column 'Bogus' does not exist"}],
+        is_error=True,
+        metadata={b"FaultCode": b"0x80131500", b"FaultString": b"Column 'Bogus' does not exist"},
+    )
     with pytest.raises(ValueError, match="Column 'Bogus' does not exist"):
         parse_arrow_query_response(content, spec)
+
+
+def test_parse_arrow_query_response_falls_back_to_error_rowset_columns():
+    """If `FaultCode`/`FaultString` schema metadata is ever absent, fall
+    back to the error rowset's own `ErrorCode`/`ErrorMessage` row columns
+    rather than raising an unhelpful generic message."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"ErrorCode": 1, "ErrorMessage": "Column 'Bogus' does not exist"}], is_error=True)
+    with pytest.raises(ValueError, match="Column 'Bogus' does not exist"):
+        parse_arrow_query_response(content, spec)
+
+
+def test_parse_arrow_query_response_success_has_no_iserror_metadata():
+    """A data rowset (the normal, successful case) carries no `IsError`
+    metadata key at all - not `IsError: false` - per Microsoft's docs."""
+    spec = DaxQuerySpec(model_name="m", group_by=[DaxColumn(table="Sales", column="Region")])
+    content = _arrow_bytes([{"Sales[Region]": "North"}])
+    df = parse_arrow_query_response(content, spec)
+    assert df.to_dict(orient="records") == [{"Region": "North"}]
 
 
 def test_cache_key_ignores_list_order():

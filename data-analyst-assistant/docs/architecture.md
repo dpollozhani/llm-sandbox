@@ -374,16 +374,15 @@ it:
   DataFrames rather than an isolated execution service.
 
 **A note on the Execute DAX Queries (Arrow) switch specifically**: the
-endpoint path (`/executeDaxQueries`) was confirmed directly; the rest -
-the request body being unchanged, the LZ4-compressed Arrow IPC response
-shape, and the `IsError` in-band error signal - was implemented from
-Microsoft's public documentation and community write-ups (the primary
-Microsoft Learn pages weren't directly reachable from the environment this
-was built in), corroborated by multiple independent sources but not
-verified against a live tenant call. Exact details this repo's tests can't
-catch (the precise `IsError`/`FaultCode`/`FaultString` metadata key casing,
-whether an explicit `Accept` header is also required) should be confirmed
-against a real Power BI tenant before relying on this in production -
-`parse_arrow_query_response` (`clients/powerbi/dax.py`) was written
-defensively (case-insensitive metadata matching, a fallback to the error
-rowset's own columns) specifically because of this.
+endpoint path (`/executeDaxQueries`), the request/response rowset shape (a
+data rowset carries no special metadata; an error rowset is identified by
+`IsError = true` plus `FaultCode`/`FaultString` schema metadata and
+`ErrorCode`/`ErrorMessage`/`ErrorDescription` row columns), and the
+LZ4-compressed Arrow IPC framing were all confirmed directly against
+Microsoft's documentation. What's still unverified against a live tenant
+call: whether an explicit `Accept` header is required alongside the request
+body (this client doesn't send one), and the exact behavior of the tenant
+setting "Dataset Execute Queries REST API" when it's disabled. Both are
+cheap to confirm on first real use - the first would surface as an
+unexpected error status, the second as a specific, documented error rather
+than a silent failure.

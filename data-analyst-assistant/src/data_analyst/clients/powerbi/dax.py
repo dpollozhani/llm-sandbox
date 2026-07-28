@@ -200,22 +200,23 @@ def _result_key(keys: list[str], name: str, table: str | None = None) -> str:
 
 def _is_error_rowset(table: pa.Table) -> bool:
     """A query error comes back as HTTP 200 with an "error rowset" embedded
-    in the Arrow stream itself, signaled by an `IsError` schema metadata
-    flag - not an HTTP error status - so a caller has to check for it
-    explicitly rather than relying on `response.status_code` (see
-    `rest.py::PBIRestClient.run_dax_query`, which still checks that
-    separately for transport-level failures). Matched case-insensitively
-    since the exact casing isn't pinned down by a live-endpoint check."""
-    metadata = table.schema.metadata or {}
-    value = next((v for k, v in metadata.items() if k.lower() == b"iserror"), None)
-    return value is not None and value.lower() == b"true"
+    in the Arrow stream itself, identified by `IsError = true` in the
+    schema's own metadata - not an HTTP error status - so a caller has to
+    check for it explicitly rather than relying on `response.status_code`
+    (see `rest.py::PBIRestClient.run_dax_query`, which still checks that
+    separately for transport-level failures). A data rowset (the normal
+    case) carries no such key at all, per Microsoft's docs - not `IsError:
+    false` - so this is an equality check against the one documented value,
+    not a truthiness check."""
+    return (table.schema.metadata or {}).get(b"IsError") == b"true"
 
 
 def _error_rowset_message(table: pa.Table) -> str:
-    """A readable message for an error rowset (see `_is_error_rowset`) -
-    prefers the schema's own `FaultCode`/`FaultString` metadata, falling
-    back to the error rowset's own row columns if that metadata is missing
-    or differently named than expected. Plain `to_pandas()` (not
+    """A readable message for an error rowset (see `_is_error_rowset`),
+    from the schema's own `FaultCode`/`FaultString` metadata (per Microsoft's
+    docs, always present on an error rowset) - falling back to the rowset's
+    own `ErrorCode`/`ErrorMessage`/`ErrorDescription` row columns only if
+    that metadata is ever missing. Plain `to_pandas()` (not
     `types_mapper=pd.ArrowDtype`, unlike `parse_arrow_query_response` below)
     - this is a rare, small failure path where the copy-avoidance the
     Arrow-backed dtype buys doesn't matter, and a plain Python `str`/scalar
@@ -227,9 +228,11 @@ def _error_rowset_message(table: pa.Table) -> str:
         return f"Power BI query failed ({fault_code}): {fault_string}" if fault_code else f"Power BI query failed: {fault_string}"
 
     df = table.to_pandas()
-    for column in ("ErrorMessage", "ErrorDescription"):
-        if column in df.columns and not df.empty:
-            return f"Power BI query failed: {df[column].iloc[0]}"
+    if not df.empty:
+        code = df["ErrorCode"].iloc[0] if "ErrorCode" in df.columns else None
+        message = next((df[c].iloc[0] for c in ("ErrorMessage", "ErrorDescription") if c in df.columns), None)
+        if message is not None:
+            return f"Power BI query failed ({code}): {message}" if code is not None else f"Power BI query failed: {message}"
     return "Power BI query failed: unknown error (error rowset returned with no readable message)"
 
 

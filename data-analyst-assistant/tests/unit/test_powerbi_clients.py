@@ -72,9 +72,11 @@ async def _fake_streamablehttp_client(url, headers=None):
 def _arrow_bytes(rows: list[dict], is_error: bool = False) -> bytes:
     """Build an in-memory Apache Arrow IPC stream matching what the Execute
     DAX Queries (Arrow) endpoint returns, for tests with no live Power BI
-    tenant to call against."""
+    tenant to call against. A data rowset (the default) carries no `IsError`
+    metadata key at all per Microsoft's docs - not `IsError: false`."""
     table = pa.Table.from_pylist(rows)
-    table = table.replace_schema_metadata({b"IsError": b"true" if is_error else b"false"})
+    if is_error:
+        table = table.replace_schema_metadata({b"IsError": b"true"})
     buf = io.BytesIO()
     with pa.ipc.new_stream(buf, table.schema) as writer:
         writer.write_table(table)
