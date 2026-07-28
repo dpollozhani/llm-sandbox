@@ -14,17 +14,18 @@ from __future__ import annotations
 from typing import Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool, tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.common.tools import flag_ambiguity
-from data_analyst.agents.datasource.chains import build_agent_chain
+from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 from data_analyst.agents.datasource.state import DatasourceState
 from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
 from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
-from data_analyst.config.settings import Glossary, PowerBiCatalog
+from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
@@ -158,10 +159,20 @@ def build_agent_node(
     glossary: Glossary | None = None,
 ):
     tools = tools if tools is not None else build_tools()
-    chain = build_agent_chain(llm, tools, catalog=catalog, glossary=glossary)
+    llm_with_tools = llm.bind_tools(tools)
+
+    system_prompt = SYSTEM_PROMPT
+    if catalog is not None and catalog.semantic_models:
+        # There's no "list models" tool (removed along with workspace
+        # listing/refresh history - out of scope for this build), so this is
+        # the only way the model learns which `model_name` values are valid
+        # to pass to pbi_mcp_get_semantic_metadata/pbi_rest_run_dax_query.
+        names = ", ".join(f'"{m.model_name}"' for m in catalog.semantic_models)
+        system_prompt += f"\n\nAvailable semantic models: {names}."
+    system_prompt = inject_glossary(system_prompt, glossary)
 
     async def agent_node(state: DatasourceState):
-        response = await chain.ainvoke(state["messages"])
+        response = await llm_with_tools.ainvoke([SystemMessage(content=system_prompt), *state["messages"]])
         return {"messages": [response]}
 
     return agent_node

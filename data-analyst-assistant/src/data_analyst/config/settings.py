@@ -89,9 +89,9 @@ class Glossary(BaseModel):
 
 def inject_glossary(prompt: str, glossary: Glossary | None) -> str:
     """Append `glossary`'s rendered terms to `prompt`, if there are any.
-    Shared by every agent chain that builds a system prompt (datasource,
-    analysis, and the orchestrator's supervisor/respond/clarify chains) so
-    this stays in one place rather than re-implemented per chain."""
+    Shared by every node builder that constructs a system prompt (datasource,
+    analysis, and the orchestrator's supervisor/respond/clarify nodes) so
+    this stays in one place rather than re-implemented per node."""
     if glossary is not None and glossary.terms:
         return prompt + f"\n\nGlossary:\n{glossary.render()}"
     return prompt

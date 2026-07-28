@@ -49,7 +49,7 @@ class Clarification(BaseModel):
     from, so a frontend can render them as buttons instead of relying on
     free text. Produced two ways, both read into this same shape: the
     supervisor's own upfront "clarify" decision
-    (`agents/orchestrator/chains.py::build_clarify_chain`, via structured
+    (`agents/orchestrator/nodes.py::build_clarify_node`, via structured
     output), where `question` is already the ready-to-send text; and a
     specialist's `flag_ambiguity` tool call (`agents/common/tools.py`),
     where `question` is really just the specialist's own reason for the

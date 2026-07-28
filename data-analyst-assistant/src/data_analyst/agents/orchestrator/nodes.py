@@ -4,21 +4,27 @@ specialist subgraph from the current task and fold its answer back in.
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
+from pydantic import BaseModel
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
 from data_analyst.agents.common.models import AgentResult, Clarification, FetchedDataset
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.graph import build_datasource_graph
-from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
-from data_analyst.agents.orchestrator.history import maybe_summarize_history
+from data_analyst.agents.orchestrator.history import build_prompt_messages, maybe_summarize_history
+from data_analyst.agents.orchestrator.prompts import (
+    CLARIFY_SYSTEM_PROMPT,
+    RESPOND_SYSTEM_PROMPT,
+    SUPERVISOR_SYSTEM_PROMPT,
+)
 from data_analyst.agents.orchestrator.state import OrchestratorState
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
-from data_analyst.config.settings import Glossary
+from data_analyst.config.settings import Glossary, inject_glossary
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
 
@@ -36,8 +42,28 @@ cap rather than an implicit one - see the `GraphRecursionError` handling
 below for what happens when it's hit."""
 
 
+class Route(BaseModel):
+    """Every field needs a default: `FakeToolCallingChatModel`'s
+    `with_structured_output` stand-in constructs this with no arguments (see
+    clients/llm/factory.py), which tests rely on."""
+
+    next: Literal["datasource", "analysis", "respond", "clarify"] = "respond"
+    reason: str = ""
+
+
+def _render_resolved(resolved: list[dict] | None) -> str:
+    """A compact `"question" -> "answer"` line per already-settled
+    clarification, for injecting into a prompt - shared by the supervisor's
+    routing decision and its own upfront clarify decision, so neither
+    re-asks something already answered earlier in the conversation."""
+    if not resolved:
+        return ""
+    lines = "\n".join(f'- "{r["question"]}" -> "{r["answer"]}"' for r in resolved)
+    return f"\n\nAlready clarified earlier in this conversation:\n{lines}"
+
+
 def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    chain = build_supervisor_chain(llm, glossary=glossary)
+    router = llm.with_structured_output(Route)
 
     async def supervisor_node(state: OrchestratorState):
         turns = state.get("turns", 0)
@@ -54,14 +80,14 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
         summary_update = await maybe_summarize_history(llm, state)
         history_summary = (summary_update or {}).get("history_summary", state.get("history_summary"))
-        route = await chain.ainvoke(
-            {
-                "messages": state["messages"],
-                "data_context": state.get("data_context"),
-                "resolved_clarifications": state.get("resolved_clarifications"),
-                "history_summary": history_summary,
-            }
-        )
+
+        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary)
+        if data_context := state.get("data_context"):
+            prompt += f"\n\nCurrently available data in this session: {FetchedDataset(**data_context).describe()}"
+        prompt += _render_resolved(state.get("resolved_clarifications"))
+        context = build_prompt_messages(state["messages"], history_summary)
+        route = await router.ainvoke([SystemMessage(content=prompt), *context])
+
         update: dict = {"next": route.next, "turns": turns + 1}
         if summary_update:
             update.update(summary_update)
@@ -304,12 +330,11 @@ def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
 
 def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    chain = build_respond_chain(llm, glossary=glossary)
+    prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary)
 
     async def respond_node(state: OrchestratorState):
-        response = await chain.ainvoke(
-            {"messages": state["messages"], "history_summary": state.get("history_summary")}
-        )
+        context = build_prompt_messages(state["messages"], state.get("history_summary"))
+        response = await llm.ainvoke([SystemMessage(content=prompt), *context])
         return {
             "messages": [response],
             "pending_clarification": None,
@@ -320,16 +345,13 @@ def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
 
 def build_clarify_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    chain = build_clarify_chain(llm, glossary=glossary)
+    router = llm.with_structured_output(Clarification)
+    base_prompt = inject_glossary(CLARIFY_SYSTEM_PROMPT, glossary)
 
     async def clarify_node(state: OrchestratorState):
-        clarification = await chain.ainvoke(
-            {
-                "messages": state["messages"],
-                "resolved_clarifications": state.get("resolved_clarifications"),
-                "history_summary": state.get("history_summary"),
-            }
-        )
+        prompt = base_prompt + _render_resolved(state.get("resolved_clarifications"))
+        context = build_prompt_messages(state["messages"], state.get("history_summary"))
+        clarification = await router.ainvoke([SystemMessage(content=prompt), *context])
         return {
             "messages": [AIMessage(content=clarification.question)],
             "pending_clarification": {
