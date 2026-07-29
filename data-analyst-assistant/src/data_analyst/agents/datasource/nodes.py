@@ -19,6 +19,7 @@ from langchain_core.tools import BaseTool, tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.common.tools import flag_ambiguity
+from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 from data_analyst.agents.datasource.state import DatasourceState
 from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
@@ -99,10 +100,10 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         run earlier in this conversation, the cached result is reused instead
         of issuing a new query - check the `reused` field in the response.
 
-        Returns a preview of the resulting rows, a `query` summary of the
-        group-by/filters/measures actually used (relay this to the user for
-        transparency about what was fetched), and a `dataset_id` that the
-        analysis agent can use to load the full result as a DataFrame.
+        Returns a preview of the resulting rows, the `group_by`/`filters`/
+        `measures` actually used (relay these to the user for transparency
+        about what was fetched), and a `dataset_id` that the analysis agent
+        can use to load the full result as a DataFrame.
         """
         token = state.get("pbi_token")
         if not token:
@@ -119,14 +120,14 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         cached_dataset_id = store.find_cached(cache_key)
         if cached_dataset_id is not None:
             df = store.peek(cached_dataset_id)
-            return {
-                "dataset_id": cached_dataset_id,
-                "model_name": model_name,
-                "query": query_summary,
-                "row_count": len(df),
-                "preview": df.head(5).to_dict(orient="records"),
-                "reused": True,
-            }
+            return DataSourceQueryResult(
+                dataset_id=cached_dataset_id,
+                model_name=model_name,
+                row_count=len(df),
+                preview=df.head(5).to_dict(orient="records"),
+                reused=True,
+                **query_summary,
+            ).model_dump()
 
         try:
             dax_query, df = await rest.run_dax_query(token, spec)
@@ -135,15 +136,15 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
         dataset_id = store.stage(df)
         store.remember(cache_key, dataset_id)
-        return {
-            "dataset_id": dataset_id,
-            "model_name": model_name,
-            "query": query_summary,
-            "row_count": len(df),
-            "preview": df.head(5).to_dict(orient="records"),
-            "reused": False,
-            "dax_query": dax_query,
-        }
+        return DataSourceQueryResult(
+            dataset_id=dataset_id,
+            model_name=model_name,
+            row_count=len(df),
+            preview=df.head(5).to_dict(orient="records"),
+            reused=False,
+            dax_query=dax_query,
+            **query_summary,
+        ).model_dump()
 
     return [
         pbi_mcp_get_semantic_metadata,

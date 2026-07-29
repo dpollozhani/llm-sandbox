@@ -12,11 +12,11 @@ import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import Field
 
-from data_analyst.agents.common.models import FetchedDataset
+from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
-_FETCHED = FetchedDataset(
+_FETCHED = DataSourceQueryResult(
     dataset_id="dataset_1", model_name="Sales Analytics", group_by=["Sales.Region"], measures=["Total Revenue"], row_count=5
 ).model_dump()
 
@@ -62,7 +62,7 @@ async def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
     assert isinstance(folded, AIMessage)
     assert folded.content == "[datasource] There is one semantic model: Sales Analytics."
     # No pbi_rest_run_dax_query call happened (just a schema lookup), so
-    # there's no FetchedDataset to set data_context to - and, importantly,
+    # there's no DataSourceQueryResult to set data_context to - and, importantly,
     # nothing here should overwrite a dataset from an earlier turn either.
     assert "data_context" not in update
 

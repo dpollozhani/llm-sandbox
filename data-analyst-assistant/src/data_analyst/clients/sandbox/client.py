@@ -18,7 +18,8 @@ import itertools
 
 import pandas as pd
 
-from data_analyst.clients.sandbox.executor import ExecutionResult, execute
+from data_analyst.agents.analysis.models import ExecutionResult
+from data_analyst.clients.sandbox.executor import execute
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
 
