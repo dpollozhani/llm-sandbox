@@ -3,16 +3,19 @@
 ## Orchestrator (`agents/orchestrator/`)
 
 The supervisor. Doesn't have its own tools - it only ever does one of three
-things: ask the model to route (`chains.py::build_supervisor_chain`, a
+things: ask the model to route (`nodes.py::build_supervisor_node`, a
 `Route(next=..., reason=...)` structured output over `"datasource"` /
 `"analysis"` / `"respond"` / `"clarify"`), produce the final answer
-(`build_respond_chain`, a plain chat call over the accumulated
-conversation), or ask a clarifying question itself (`build_clarify_chain`,
+(`build_respond_node`, a plain chat call over the accumulated
+conversation), or ask a clarifying question itself (`build_clarify_node`,
 used when the supervisor picks `"clarify"` - see `CLARIFY_SYSTEM_PROMPT` in
 `prompts.py`, reserved for when it's unclear even which specialist should
-handle the request). `nodes.py` wires all three into graph nodes, plus the
-two delegation wrappers (`build_datasource_node`, `build_analysis_node`)
-that seed and fold specialist subgraphs - see `docs/architecture.md` for why
+handle the request). Each of these builds its own prompt (glossary
+injection, resolved-clarification rendering) and calls the model directly -
+no separate chain-building layer, just a closure over the prompt text
+returned as the node function itself. `nodes.py` also has the two
+delegation wrappers (`build_datasource_node`, `build_analysis_node`) that
+seed and fold specialist subgraphs - see `docs/architecture.md` for why
 that folding is manual rather than a native LangGraph subgraph node, how
 `data_context` and the session-bound data store let a follow-up question
 reuse already-fetched data, and how those same two wrappers detect and
@@ -46,10 +49,10 @@ There's no workspace/refresh-history tool - both were dropped as unneeded
 for this build. Without a "list models" tool either, the model instead
 learns valid `model_name` values from the static catalog
 (`config/semantic_models.yaml`), appended to the system prompt by
-`chains.py::build_agent_chain`. `config/glossary.yaml`'s terms
+`nodes.py::build_agent_node`. `config/glossary.yaml`'s terms
 (`Glossary`/`get_glossary`/`inject_glossary` in `config/settings.py`) are
-appended the same way here - and in every other agent chain (the
-supervisor's routing/respond/clarify chains, and the analysis agent's),
+appended the same way here - and in every other agent's node builder (the
+supervisor's routing/respond/clarify nodes, and the analysis agent's),
 fetched once in `build_orchestrator_graph` and threaded to each - since a
 term the schema alone won't explain can trip up the supervisor's routing
 or the analysis agent just as easily as the datasource agent's
@@ -111,12 +114,12 @@ when the requested analysis itself is ambiguous. `models.py` defines
 
 1. Copy the shape of `agents/analysis/` (it's the smallest): `state.py`
    (extend `ChatState`), `prompts.py` (a system prompt scoped to the new
-   tools), `chains.py` (bind the tools to the model), `nodes.py` (the
-   `@tool` functions + `agent`/`tools` node builders), `graph.py` (the
-   `agent <-> tools` loop). Every tool function, chain `_invoke`, and node
-   function should be `async def` (see "Async, end to end" in
-   `docs/architecture.md`) - a graph with even one sync node function can no
-   longer be invoked at all once other nodes are async.
+   tools), `nodes.py` (the `@tool` functions, `build_agent_node` binding the
+   tools to the model and calling it directly, `build_tool_node`), `graph.py`
+   (the `agent <-> tools` loop). Every tool function and node function
+   should be `async def` (see "Async, end to end" in `docs/architecture.md`)
+   - a graph with even one sync node function can no longer be invoked at
+   all once other nodes are async.
 2. Add a `build_<name>_node` to `agents/orchestrator/nodes.py` following
    `build_analysis_node`, wire it into `agents/orchestrator/graph.py`
    (`add_node` + edges back to `supervisor`), and mention it in

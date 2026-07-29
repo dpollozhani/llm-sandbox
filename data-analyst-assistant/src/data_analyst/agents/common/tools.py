@@ -1,5 +1,5 @@
 """Tools shared across specialist agents (not the orchestrator, which has no
-tools of its own - see agents/orchestrator/chains.py)."""
+tools of its own - see agents/orchestrator/nodes.py)."""
 from __future__ import annotations
 
 from typing import Annotated

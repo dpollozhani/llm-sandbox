@@ -4,14 +4,15 @@ from __future__ import annotations
 from typing import Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
-from data_analyst.agents.analysis.chains import build_agent_chain
+from data_analyst.agents.analysis.prompts import SYSTEM_PROMPT
 from data_analyst.agents.analysis.state import AnalysisState
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.clients.sandbox.client import get_sandbox_client
-from data_analyst.config.settings import Glossary
+from data_analyst.config.settings import Glossary, inject_glossary
 
 
 @tool
@@ -33,10 +34,11 @@ TOOLS = [python_sandbox_execute, flag_ambiguity]
 
 
 def build_agent_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    chain = build_agent_chain(llm, TOOLS, glossary=glossary)
+    llm_with_tools = llm.bind_tools(TOOLS)
+    system_prompt = inject_glossary(SYSTEM_PROMPT, glossary)
 
     async def agent_node(state: AnalysisState):
-        response = await chain.ainvoke(state["messages"])
+        response = await llm_with_tools.ainvoke([SystemMessage(content=system_prompt), *state["messages"]])
         return {"messages": [response]}
 
     return agent_node

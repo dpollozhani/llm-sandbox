@@ -50,7 +50,7 @@ class OrchestratorState(ChatState):
     or re-asking about - it from scratch."""
     history_summary: NotRequired[str]
     """A running summary of conversation turns old enough to have been
-    folded out of the supervisor/respond/clarify chains' own prompt context
+    folded out of the supervisor/respond/clarify nodes' own prompt context
     (see `agents/orchestrator/history.py`) - `messages` itself is never
     trimmed (it's the checkpointed record), only what gets sent to the
     model each call. `NotRequired`: absent until a conversation is long

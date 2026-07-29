@@ -2,7 +2,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
-from data_analyst.agents.orchestrator.chains import build_clarify_chain, build_respond_chain, build_supervisor_chain
+from data_analyst.agents.orchestrator.nodes import build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.config.settings import Glossary, GlossaryEntry
 
@@ -21,7 +21,7 @@ class _RecordingLLM(FakeToolCallingChatModel):
 
 class _RecordingStructuredLLM(FakeToolCallingChatModel):
     """Like `_RecordingLLM`, but for the `with_structured_output` path
-    (`build_supervisor_chain`/`build_clarify_chain`) - the base fake's own
+    (`build_supervisor_node`/`build_clarify_node`) - the base fake's own
     `with_structured_output` stand-in ignores its input entirely, so it
     can't be used to check what prompt a structured-output call actually
     received."""
@@ -36,53 +36,53 @@ class _RecordingStructuredLLM(FakeToolCallingChatModel):
         return RunnableLambda(_invoke)
 
 
-async def test_respond_chain_injects_glossary():
+async def test_respond_node_injects_glossary():
     llm = _RecordingLLM(responses=[AIMessage(content="ok")])
-    chain = build_respond_chain(llm, glossary=_GLOSSARY)
+    node = build_respond_node(llm, glossary=_GLOSSARY)
 
-    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
+    await node({"messages": [HumanMessage(content="hi")]})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
 
 
-async def test_respond_chain_has_no_glossary_section_when_absent():
+async def test_respond_node_has_no_glossary_section_when_absent():
     llm = _RecordingLLM(responses=[AIMessage(content="ok")])
-    chain = build_respond_chain(llm)
+    node = build_respond_node(llm)
 
-    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
+    await node({"messages": [HumanMessage(content="hi")]})
 
     assert "Glossary:" not in llm.recorded_messages[0][0].content
 
 
-async def test_supervisor_chain_injects_glossary():
+async def test_supervisor_node_injects_glossary():
     """The supervisor sees raw user language before ever delegating - a
     term it doesn't recognize can misroute, or trigger an unnecessary
     upfront clarifying question, just as easily as it can confuse the
     datasource agent."""
     llm = _RecordingStructuredLLM(responses=[])
-    chain = build_supervisor_chain(llm, glossary=_GLOSSARY)
+    node = build_supervisor_node(llm, glossary=_GLOSSARY)
 
-    await chain.ainvoke({"messages": [HumanMessage(content="top 10 by BRIC")], "data_context": None})
+    await node({"messages": [HumanMessage(content="top 10 by BRIC")], "turns": 0})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
 
 
-async def test_clarify_chain_injects_glossary():
+async def test_clarify_node_injects_glossary():
     llm = _RecordingStructuredLLM(responses=[])
-    chain = build_clarify_chain(llm, glossary=_GLOSSARY)
+    node = build_clarify_node(llm, glossary=_GLOSSARY)
 
-    await chain.ainvoke({"messages": [HumanMessage(content="hi")]})
+    await node({"messages": [HumanMessage(content="hi")]})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
 
 
-async def test_clarify_chain_mentions_already_resolved_clarifications():
+async def test_clarify_node_mentions_already_resolved_clarifications():
     """So the supervisor's own upfront path doesn't re-ask something a
     specialist (or an earlier upfront clarify) already settled."""
     llm = _RecordingStructuredLLM(responses=[])
-    chain = build_clarify_chain(llm)
+    node = build_clarify_node(llm)
 
-    await chain.ainvoke(
+    await node(
         {
             "messages": [HumanMessage(content="hi")],
             "resolved_clarifications": [{"question": "Which region?", "answer": "North"}],

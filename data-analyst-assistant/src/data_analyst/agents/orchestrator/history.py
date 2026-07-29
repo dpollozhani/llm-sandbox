@@ -1,6 +1,6 @@
 """Rolling history summarization: `OrchestratorState["messages"]` stays
 unbounded (it's the checkpointed conversation record, needed for
-audit/resume - never trimmed), but the supervisor/respond/clarify chains
+audit/resume - never trimmed), but the supervisor/respond/clarify nodes
 get a bounded prompt context instead - a running summary of older turns
 plus the most recent messages verbatim - so per-turn token cost stops
 growing linearly with conversation length.
@@ -34,9 +34,8 @@ replaces, not supplements, the messages it covers."""
 
 def build_prompt_messages(messages: list[AnyMessage], history_summary: str | None) -> list[AnyMessage]:
     """`[summary-as-message?, *recent raw messages]` instead of the full,
-    ever-growing `messages` list - what `build_supervisor_chain`/
-    `build_respond_chain`/`build_clarify_chain` (`agents/orchestrator/chains.py`)
-    actually send to the model."""
+    ever-growing `messages` list - what the supervisor/respond/clarify node
+    builders (`agents/orchestrator/nodes.py`) actually send to the model."""
     recent = messages[-RECENT_MESSAGE_COUNT:]
     if not history_summary:
         return recent

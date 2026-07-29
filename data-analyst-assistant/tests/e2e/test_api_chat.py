@@ -30,8 +30,8 @@ class ScriptedRoutingModel(FakeToolCallingChatModel):
     """Extends FakeToolCallingChatModel so the supervisor's routing (`Route`)
     and clarify (`Clarification`) structured outputs can be scripted too,
     not just tool-calling responses. Each schema gets its own independent
-    call counter/list: `build_supervisor_chain` and `build_clarify_chain`
-    each call `with_structured_output` once, at chain-build time, not once
+    call counter/list: `build_supervisor_node` and `build_clarify_node`
+    each call `with_structured_output` once, at node-build time, not once
     per turn, so a single shared counter would make the two schemas fight
     over the same list index."""
 

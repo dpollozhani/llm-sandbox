@@ -4,7 +4,7 @@ model) over streamable HTTP. That's the only capability of this server this
 app uses. There's no "list all models" tool anywhere in this build - the
 model learns valid `model_name` values from the static catalog
 (`config/semantic_models.yaml`), injected into the datasource agent's
-system prompt (see `agents/datasource/chains.py`).
+system prompt (see `agents/datasource/nodes.py::build_agent_node`).
 
 The tool's exact machine name and its dataset-id argument's exact key
 aren't hardcoded - Microsoft's own docs refer to it inconsistently (e.g.

@@ -92,7 +92,7 @@ the orchestrator ever decides what the user actually sees:
 1. **The supervisor asks upfront** (`Route(next="clarify")`,
    `build_clarify_node`/`clarify` node): for when the request is so vague
    the supervisor can't even tell which specialist should handle it. This
-   costs one supervisor call (`build_clarify_chain`'s structured output,
+   costs one supervisor call (`build_clarify_node`'s structured output,
    producing a `Clarification` - `question` + options) and ends the turn.
 2. **A specialist flags ambiguity mid-task** (`flag_ambiguity` tool,
    `agents/common/tools.py`): for narrower ambiguity only visible once a
@@ -141,7 +141,7 @@ Once a `pending_clarification` is resolved (or superseded by a new one),
 `_append_resolved` folds it into `state["resolved_clarifications"]` - a
 running `[{"question", "answer"}, ...]` list. Every specialist delegation
 (`_seed_content`) and the supervisor's own routing/clarify prompts
-(`_render_resolved` in `agents/orchestrator/chains.py`) are given a compact
+(`_render_resolved` in `agents/orchestrator/nodes.py`) are given a compact
 rendering of this list, so nothing re-asks (or re-derives from scratch)
 something already settled earlier in the conversation - without needing the
 full raw message history to do so.
@@ -149,7 +149,7 @@ full raw message history to do so.
 On resume, `build_supervisor_node` checks `pending_clarification` before
 doing anything else: if a specific specialist (not the supervisor itself)
 is the one awaiting a reply, it routes straight back to that specialist -
-skipping the routing chain's LLM call entirely - rather than re-deciding
+skipping the routing decision's LLM call entirely - rather than re-deciding
 from scratch and risking a mis-route.
 
 ## Structured, validated DAX queries
@@ -244,7 +244,7 @@ child. Two things to get right if you add one:
 
 ## Async, end to end
 
-Every node function, chain, and tool in this codebase is `async def`, and
+Every node function and tool in this codebase is `async def`, and
 every graph is invoked with `.ainvoke()` - not just `app/api.py`'s endpoint.
 LangGraph requires this consistency: a graph with even one async node
 function raises `TypeError: No synchronous function provided to "..."` if
@@ -287,9 +287,9 @@ waiting for the whole thing to finish. Both endpoints exist side by side -
 (`app/web.py`) and `cli.py`'s default mode.
 
 The interesting part is how little of the rest of the codebase had to change
-to support this - none of the chains, since `astream_events` already exists
-on the compiled graph object and needs nothing from the call sites beneath
-it:
+to support this - none of the node functions' own prompt-building or model
+calls, since `astream_events` already exists on the compiled graph object
+and needs nothing from the call sites beneath it:
 
 - **Node-level progress comes from event metadata, for free.** Every event
   `astream_events` yields carries `metadata["langgraph_node"]`, so
@@ -301,15 +301,17 @@ it:
   child graphs (see "How delegation works" above) - callbacks and config
   propagate through nested `.ainvoke()` calls the same way.
 - **A single node visit fires several nested `on_chain_start` events**
-  (the node's own runnable, its chain's inner `_invoke`, etc.), all tagged
-  with the same `langgraph_node` metadata. `chat_stream` only treats the one
-  whose own name matches the node name as "this node started" - filtering
-  by `node not in seen_nodes` instead (i.e. only the *first* visit) would be
-  wrong, since a node like `supervisor` legitimately runs more than once in
-  a turn and each visit should report status.
-- **Token-level streaming needs zero chain changes, but does need a real
-  `_stream`/`_astream` on the model.** Every chain here calls `llm.ainvoke()`,
-  never `.astream()` - yet `on_chat_model_stream` events still carry
+  (the node's own runnable, the model call inside it, etc. - LangChain's
+  event machinery calls any `Runnable` invocation a "chain" event
+  regardless of what it is), all tagged with the same `langgraph_node`
+  metadata. `chat_stream` only treats the one whose own name matches the
+  node name as "this node started" - filtering by `node not in seen_nodes`
+  instead (i.e. only the *first* visit) would be wrong, since a node like
+  `supervisor` legitimately runs more than once in a turn and each visit
+  should report status.
+- **Token-level streaming needs zero node changes, but does need a real
+  `_stream`/`_astream` on the model.** Every node function here calls
+  `llm.ainvoke()`, never `.astream()` - yet `on_chat_model_stream` events still carry
   per-token chunks under `astream_events`, because LangChain's event
   machinery routes the call through the model's streaming code path
   regardless of which method the calling code used, *if* the model
