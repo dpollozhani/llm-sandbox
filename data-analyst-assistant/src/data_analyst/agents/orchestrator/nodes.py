@@ -12,7 +12,7 @@ from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
-from data_analyst.agents.common.models import AgentResult, Clarification
+from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.datasource.models import DataSourceQueryResult
@@ -279,9 +279,8 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
-    agent_result = AgentResult(agent=agent_name, summary=summary)
     update: dict = {
-        "messages": [AIMessage(content=f"[{agent_name}] {agent_result.summary}")],
+        "messages": [AIMessage(content=f"[{agent_name}] {summary}")],
         "pending_clarification": None,
         "resolved_clarifications": _append_resolved(state),
     }

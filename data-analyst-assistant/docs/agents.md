@@ -98,8 +98,6 @@ the client layer doesn't own an agent-facing tool-result shape.
   graph shares. `session_id` scopes the data store in
   `clients/sandbox/client.py` and is only ever read via `InjectedState`
   inside a tool, never exposed to the model.
-- `models.py::AgentResult` - what a specialist hands back to the
-  orchestrator (`agent` name + `summary` text).
 - `models.py::Clarification` - a `question` plus 2-3 clearly distinct
   options, shared by both clarification paths (see `docs/architecture.md`'s
   "Clarifications are the orchestrator's alone to surface"): the

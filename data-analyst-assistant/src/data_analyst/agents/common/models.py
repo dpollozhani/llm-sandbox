@@ -4,15 +4,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class AgentResult(BaseModel):
-    """What a specialist subgraph (datasource/analysis) hands back to the
-    orchestrator: enough to keep the conversation going without re-exposing
-    every intermediate tool call to the supervisor's own context."""
-
-    agent: str
-    summary: str
-
-
 class Clarification(BaseModel):
     """A short question plus 2-3 clearly distinct options a user can pick
     from, so a frontend can render them as buttons instead of relying on

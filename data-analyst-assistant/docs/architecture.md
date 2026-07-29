@@ -41,9 +41,7 @@ FastAPI (app/api.py)
   have a `flag_ambiguity` tool (`agents/common/tools.py`) to report - not
   ask - an ambiguity they can't resolve themselves.
 - **`agents/common`**: the `ChatState` shape (`messages` + `session_id` with
-  LangGraph's `add_messages` reducer) shared by all three graphs, and
-  `AgentResult`, the small model a specialist hands back to the
-  orchestrator.
+  LangGraph's `add_messages` reducer) shared by all three graphs.
 - **`clients/`**: everything that would talk to a real system in
   production - Power BI (MCP + REST + auth), the code sandbox, and the LLM
   provider. Agent code never imports a provider SDK directly; it only calls

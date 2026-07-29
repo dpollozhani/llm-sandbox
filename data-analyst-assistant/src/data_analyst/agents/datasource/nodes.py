@@ -27,6 +27,7 @@ from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
+from data_analyst.utils.dataframe import preview_records
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
@@ -135,7 +136,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
                 filters=query_filters,
                 measures=query_measures,
                 row_count=len(df),
-                preview=df.head(5).to_dict(orient="records"),
+                preview=preview_records(df),
                 reused=True,
             ).model_dump()
 
@@ -153,7 +154,7 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
             filters=query_filters,
             measures=query_measures,
             row_count=len(df),
-            preview=df.head(5).to_dict(orient="records"),
+            preview=preview_records(df),
             reused=False,
             dax_query=dax_query,
         ).model_dump()
