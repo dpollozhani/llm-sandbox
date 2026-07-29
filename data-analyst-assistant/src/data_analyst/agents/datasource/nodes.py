@@ -19,13 +19,15 @@ from langchain_core.tools import BaseTool, tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.common.tools import flag_ambiguity
+from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 from data_analyst.agents.datasource.state import DatasourceState
-from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
+from data_analyst.utils.dataframe import preview_records
 
 _NOT_SIGNED_IN = "Not signed in with Power BI access for this - ask the user to sign in again (/auth/login)."
 
@@ -99,10 +101,10 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         run earlier in this conversation, the cached result is reused instead
         of issuing a new query - check the `reused` field in the response.
 
-        Returns a preview of the resulting rows, a `query` summary of the
-        group-by/filters/measures actually used (relay this to the user for
-        transparency about what was fetched), and a `dataset_id` that the
-        analysis agent can use to load the full result as a DataFrame.
+        Returns a preview of the resulting rows, the `group_by`/`filters`/
+        `measures` actually used (relay these to the user for transparency
+        about what was fetched), and a `dataset_id` that the analysis agent
+        can use to load the full result as a DataFrame.
         """
         token = state.get("pbi_token")
         if not token:
@@ -113,20 +115,30 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         except ValueError as exc:
             return {"error": str(exc)}
 
-        query_summary = describe_query(spec)
+        # Plain `table.column` form for the user-facing group_by/filters/measures
+        # fields - computed once, shared by both return branches below.
+        query_group_by = [f"{c.table}.{c.column}" for c in spec.group_by]
+        query_filters = [f"{f.table}.{f.column} {f.operator} {f.value!r}" for f in spec.filters]
+        query_measures = [
+            m.name if m.aggregation is None else f"{m.name} = {m.aggregation}({m.table}.{m.column})"
+            for m in spec.measures
+        ]
+
         store = get_sandbox_client(state["session_id"])
         cache_key = spec.cache_key()
         cached_dataset_id = store.find_cached(cache_key)
         if cached_dataset_id is not None:
             df = store.peek(cached_dataset_id)
-            return {
-                "dataset_id": cached_dataset_id,
-                "model_name": model_name,
-                "query": query_summary,
-                "row_count": len(df),
-                "preview": df.head(5).to_dict(orient="records"),
-                "reused": True,
-            }
+            return DataSourceQueryResult(
+                dataset_id=cached_dataset_id,
+                model_name=model_name,
+                group_by=query_group_by,
+                filters=query_filters,
+                measures=query_measures,
+                row_count=len(df),
+                preview=preview_records(df),
+                reused=True,
+            ).model_dump()
 
         try:
             dax_query, df = await rest.run_dax_query(token, spec)
@@ -135,15 +147,17 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
         dataset_id = store.stage(df)
         store.remember(cache_key, dataset_id)
-        return {
-            "dataset_id": dataset_id,
-            "model_name": model_name,
-            "query": query_summary,
-            "row_count": len(df),
-            "preview": df.head(5).to_dict(orient="records"),
-            "reused": False,
-            "dax_query": dax_query,
-        }
+        return DataSourceQueryResult(
+            dataset_id=dataset_id,
+            model_name=model_name,
+            group_by=query_group_by,
+            filters=query_filters,
+            measures=query_measures,
+            row_count=len(df),
+            preview=preview_records(df),
+            reused=False,
+            dax_query=dax_query,
+        ).model_dump()
 
     return [
         pbi_mcp_get_semantic_metadata,

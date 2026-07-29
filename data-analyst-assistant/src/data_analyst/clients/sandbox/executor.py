@@ -7,15 +7,9 @@ import contextlib
 import io
 
 import pandas as pd
-from pydantic import BaseModel
 
+from data_analyst.agents.analysis.models import ExecutionResult
 from data_analyst.utils.dataframe import to_records
-
-
-class ExecutionResult(BaseModel):
-    stdout: str = ""
-    result: object = None
-    error: str | None = None
 
 
 def execute(code: str, dataframe: pd.DataFrame | None = None) -> ExecutionResult:

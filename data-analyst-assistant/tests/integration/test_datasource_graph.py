@@ -100,7 +100,10 @@ async def test_run_dax_query_returns_a_friendly_query_summary():
     result = await graph.ainvoke(_state("sess-dax-summary", [HumanMessage(content="revenue by region")]))
 
     tool_messages = [m for m in result["messages"] if m.type == "tool"]
-    assert '"query": {"group_by": ["Sales.Region"], "filters": [], "measures": ["Total Revenue = SUM(Sales.Revenue)"]}' in tool_messages[0].content
+    payload = json.loads(tool_messages[0].content)
+    assert payload["group_by"] == ["Sales.Region"]
+    assert payload["filters"] == []
+    assert payload["measures"] == ["Total Revenue = SUM(Sales.Revenue)"]
 
 
 async def test_run_dax_query_reuses_cached_result_within_same_session():

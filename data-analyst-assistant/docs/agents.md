@@ -61,7 +61,7 @@ query-building.
 | Tool | Backing client | Notes |
 |---|---|---|
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
-| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `dataset_id` plus a friendly `query` summary |
+| `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `models.py::DataSourceQueryResult` |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
@@ -87,8 +87,10 @@ code against a DataFrame staged earlier (by the datasource agent, possibly
 in an earlier turn) via `clients/sandbox/client.py`, reached the same way as
 the datasource agent - `state["session_id"]` injected via `InjectedState`;
 and the same shared `flag_ambiguity` as the datasource agent, for
-when the requested analysis itself is ambiguous. `models.py` defines
-`SandboxExecutionResult` for the same reason as above.
+when the requested analysis itself is ambiguous. `models.py::ExecutionResult`
+is the tool's result shape - `stdout`/`result`/`error` - also what
+`clients/sandbox/executor.py::execute` returns, imported back from here so
+the client layer doesn't own an agent-facing tool-result shape.
 
 ## Common (`agents/common/`)
 
@@ -96,8 +98,6 @@ when the requested analysis itself is ambiguous. `models.py` defines
   graph shares. `session_id` scopes the data store in
   `clients/sandbox/client.py` and is only ever read via `InjectedState`
   inside a tool, never exposed to the model.
-- `models.py::AgentResult` - what a specialist hands back to the
-  orchestrator (`agent` name + `summary` text).
 - `models.py::Clarification` - a `question` plus 2-3 clearly distinct
   options, shared by both clarification paths (see `docs/architecture.md`'s
   "Clarifications are the orchestrator's alone to surface"): the

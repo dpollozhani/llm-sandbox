@@ -41,13 +41,18 @@ FastAPI (app/api.py)
   have a `flag_ambiguity` tool (`agents/common/tools.py`) to report - not
   ask - an ambiguity they can't resolve themselves.
 - **`agents/common`**: the `ChatState` shape (`messages` + `session_id` with
-  LangGraph's `add_messages` reducer) shared by all three graphs, and
-  `AgentResult`, the small model a specialist hands back to the
-  orchestrator.
+  LangGraph's `add_messages` reducer) shared by all three graphs.
 - **`clients/`**: everything that would talk to a real system in
   production - Power BI (MCP + REST + auth), the code sandbox, and the LLM
   provider. Agent code never imports a provider SDK directly; it only calls
-  into `clients/`.
+  into `clients/`. The one deliberate exception to that direction:
+  `clients/sandbox/executor.py::execute` returns
+  `agents/analysis/models.py::ExecutionResult` - an agent-facing tool-result
+  shape, not a client-internal one - imported back into the client layer
+  rather than duplicated there, since `agents/datasource/nodes.py`'s
+  `pbi_rest_run_dax_query` tool builds its own equivalent
+  `agents/datasource/models.py::DataSourceQueryResult` directly rather than
+  through a client return type.
 
 ## How delegation works
 
@@ -205,12 +210,13 @@ This cache is the hard guarantee against redundant fetches. On top of it,
 (`data_context`) so it can often skip delegating to "datasource" at all for
 a follow-up that only needs analysis - a soft optimization, not something
 the correctness of "no duplicate fetch" depends on. `data_context` is a
-`FetchedDataset` (`agents/common/models.py`) - `dataset_id`, `model_name`,
-and the query's `group_by`/`filters`/`measures`/`row_count` in one place -
-built by `_run_specialist` from `pbi_rest_run_dax_query`'s own structured
-result, not the datasource specialist's freeform final summary, which has
-no guarantee of mentioning all of it. `.describe()` renders it to the short
-line threaded into prompts.
+`DataSourceQueryResult` (`agents/datasource/models.py`) - the same model
+`pbi_rest_run_dax_query` itself returns (`dataset_id`, `model_name`, the
+query's `group_by`/`filters`/`measures`/`row_count`, plus `preview`/
+`reused`/`dax_query`) - built by `_run_specialist` straight from that
+tool's own structured result, not the datasource specialist's freeform
+final summary, which has no guarantee of mentioning all of it.
+`.describe()` renders it to the short line threaded into prompts.
 
 ## No mutating actions (by design)
 

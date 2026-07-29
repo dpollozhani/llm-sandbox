@@ -12,9 +12,10 @@ from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
-from data_analyst.agents.common.models import AgentResult, Clarification, FetchedDataset
+from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.graph import build_datasource_graph
+from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.orchestrator.history import build_prompt_messages, maybe_summarize_history
 from data_analyst.agents.orchestrator.prompts import (
     CLARIFY_SYSTEM_PROMPT,
@@ -83,7 +84,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
         prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary)
         if data_context := state.get("data_context"):
-            prompt += f"\n\nCurrently available data in this session: {FetchedDataset(**data_context).describe()}"
+            prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         prompt += _render_resolved(state.get("resolved_clarifications"))
         context = build_prompt_messages(state["messages"], history_summary)
         route = await router.ainvoke([SystemMessage(content=prompt), *context])
@@ -138,25 +139,20 @@ def _specialist_ambiguity(messages: list[AnyMessage]) -> Clarification | None:
     return None
 
 
-def _fetched_dataset(messages: list[AnyMessage]) -> FetchedDataset | None:
-    """The `FetchedDataset` behind the most recent successful
+def _fetched_dataset(messages: list[AnyMessage]) -> DataSourceQueryResult | None:
+    """The `DataSourceQueryResult` behind the most recent successful
     `pbi_rest_run_dax_query` call during this run, if any - read from the
-    tool's own structured result (`dataset_id`/`model_name`/`query`/
-    `row_count`), not a specialist's own freeform summary of it, which isn't
-    guaranteed to mention all of it. Searched newest-first so a failed
-    attempt followed by a successful retry resolves to the retry."""
+    tool's own structured result, not a specialist's own freeform summary of
+    it, which isn't guaranteed to mention all of it. Searched newest-first
+    so a failed attempt followed by a successful retry resolves to the
+    retry."""
     for message in reversed(messages):
         if message.type != "tool" or message.name != "pbi_rest_run_dax_query":
             continue
         payload = json.loads(message.content)
         if "dataset_id" not in payload:
             continue  # an {"error": ...} result, not a successful fetch
-        return FetchedDataset(
-            dataset_id=payload["dataset_id"],
-            model_name=payload["model_name"],
-            row_count=payload["row_count"],
-            **payload["query"],
-        )
+        return DataSourceQueryResult(**payload)
     return None
 
 
@@ -195,7 +191,7 @@ def _seed_content(state: OrchestratorState, task_content: str) -> str:
     scratch, plus the task itself."""
     parts = []
     if data_context := state.get("data_context"):
-        parts.append(f"(Available data in this session: {FetchedDataset(**data_context).describe()})")
+        parts.append(f"(Available data in this session: {DataSourceQueryResult(**data_context).describe()})")
     if resolved := state.get("resolved_clarifications"):
         lines = "\n".join(f"- {r['question']} -> {r['answer']}" for r in resolved)
         parts.append(f"(Already clarified earlier in this conversation:\n{lines})")
@@ -283,9 +279,8 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
-    agent_result = AgentResult(agent=agent_name, summary=summary)
     update: dict = {
-        "messages": [AIMessage(content=f"[{agent_name}] {agent_result.summary}")],
+        "messages": [AIMessage(content=f"[{agent_name}] {summary}")],
         "pending_clarification": None,
         "resolved_clarifications": _append_resolved(state),
     }
@@ -298,7 +293,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             # Left out of `update` (not overwritten with None) when this run
             # didn't fetch anything (e.g. only browsed the schema), so a
             # dataset from an earlier turn stays available. Stored as a
-            # plain dict, not the FetchedDataset itself - see
+            # plain dict, not the DataSourceQueryResult itself - see
             # OrchestratorState.data_context's docstring for why.
             update["data_context"] = fetched.model_dump()
     return update
