@@ -114,14 +114,26 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         except ValueError as exc:
             return {"error": str(exc)}
 
+        # Plain `table.column` form for the user-facing group_by/filters/measures
+        # fields - computed once, shared by both return branches below.
+        query_group_by = [f"{c.table}.{c.column}" for c in spec.group_by]
+        query_filters = [f"{f.table}.{f.column} {f.operator} {f.value!r}" for f in spec.filters]
+        query_measures = [
+            m.name if m.aggregation is None else f"{m.name} = {m.aggregation}({m.table}.{m.column})"
+            for m in spec.measures
+        ]
+
         store = get_sandbox_client(state["session_id"])
         cache_key = spec.cache_key()
         cached_dataset_id = store.find_cached(cache_key)
         if cached_dataset_id is not None:
             df = store.peek(cached_dataset_id)
-            return DataSourceQueryResult.from_query(
-                spec,
+            return DataSourceQueryResult(
                 dataset_id=cached_dataset_id,
+                model_name=model_name,
+                group_by=query_group_by,
+                filters=query_filters,
+                measures=query_measures,
                 row_count=len(df),
                 preview=df.head(5).to_dict(orient="records"),
                 reused=True,
@@ -134,9 +146,12 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
         dataset_id = store.stage(df)
         store.remember(cache_key, dataset_id)
-        return DataSourceQueryResult.from_query(
-            spec,
+        return DataSourceQueryResult(
             dataset_id=dataset_id,
+            model_name=model_name,
+            group_by=query_group_by,
+            filters=query_filters,
+            measures=query_measures,
             row_count=len(df),
             preview=df.head(5).to_dict(orient="records"),
             reused=False,
