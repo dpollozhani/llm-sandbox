@@ -127,22 +127,6 @@ def _measure_expr(spec: DaxQuerySpec, m: DaxMeasure) -> str:
     return f"CALCULATE({expr}, {', '.join(filters)})" if filters else expr
 
 
-def describe_query(spec: DaxQuerySpec) -> dict:
-    """A structured, human-readable summary of what a query fetches - the
-    `group_by` columns, `filters`, and `measures` in plain `table.column`
-    form - for showing the user what was actually fetched, as an
-    alternative to the raw DAX text."""
-
-    def _measure(m: DaxMeasure) -> str:
-        return m.name if m.aggregation is None else f"{m.name} = {m.aggregation}({m.table}.{m.column})"
-
-    return {
-        "group_by": [f"{c.table}.{c.column}" for c in spec.group_by],
-        "filters": [f"{f.table}.{f.column} {f.operator} {f.value!r}" for f in spec.filters],
-        "measures": [_measure(m) for m in spec.measures],
-    }
-
-
 def build_dax_query(spec: DaxQuerySpec) -> str:
     """Render a `DaxQuerySpec` to DAX text - see this module's docstring for
     why the shape (`SUMMARIZECOLUMNS` vs `ROW`) depends on whether

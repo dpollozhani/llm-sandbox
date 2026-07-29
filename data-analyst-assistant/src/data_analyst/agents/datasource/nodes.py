@@ -22,7 +22,7 @@ from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 from data_analyst.agents.datasource.state import DatasourceState
-from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec, describe_query
+from data_analyst.clients.powerbi.dax import DaxColumn, DaxFilter, DaxMeasure, DaxQuerySpec
 from data_analyst.clients.powerbi.mcp import PBIMcpClient, get_metadata_cache
 from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.clients.sandbox.client import get_sandbox_client
@@ -114,19 +114,17 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         except ValueError as exc:
             return {"error": str(exc)}
 
-        query_summary = describe_query(spec)
         store = get_sandbox_client(state["session_id"])
         cache_key = spec.cache_key()
         cached_dataset_id = store.find_cached(cache_key)
         if cached_dataset_id is not None:
             df = store.peek(cached_dataset_id)
-            return DataSourceQueryResult(
+            return DataSourceQueryResult.from_query(
+                spec,
                 dataset_id=cached_dataset_id,
-                model_name=model_name,
                 row_count=len(df),
                 preview=df.head(5).to_dict(orient="records"),
                 reused=True,
-                **query_summary,
             ).model_dump()
 
         try:
@@ -136,14 +134,13 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
 
         dataset_id = store.stage(df)
         store.remember(cache_key, dataset_id)
-        return DataSourceQueryResult(
+        return DataSourceQueryResult.from_query(
+            spec,
             dataset_id=dataset_id,
-            model_name=model_name,
             row_count=len(df),
             preview=df.head(5).to_dict(orient="records"),
             reused=False,
             dax_query=dax_query,
-            **query_summary,
         ).model_dump()
 
     return [
