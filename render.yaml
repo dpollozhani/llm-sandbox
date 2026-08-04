@@ -19,8 +19,8 @@ services:
     envVars:
       - key: LOG_LEVEL
         value: INFO
-      # Logs the orchestrator graph's full per-step state history after
-      # every chat turn (LangGraph's own aget_state_history) - a debugging
+      # Logs exactly what each orchestrator node changed, live during every
+      # chat turn (LangGraph's own stream_mode="updates") - a debugging
       # aid, off by default since it's noisy for normal operation.
       - key: DEBUG_GRAPH_STATE
         value: "false"

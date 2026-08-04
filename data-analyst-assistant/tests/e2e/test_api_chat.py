@@ -131,7 +131,7 @@ def test_chat_endpoint_answers_using_a_simple_scripted_model():
     assert body["reply"] == "Here's what I can do."
 
 
-def test_chat_does_not_log_graph_state_history_by_default(caplog):
+def test_chat_does_not_log_graph_updates_by_default(caplog):
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
     graph = _build_graph(llm)
     app.dependency_overrides[get_graph] = lambda: graph
@@ -144,12 +144,12 @@ def test_chat_does_not_log_graph_state_history_by_default(caplog):
         app.dependency_overrides.pop(get_graph, None)
 
     assert response.status_code == 200
-    assert "graph state:" not in caplog.text
+    assert "graph update:" not in caplog.text
 
 
-def test_chat_logs_graph_state_history_when_debug_graph_state_is_enabled(monkeypatch, caplog):
-    """DEBUG_GRAPH_STATE surfaces LangGraph's own per-step state history
-    (CompiledStateGraph.aget_state_history) - useful for confirming the
+def test_chat_logs_graph_updates_when_debug_graph_state_is_enabled(monkeypatch, caplog):
+    """DEBUG_GRAPH_STATE drives the turn via LangGraph's own
+    stream_mode="updates" instead of ainvoke - useful for confirming the
     supervisor/specialists actually behaved as intended, not just that a
     reply came back."""
     monkeypatch.setenv("DEBUG_GRAPH_STATE", "true")
@@ -168,7 +168,10 @@ def test_chat_logs_graph_state_history_when_debug_graph_state_is_enabled(monkeyp
         get_settings.cache_clear()  # don't leak debug_graph_state=True into other tests
 
     assert response.status_code == 200
-    assert "graph state: step=" in caplog.text
+    body = response.json()
+    assert body["reply"] == "Here's what I can do."
+    assert "graph update: node=supervisor" in caplog.text
+    assert "graph update: node=respond" in caplog.text
 
 
 def test_scripted_reply_reused_across_turns_does_not_echo_the_next_message():
@@ -375,6 +378,31 @@ def test_stream_simple_reply_emits_status_tokens_and_a_matching_done_event():
     streamed_reply = "".join(e["content"] for e in events if e["type"] == "token")
     assert done["status"] == "completed"
     assert done["reply"] == streamed_reply == "Here's what I can do."
+
+
+def test_stream_logs_graph_updates_when_debug_graph_state_is_enabled(monkeypatch, caplog):
+    """/chat/stream drives the turn via astream_events, not stream_mode -
+    DEBUG_GRAPH_STATE reuses the on_chain_end event's own `output` (the
+    same per-node payload stream_mode="updates" would give /chat) instead
+    of a second call after the run's done."""
+    monkeypatch.setenv("DEBUG_GRAPH_STATE", "true")
+    get_settings.cache_clear()
+
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with caplog.at_level("INFO", logger="app.api"):
+            with TestClient(app) as client:
+                events = _stream_events(client, {"message": "hello, what can you do?"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+        get_settings.cache_clear()
+
+    assert events[-1]["type"] == "done"
+    assert "graph update: node=supervisor" in caplog.text
+    assert "graph update: node=respond" in caplog.text
 
 
 def test_stream_full_flow_emits_status_and_tool_events_for_both_specialists():

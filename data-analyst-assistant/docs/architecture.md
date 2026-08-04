@@ -379,24 +379,33 @@ and needs nothing from the call sites beneath it:
 ## Inspecting graph state (`DEBUG_GRAPH_STATE`)
 
 `Settings.debug_graph_state` (env `DEBUG_GRAPH_STATE`, off by default) logs
-every checkpointed step of a thread's run after each `/chat`/`/chat/stream`
-turn (`app/api.py::_log_graph_state_history`) - `next`, `turns`,
-`data_context`, `pending_clarification`, and a message count, one line per
-step, oldest first. This is LangGraph's own mechanism for the job, not a
-custom log format standing in for one:
-`CompiledStateGraph.aget_state_history(config)` walks the checkpointer's
-saved `StateSnapshot`s for a `thread_id` - the same "time travel" capability
-LangGraph Studio's own UI is built on - so turning this on requires no new
-instrumentation anywhere in the graph itself, only a call at the point
-where a request already has `graph`/`config` in scope.
+exactly what each node's own return dict changed, live as the run happens,
+via `app/api.py::_log_graph_update` - one line per node visit, in order.
+This is LangGraph's own mechanism for the job, not a custom log format
+standing in for it, though the two endpoints get there slightly
+differently since they already drive a turn two different ways:
 
-Worth knowing before reaching for it: one call already covers every
-internal supervisor/specialist turn that HTTP request went through (up to
-`MAX_TURNS`), not just the final result - and because the history is
-cumulative per thread, a later turn's log re-includes earlier turns from
-the same conversation, not just what's new. Fine for a debugging aid that's
-off by default; not something to leave on in a deployment that cares about
-log volume.
+- **`POST /chat`** normally runs the turn via a single `graph.ainvoke(...)`
+  call. With the flag on, it instead drives the same turn via
+  `graph.astream(..., stream_mode="updates")` - LangGraph's own per-node
+  diff stream - logging each `{node: update}` pair as it's yielded, then
+  makes one `aget_state(config)` call once the run finishes to get the
+  full merged state `_to_chat_response` needs (`stream_mode="updates"`
+  only ever yields per-node diffs, never the merged whole).
+- **`POST /chat/stream`** already drives the turn via `astream_events` (see
+  "Streaming (SSE)" above) for its own status/tool/token events - switching
+  it to `stream_mode="updates"` too would mean two competing ways of
+  running the same turn, or running it twice. Instead, the flag makes the
+  existing loop also match each node's `on_chain_end` event (the same
+  outermost-invocation filter already used for `on_chain_start`/status) and
+  log its `output` - the identical per-node payload `stream_mode="updates"`
+  would give, already sitting in an event this loop was consuming anyway.
+
+Either way, this needs no new instrumentation inside the graph itself -
+no node function changes, nothing added to `OrchestratorState` - only a
+call at the point where a request already has `graph`/`config` (or the
+event stream) in scope, the same "for free" property `astream_events`
+already gives node-level status/tool events (see "Streaming (SSE)").
 
 ## What's mocked vs. real
 

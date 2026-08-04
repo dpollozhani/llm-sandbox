@@ -20,13 +20,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     debug_graph_state: bool = False
-    """Logs the orchestrator graph's full checkpointed state history
-    (`CompiledStateGraph.aget_state_history` - LangGraph's own mechanism for
-    inspecting state as of any step in a run, not a custom log format
-    reinventing it) after every `/chat`/`/chat/stream` turn - see
-    `app/api.py::_log_graph_state_history`. Off by default: this is a
-    debugging aid for understanding routing/state behavior, not something
-    every deployment wants in its logs."""
+    """Logs exactly what each orchestrator node's own return dict changed,
+    live as a `/chat`/`/chat/stream` turn runs - via LangGraph's own
+    `stream_mode="updates"` (`/chat`) or the equivalent already sitting in
+    an `astream_events` event (`/chat/stream`), not a custom log format
+    reinventing either - see `app/api.py::_log_graph_update`. Off by
+    default: this is a debugging aid for understanding routing/state
+    behavior, not something every deployment wants in its logs."""
 
     # No default: pick one explicitly. Fails fast (a pydantic ValidationError
     # at Settings() construction, i.e. app startup) if LLM_PROVIDER isn't set,

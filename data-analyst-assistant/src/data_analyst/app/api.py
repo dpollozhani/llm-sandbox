@@ -114,28 +114,14 @@ def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
     )
 
 
-async def _log_graph_state_history(graph: CompiledStateGraph, config: dict) -> None:
-    """`Settings.debug_graph_state`-gated: logs every checkpointed step of
-    this thread's run so far, oldest first, via `aget_state_history` -
-    LangGraph's own mechanism for inspecting graph state as of any step in a
-    run (not a custom log format standing in for it). One call already
-    covers every internal supervisor/specialist turn this HTTP call went
-    through, not just the final result - `MAX_TURNS` means a single
-    request can span several. Re-logs earlier turns from prior calls on the
-    same thread too (history is cumulative, not just this call's delta) -
-    an acceptable cost for a debugging aid that's off by default, not worth
-    extra bookkeeping to dedupe."""
-    snapshots = [snapshot async for snapshot in graph.aget_state_history(config)]
-    for snapshot in reversed(snapshots):
-        _logger.info(
-            "graph state: step=%s next=%s turns=%s data_context=%s pending_clarification=%s messages=%d",
-            snapshot.metadata.get("step"),
-            snapshot.next,
-            snapshot.values.get("turns"),
-            snapshot.values.get("data_context"),
-            snapshot.values.get("pending_clarification"),
-            len(snapshot.values.get("messages", [])),
-        )
+def _log_graph_update(node: str, update: dict) -> None:
+    """`Settings.debug_graph_state`-gated: logs exactly what one node's
+    return dict changed - the same per-step payload LangGraph's own
+    `stream_mode="updates"` yields (see `chat`), or the equivalent already
+    sitting in an `astream_events` `on_chain_end` event's `output` (see
+    `_stream_chat_events`) - not a custom log format standing in for
+    either."""
+    _logger.info("graph update: node=%s update=%s", node, update)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -160,17 +146,26 @@ async def chat(
 ) -> ChatResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
-    result = await graph.ainvoke(
-        {
-            "messages": [HumanMessage(content=body.message)],
-            "turns": 0,
-            "session_id": thread_id,
-            "pbi_token": tokens.token,
-        },
-        config=config,
-    )
+    input_state = {
+        "messages": [HumanMessage(content=body.message)],
+        "turns": 0,
+        "session_id": thread_id,
+        "pbi_token": tokens.token,
+    }
+
     if get_settings().debug_graph_state:
-        await _log_graph_state_history(graph, config)
+        # stream_mode="updates" yields exactly what each node's own return
+        # dict changed, one node at a time, as the run actually happens -
+        # LangGraph's own tool for this, not `ainvoke` plus a separate
+        # after-the-fact history replay. The final full state still needs
+        # one `aget_state` call once the run's done, since "updates" only
+        # ever gives per-node diffs, never the merged whole.
+        async for update in graph.astream(input_state, config=config, stream_mode="updates"):
+            for node, node_update in update.items():
+                _log_graph_update(node, node_update)
+        result = (await graph.aget_state(config)).values
+    else:
+        result = await graph.ainvoke(input_state, config=config)
     return _to_chat_response(thread_id, result)
 
 
@@ -204,6 +199,7 @@ async def _stream_chat_events(
     yield sse({"type": "start", "thread_id": thread_id})
 
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
+    debug_graph_state = get_settings().debug_graph_state
     final_state: dict | None = None
     try:
         async for event in graph.astream_events(
@@ -229,6 +225,14 @@ async def _stream_chat_events(
             # multiple times in one turn.
             if kind == "on_chain_start" and node in _NODE_STATUS and event.get("name") == node:
                 yield sse({"type": "status", "node": node, "message": _NODE_STATUS[node]})
+            elif debug_graph_state and kind == "on_chain_end" and node in _NODE_STATUS and event.get("name") == node:
+                # The same outermost-invocation filter as on_chain_start above,
+                # applied to its matching end event - `output` here is the
+                # node's own return dict, the same per-node payload
+                # stream_mode="updates" would yield (see `chat`), already
+                # sitting in this event rather than needing a second,
+                # after-the-fact aget_state_history walk once the run's done.
+                _log_graph_update(node, event["data"].get("output"))
             elif kind == "on_tool_start":
                 yield sse({"type": "tool", "name": event.get("name"), "input": event["data"].get("input")})
             elif kind == "on_chat_model_stream" and node in ("respond", "clarify"):
@@ -241,8 +245,6 @@ async def _stream_chat_events(
         yield sse({"type": "error", "message": str(exc)})
         return
 
-    if get_settings().debug_graph_state:
-        await _log_graph_state_history(graph, config)
     yield sse({"type": "done", **_to_chat_response(thread_id, final_state).model_dump()})
 
 
