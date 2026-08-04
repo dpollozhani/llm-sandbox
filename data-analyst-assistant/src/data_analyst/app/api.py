@@ -33,9 +33,12 @@ from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
 from data_analyst.app.web import CHAT_PAGE_HTML
 from data_analyst.config.settings import get_settings
+from data_analyst.telemetry.logging import get_logger
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
 app.include_router(auth_router)
+
+_logger = get_logger("app.api")
 
 _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI access to use the assistant."}
 
@@ -111,6 +114,30 @@ def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
     )
 
 
+async def _log_graph_state_history(graph: CompiledStateGraph, config: dict) -> None:
+    """`Settings.debug_graph_state`-gated: logs every checkpointed step of
+    this thread's run so far, oldest first, via `aget_state_history` -
+    LangGraph's own mechanism for inspecting graph state as of any step in a
+    run (not a custom log format standing in for it). One call already
+    covers every internal supervisor/specialist turn this HTTP call went
+    through, not just the final result - `MAX_TURNS` means a single
+    request can span several. Re-logs earlier turns from prior calls on the
+    same thread too (history is cumulative, not just this call's delta) -
+    an acceptable cost for a debugging aid that's off by default, not worth
+    extra bookkeeping to dedupe."""
+    snapshots = [snapshot async for snapshot in graph.aget_state_history(config)]
+    for snapshot in reversed(snapshots):
+        _logger.info(
+            "graph state: step=%s next=%s turns=%s data_context=%s pending_clarification=%s messages=%d",
+            snapshot.metadata.get("step"),
+            snapshot.next,
+            snapshot.values.get("turns"),
+            snapshot.values.get("data_context"),
+            snapshot.values.get("pending_clarification"),
+            len(snapshot.values.get("messages", [])),
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def chat_page() -> str:
     """A minimal browser chat UI (see app/web.py) for trying the assistant
@@ -142,6 +169,8 @@ async def chat(
         },
         config=config,
     )
+    if get_settings().debug_graph_state:
+        await _log_graph_state_history(graph, config)
     return _to_chat_response(thread_id, result)
 
 
@@ -212,6 +241,8 @@ async def _stream_chat_events(
         yield sse({"type": "error", "message": str(exc)})
         return
 
+    if get_settings().debug_graph_state:
+        await _log_graph_state_history(graph, config)
     yield sse({"type": "done", **_to_chat_response(thread_id, final_state).model_dump()})
 
 

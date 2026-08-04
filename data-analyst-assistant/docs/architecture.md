@@ -376,6 +376,28 @@ and needs nothing from the call sites beneath it:
   `text/event-stream` body by hand via `fetch()` + `ReadableStream`,
   splitting on blank lines the same way any SSE parser would.
 
+## Inspecting graph state (`DEBUG_GRAPH_STATE`)
+
+`Settings.debug_graph_state` (env `DEBUG_GRAPH_STATE`, off by default) logs
+every checkpointed step of a thread's run after each `/chat`/`/chat/stream`
+turn (`app/api.py::_log_graph_state_history`) - `next`, `turns`,
+`data_context`, `pending_clarification`, and a message count, one line per
+step, oldest first. This is LangGraph's own mechanism for the job, not a
+custom log format standing in for one:
+`CompiledStateGraph.aget_state_history(config)` walks the checkpointer's
+saved `StateSnapshot`s for a `thread_id` - the same "time travel" capability
+LangGraph Studio's own UI is built on - so turning this on requires no new
+instrumentation anywhere in the graph itself, only a call at the point
+where a request already has `graph`/`config` in scope.
+
+Worth knowing before reaching for it: one call already covers every
+internal supervisor/specialist turn that HTTP request went through (up to
+`MAX_TURNS`), not just the final result - and because the history is
+cumulative per thread, a later turn's log re-includes earlier turns from
+the same conversation, not just what's new. Fine for a debugging aid that's
+off by default; not something to leave on in a deployment that cares about
+log volume.
+
 ## What's mocked vs. real
 
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,

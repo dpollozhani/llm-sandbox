@@ -24,6 +24,7 @@ from data_analyst.app.api import PBITokens, app, get_pbi_tokens
 from data_analyst.app.dependencies import get_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_dax_query, validate_dax_query
+from data_analyst.config.settings import get_settings
 
 
 class ScriptedRoutingModel(FakeToolCallingChatModel):
@@ -128,6 +129,46 @@ def test_chat_endpoint_answers_using_a_simple_scripted_model():
     body = response.json()
     assert body["status"] == "completed"
     assert body["reply"] == "Here's what I can do."
+
+
+def test_chat_does_not_log_graph_state_history_by_default(caplog):
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with caplog.at_level("INFO", logger="app.api"):
+            with TestClient(app) as client:
+                response = client.post("/chat", json={"message": "hi"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 200
+    assert "graph state:" not in caplog.text
+
+
+def test_chat_logs_graph_state_history_when_debug_graph_state_is_enabled(monkeypatch, caplog):
+    """DEBUG_GRAPH_STATE surfaces LangGraph's own per-step state history
+    (CompiledStateGraph.aget_state_history) - useful for confirming the
+    supervisor/specialists actually behaved as intended, not just that a
+    reply came back."""
+    monkeypatch.setenv("DEBUG_GRAPH_STATE", "true")
+    get_settings.cache_clear()
+
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with caplog.at_level("INFO", logger="app.api"):
+            with TestClient(app) as client:
+                response = client.post("/chat", json={"message": "hi"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+        get_settings.cache_clear()  # don't leak debug_graph_state=True into other tests
+
+    assert response.status_code == 200
+    assert "graph state: step=" in caplog.text
 
 
 def test_scripted_reply_reused_across_turns_does_not_echo_the_next_message():

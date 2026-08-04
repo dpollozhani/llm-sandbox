@@ -19,6 +19,11 @@ services:
     envVars:
       - key: LOG_LEVEL
         value: INFO
+      # Logs the orchestrator graph's full per-step state history after
+      # every chat turn (LangGraph's own aget_state_history) - a debugging
+      # aid, off by default since it's noisy for normal operation.
+      - key: DEBUG_GRAPH_STATE
+        value: "false"
       # LLM_PROVIDER ("anthropic" or "azure_openai") and the matching
       # credentials below are required - set them in the Render dashboard
       # (Environment tab); `sync: false` keeps them out of this committed
