@@ -5,3 +5,5 @@
 semantic_models:
   - model_name: Stock visibility
     dataset_id: df81e208-e8bc-4179-8dab-55936e89dd5e
+  - model_name: HQ financial costs
+    dataset_id: 011d36c5-6272-4c69-af7d-87e05d473bcd
