@@ -76,6 +76,11 @@ def _rest_client(handler) -> PBIRestClient:
     return PBIRestClient(catalog=_CATALOG, transport=httpx.MockTransport(handler))
 
 
+async def _no_sleep(*args, **kwargs) -> None:
+    """Patched over `utils.retry`'s `asyncio.sleep` so retry-backoff tests
+    don't actually wait out the real delay."""
+
+
 async def test_run_dax_query_executes_and_parses_the_response():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1.0/myorg/datasets/ds-test/executeQueries"
@@ -107,6 +112,60 @@ async def test_run_dax_query_surfaces_power_bi_error_response():
     spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])
     with pytest.raises(ValueError, match="Bogus"):
         await _rest_client(handler).run_dax_query("tok-123", spec)
+
+
+async def test_run_dax_query_retries_a_transient_connection_error_then_succeeds(monkeypatch):
+    """A dropped connection reaching Power BI shouldn't fail the whole
+    request on the first blip - see PBIRestClient.run_dax_query's `@retry`."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise httpx.ConnectError("boom", request=request)
+        return httpx.Response(200, json=_EXECUTE_QUERIES_RESPONSE)
+
+    monkeypatch.setattr("data_analyst.utils.retry.asyncio.sleep", _no_sleep)
+    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Products", column="Category")])
+
+    dax_query, df = await _rest_client(handler).run_dax_query("tok-123", spec)
+
+    assert calls["n"] == 3
+    assert df.to_dict(orient="records") == [{"Category": "Hardware"}, {"Category": "Premium"}]
+
+
+async def test_run_dax_query_gives_up_after_max_attempts_on_a_persistent_connection_error(monkeypatch):
+    """A real outage - not just a blip - still surfaces a clear error within
+    a bounded number of attempts instead of retrying forever."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ConnectError("boom", request=request)
+
+    monkeypatch.setattr("data_analyst.utils.retry.asyncio.sleep", _no_sleep)
+    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Products", column="Category")])
+
+    with pytest.raises(httpx.ConnectError):
+        await _rest_client(handler).run_dax_query("tok-123", spec)
+
+    assert calls["n"] == 3
+
+
+async def test_run_dax_query_does_not_retry_a_power_bi_error_response():
+    """A query Power BI itself rejects (bad column, etc.) is a real answer,
+    not a transient failure - retrying would only repeat it identically."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(400, text="Column 'Bogus' does not exist")
+
+    spec = DaxQuerySpec(model_name="Test Model", group_by=[DaxColumn(table="Sales", column="Bogus")])
+    with pytest.raises(ValueError, match="Bogus"):
+        await _rest_client(handler).run_dax_query("tok-123", spec)
+
+    assert calls["n"] == 1
 
 
 def test_rest_client_has_no_trigger_refresh():
@@ -154,6 +213,69 @@ async def test_get_semantic_metadata_raises_on_tool_error(monkeypatch):
 
     with pytest.raises(ValueError, match="permission denied"):
         await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+
+async def test_get_semantic_metadata_retries_a_transient_connection_error_then_succeeds(monkeypatch):
+    """A dropped connection to the MCP server surfaces as an ExceptionGroup
+    (its transport runs in an anyio task group, see `_describe()` in
+    agents/datasource/nodes.py) - shouldn't fail the whole request on the
+    first blip, see PBIMcpClient.get_semantic_metadata's `@retry`."""
+    calls = {"n": 0}
+
+    @asynccontextmanager
+    async def _flaky_streamablehttp_client(url, headers=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("boom")])
+        yield (None, None, None)
+
+    fake_session = _FakeSession(_FakeToolResult(json.dumps({"tables": []})))
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _flaky_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+    monkeypatch.setattr("data_analyst.utils.retry.asyncio.sleep", _no_sleep)
+
+    result = await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert result == {"tables": []}
+    assert calls["n"] == 3
+
+
+async def test_get_semantic_metadata_gives_up_after_max_attempts_on_a_persistent_connection_error(monkeypatch):
+    calls = {"n": 0}
+
+    @asynccontextmanager
+    async def _always_failing_streamablehttp_client(url, headers=None):
+        calls["n"] += 1
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("boom")])
+        yield  # pragma: no cover - unreachable; keeps this an async generator
+
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _always_failing_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.utils.retry.asyncio.sleep", _no_sleep)
+
+    with pytest.raises(ExceptionGroup):
+        await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert calls["n"] == 3
+
+
+async def test_get_semantic_metadata_does_not_retry_a_tool_error(monkeypatch):
+    """A tool call the server itself rejects is a real answer, not a
+    transient failure - retrying would only repeat it identically."""
+    calls = {"n": 0}
+    fake_session = _FakeSession(_FakeToolResult("permission denied", is_error=True))
+
+    @asynccontextmanager
+    async def _counting_streamablehttp_client(url, headers=None):
+        calls["n"] += 1
+        yield (None, None, None)
+
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.streamablehttp_client", _counting_streamablehttp_client)
+    monkeypatch.setattr("data_analyst.clients.powerbi.mcp.ClientSession", lambda read, write: fake_session)
+
+    with pytest.raises(ValueError, match="permission denied"):
+        await PBIMcpClient(catalog=_CATALOG).get_semantic_metadata("tok-123", "Test Model")
+
+    assert calls["n"] == 1
 
 
 async def test_get_semantic_metadata_adapts_to_a_differently_named_server_tool(monkeypatch):
