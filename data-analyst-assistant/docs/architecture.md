@@ -157,6 +157,36 @@ is the one awaiting a reply, it routes straight back to that specialist -
 skipping the routing decision's LLM call entirely - rather than re-deciding
 from scratch and risking a mis-route.
 
+## No schema without a schema lookup
+
+Only the datasource agent's `pbi_mcp_get_semantic_metadata` tool ever
+actually sees a semantic model's schema (tables/columns/measures/
+relationships). Every other node - the supervisor's routing decision, its
+own `respond` answer, the `clarify` question - has zero schema access, and
+their prompts (`agents/orchestrator/prompts.py`) say so explicitly: a
+"which models are available" question can be answered directly from the
+static catalog's model *names* (`config/semantic_models.yaml`, injected via
+`nodes.py::_describe_catalog` - real config, not a guess), but anything
+about a model's *contents* must route to "datasource" rather than being
+answered from assumption or general knowledge of what a "typical" schema
+might contain. `agents/datasource/prompts.py::SYSTEM_PROMPT` carries the
+matching rule for the specialist itself: call
+`pbi_mcp_get_semantic_metadata` before stating anything about a model's
+tables/columns/measures - not just before running a query against it -
+unless that model's schema was already fetched earlier in the same
+conversation (the per-session cache in `clients/powerbi/mcp.py` is what
+makes "already fetched" cheap to check for real, not just a prompt
+instruction to trust).
+
+This is a prompt-level guarantee, not a code-enforced one - unlike the
+cache-key/`InjectedState` mechanisms elsewhere in this doc, there's no
+practical way to programmatically verify "this response's table/column
+names actually came from a tool result" without re-implementing schema
+validation the MCP server already owns. The mitigation is keeping every
+node's stated capabilities honest about what it can and can't see, so a
+model has no prompt-level cover for guessing instead of looking something
+up.
+
 ## Structured, validated DAX queries
 
 `pbi_rest_run_dax_query` (`agents/datasource/nodes.py`) never accepts DAX

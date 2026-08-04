@@ -25,7 +25,7 @@ from data_analyst.agents.orchestrator.prompts import (
 from data_analyst.agents.orchestrator.state import OrchestratorState
 from data_analyst.clients.powerbi.mcp import PBIMcpClient
 from data_analyst.clients.powerbi.rest import PBIRestClient
-from data_analyst.config.settings import Glossary, inject_glossary
+from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
 
@@ -63,7 +63,20 @@ def _render_resolved(resolved: list[dict] | None) -> str:
     return f"\n\nAlready clarified earlier in this conversation:\n{lines}"
 
 
-def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
+def _describe_catalog(catalog: PowerBiCatalog | None) -> str:
+    """The real, config-backed list of semantic model names, appended to a
+    prompt so the supervisor/respond nodes can answer "which models are
+    available" directly from actual config rather than guessing - they see
+    no schema at all, only these names (see SUPERVISOR_SYSTEM_PROMPT/
+    RESPOND_SYSTEM_PROMPT). Empty string (no-op when appended) if there's no
+    catalog or it's empty."""
+    if not catalog or not catalog.semantic_models:
+        return ""
+    names = ", ".join(f'"{m.model_name}"' for m in catalog.semantic_models)
+    return f"\n\nAvailable semantic models: {names}."
+
+
+def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
     router = llm.with_structured_output(Route)
 
     async def supervisor_node(state: OrchestratorState):
@@ -82,7 +95,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None):
         summary_update = await maybe_summarize_history(llm, state)
         history_summary = (summary_update or {}).get("history_summary", state.get("history_summary"))
 
-        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary)
+        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         prompt += _render_resolved(state.get("resolved_clarifications"))
@@ -304,9 +317,12 @@ def build_datasource_node(
     mcp_client: PBIMcpClient | None = None,
     rest_client: PBIRestClient | None = None,
     glossary: Glossary | None = None,
+    catalog: PowerBiCatalog | None = None,
 ):
     def build_graph_fn(agent_llm: BaseChatModel):
-        return build_datasource_graph(agent_llm, mcp_client=mcp_client, rest_client=rest_client, glossary=glossary)
+        return build_datasource_graph(
+            agent_llm, mcp_client=mcp_client, rest_client=rest_client, catalog=catalog, glossary=glossary
+        )
 
     async def datasource_node(state: OrchestratorState):
         return await _run_specialist("datasource", build_graph_fn, llm, state)
@@ -324,8 +340,8 @@ def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
     return analysis_node
 
 
-def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary)
+def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
+    prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
 
     async def respond_node(state: OrchestratorState):
         context = build_prompt_messages(state["messages"], state.get("history_summary"))

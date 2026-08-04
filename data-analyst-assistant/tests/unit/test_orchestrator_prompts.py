@@ -4,9 +4,10 @@ from pydantic import Field
 
 from data_analyst.agents.orchestrator.nodes import build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
-from data_analyst.config.settings import Glossary, GlossaryEntry
+from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig
 
 _GLOSSARY = Glossary(terms=[GlossaryEntry(term="BRIC", definition="An item attribute, not BRICS.")])
+_CATALOG = PowerBiCatalog(semantic_models=[SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-1")])
 
 
 class _RecordingLLM(FakeToolCallingChatModel):
@@ -74,6 +75,38 @@ async def test_clarify_node_injects_glossary():
     await node({"messages": [HumanMessage(content="hi")]})
 
     assert "- BRIC: An item attribute, not BRICS." in llm.recorded_messages[0][0].content
+
+
+async def test_respond_node_lists_catalog_model_names():
+    """So "which models are available" can be answered from real config,
+    never guessed - see RESPOND_SYSTEM_PROMPT's anti-confabulation rule."""
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm, catalog=_CATALOG)
+
+    await node({"messages": [HumanMessage(content="which models are available?")]})
+
+    assert 'Available semantic models: "Sales Analytics".' in llm.recorded_messages[0][0].content
+
+
+async def test_respond_node_has_no_catalog_section_when_absent():
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm)
+
+    await node({"messages": [HumanMessage(content="hi")]})
+
+    assert "Available semantic models" not in llm.recorded_messages[0][0].content
+
+
+async def test_supervisor_node_lists_catalog_model_names():
+    """The supervisor has no schema access at all - only these names - so a
+    request about a model's contents must route to "datasource" instead of
+    the supervisor guessing; see SUPERVISOR_SYSTEM_PROMPT."""
+    llm = _RecordingStructuredLLM(responses=[])
+    node = build_supervisor_node(llm, catalog=_CATALOG)
+
+    await node({"messages": [HumanMessage(content="which models are available?")], "turns": 0})
+
+    assert 'Available semantic models: "Sales Analytics".' in llm.recorded_messages[0][0].content
 
 
 async def test_clarify_node_mentions_already_resolved_clarifications():

@@ -13,7 +13,17 @@ Given the conversation so far, decide what should happen next:
   "Currently available data" below) and the request just needs
   computing/summarizing over it
 - route to "respond" once there's enough information to answer the user
-  directly
+  directly - this is safe for a plain "which models are available" question
+  (answer with the model names listed below, nothing about their contents)
+  or once a specialist has already reported the relevant schema/data this
+  conversation. It is NOT enough that you (the supervisor) might already
+  know or guess at a model's tables, columns, measures, or relationships -
+  you have no access to any schema, only the model names below. Any request
+  about a model's contents - what tables/columns/measures/relationships it
+  has, or anything that requires having actually seen its schema - must
+  route to "datasource" first, even on a first turn, even if you feel
+  confident: only that specialist can call the tool that actually looks up
+  a schema, and answering from assumption instead would be fabricating it.
 - route to "clarify" yourself only when the request is so unclear you can't
   even tell which specialist should handle it (e.g. no hint of what data or
   analysis is wanted at all). For narrower uncertainty - which
@@ -39,7 +49,16 @@ Using the conversation so far (including what the datasource and analysis
 specialists reported), give the user a clear, concise final answer in plain
 language. If this is a greeting or a "what can you do" question rather than
 a real request, briefly describe these actual capabilities and limits
-instead of a generic pitch, and ask what they'd like to look at."""
+instead of a generic pitch, and ask what they'd like to look at.
+
+If asked which semantic models are available, list only the model names
+given below - never describe their tables, columns, measures, or
+relationships unless the datasource specialist actually reported that
+content earlier in this conversation (from its own `pbi_mcp_get_semantic_metadata`
+call). You were never shown any schema yourself, so never state or imply
+one from assumption, a guess, or general knowledge of what a "typical"
+model might contain - a made-up table/column name is worse than saying you
+don't know yet and would need to look it up."""
 
 CLARIFY_SYSTEM_PROMPT = """You are a data analyst assistant. You're uncertain about how to
 proceed - either which data/columns/filters the user means, or what

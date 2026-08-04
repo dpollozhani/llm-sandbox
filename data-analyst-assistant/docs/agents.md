@@ -13,7 +13,16 @@ used when the supervisor picks `"clarify"` - see `CLARIFY_SYSTEM_PROMPT` in
 handle the request). Each of these builds its own prompt (glossary
 injection, resolved-clarification rendering) and calls the model directly -
 no separate chain-building layer, just a closure over the prompt text
-returned as the node function itself. `nodes.py` also has the two
+returned as the node function itself. The supervisor and respond prompts
+also get the catalog's model names appended (`nodes.py::_describe_catalog`,
+same `config/semantic_models.yaml`-backed list the datasource agent's own
+prompt gets) - that's the only Power BI knowledge either has. Neither ever
+sees a schema, so `SUPERVISOR_SYSTEM_PROMPT`/`RESPOND_SYSTEM_PROMPT`
+explicitly forbid answering anything about a model's tables/columns/
+measures from assumption - a "which models are available" question can be
+answered directly from that name list, but anything about a model's
+*contents* must route to "datasource" (see "No schema without a schema
+lookup" below). `nodes.py` also has the two
 delegation wrappers (`build_datasource_node`, `build_analysis_node`) that
 seed and fold specialist subgraphs - see `docs/architecture.md` for why
 that folding is manual rather than a native LangGraph subgraph node, how
