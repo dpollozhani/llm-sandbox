@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     app_name: str = "data-analyst-assistant"
     log_level: str = "INFO"
 
+    debug_graph_state: bool = False
+    """Logs exactly what each orchestrator node's own return dict changed,
+    live as a `/chat`/`/chat/stream` turn runs - via LangGraph's own
+    `stream_mode="updates"` (`/chat`) or the equivalent already sitting in
+    an `astream_events` event (`/chat/stream`), not a custom log format
+    reinventing either - see `app/api.py::_log_graph_update`. Off by
+    default: this is a debugging aid for understanding routing/state
+    behavior, not something every deployment wants in its logs."""
+
     # No default: pick one explicitly. Fails fast (a pydantic ValidationError
     # at Settings() construction, i.e. app startup) if LLM_PROVIDER isn't set,
     # rather than silently falling back to anything.

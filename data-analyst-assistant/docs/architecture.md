@@ -376,6 +376,37 @@ and needs nothing from the call sites beneath it:
   `text/event-stream` body by hand via `fetch()` + `ReadableStream`,
   splitting on blank lines the same way any SSE parser would.
 
+## Inspecting graph state (`DEBUG_GRAPH_STATE`)
+
+`Settings.debug_graph_state` (env `DEBUG_GRAPH_STATE`, off by default) logs
+exactly what each node's own return dict changed, live as the run happens,
+via `app/api.py::_log_graph_update` - one line per node visit, in order.
+This is LangGraph's own mechanism for the job, not a custom log format
+standing in for it, though the two endpoints get there slightly
+differently since they already drive a turn two different ways:
+
+- **`POST /chat`** normally runs the turn via a single `graph.ainvoke(...)`
+  call. With the flag on, it instead drives the same turn via
+  `graph.astream(..., stream_mode="updates")` - LangGraph's own per-node
+  diff stream - logging each `{node: update}` pair as it's yielded, then
+  makes one `aget_state(config)` call once the run finishes to get the
+  full merged state `_to_chat_response` needs (`stream_mode="updates"`
+  only ever yields per-node diffs, never the merged whole).
+- **`POST /chat/stream`** already drives the turn via `astream_events` (see
+  "Streaming (SSE)" above) for its own status/tool/token events - switching
+  it to `stream_mode="updates"` too would mean two competing ways of
+  running the same turn, or running it twice. Instead, the flag makes the
+  existing loop also match each node's `on_chain_end` event (the same
+  outermost-invocation filter already used for `on_chain_start`/status) and
+  log its `output` - the identical per-node payload `stream_mode="updates"`
+  would give, already sitting in an event this loop was consuming anyway.
+
+Either way, this needs no new instrumentation inside the graph itself -
+no node function changes, nothing added to `OrchestratorState` - only a
+call at the point where a request already has `graph`/`config` (or the
+event stream) in scope, the same "for free" property `astream_events`
+already gives node-level status/tool events (see "Streaming (SSE)").
+
 ## What's mocked vs. real
 
 - **Real**: the LangGraph control flow (supervisor loop, ReAct loops,

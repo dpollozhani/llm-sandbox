@@ -33,9 +33,12 @@ from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
 from data_analyst.app.web import CHAT_PAGE_HTML
 from data_analyst.config.settings import get_settings
+from data_analyst.telemetry.logging import get_logger
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
 app.include_router(auth_router)
+
+_logger = get_logger("app.api")
 
 _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI access to use the assistant."}
 
@@ -111,6 +114,16 @@ def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
     )
 
 
+def _log_graph_update(node: str, update: dict) -> None:
+    """`Settings.debug_graph_state`-gated: logs exactly what one node's
+    return dict changed - the same per-step payload LangGraph's own
+    `stream_mode="updates"` yields (see `chat`), or the equivalent already
+    sitting in an `astream_events` `on_chain_end` event's `output` (see
+    `_stream_chat_events`) - not a custom log format standing in for
+    either."""
+    _logger.info("graph update: node=%s update=%s", node, update)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def chat_page() -> str:
     """A minimal browser chat UI (see app/web.py) for trying the assistant
@@ -133,15 +146,26 @@ async def chat(
 ) -> ChatResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
-    result = await graph.ainvoke(
-        {
-            "messages": [HumanMessage(content=body.message)],
-            "turns": 0,
-            "session_id": thread_id,
-            "pbi_token": tokens.token,
-        },
-        config=config,
-    )
+    input_state = {
+        "messages": [HumanMessage(content=body.message)],
+        "turns": 0,
+        "session_id": thread_id,
+        "pbi_token": tokens.token,
+    }
+
+    if get_settings().debug_graph_state:
+        # stream_mode="updates" yields exactly what each node's own return
+        # dict changed, one node at a time, as the run actually happens -
+        # LangGraph's own tool for this, not `ainvoke` plus a separate
+        # after-the-fact history replay. The final full state still needs
+        # one `aget_state` call once the run's done, since "updates" only
+        # ever gives per-node diffs, never the merged whole.
+        async for update in graph.astream(input_state, config=config, stream_mode="updates"):
+            for node, node_update in update.items():
+                _log_graph_update(node, node_update)
+        result = (await graph.aget_state(config)).values
+    else:
+        result = await graph.ainvoke(input_state, config=config)
     return _to_chat_response(thread_id, result)
 
 
@@ -175,6 +199,7 @@ async def _stream_chat_events(
     yield sse({"type": "start", "thread_id": thread_id})
 
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
+    debug_graph_state = get_settings().debug_graph_state
     final_state: dict | None = None
     try:
         async for event in graph.astream_events(
@@ -200,6 +225,14 @@ async def _stream_chat_events(
             # multiple times in one turn.
             if kind == "on_chain_start" and node in _NODE_STATUS and event.get("name") == node:
                 yield sse({"type": "status", "node": node, "message": _NODE_STATUS[node]})
+            elif debug_graph_state and kind == "on_chain_end" and node in _NODE_STATUS and event.get("name") == node:
+                # The same outermost-invocation filter as on_chain_start above,
+                # applied to its matching end event - `output` here is the
+                # node's own return dict, the same per-node payload
+                # stream_mode="updates" would yield (see `chat`), already
+                # sitting in this event rather than needing a second,
+                # after-the-fact aget_state_history walk once the run's done.
+                _log_graph_update(node, event["data"].get("output"))
             elif kind == "on_tool_start":
                 yield sse({"type": "tool", "name": event.get("name"), "input": event["data"].get("input")})
             elif kind == "on_chat_model_stream" and node in ("respond", "clarify"):
