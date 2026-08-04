@@ -341,9 +341,17 @@ def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
 
 def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
-    prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
+    base_prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
 
     async def respond_node(state: OrchestratorState):
+        # Concrete grounding for RESPOND_SYSTEM_PROMPT's "only suggest a
+        # follow-up when it's grounded in the currently available data"
+        # rule - without this, the model's only signal for "what's in play
+        # right now" is prose buried in the message history, not something
+        # to build a scoped suggestion from.
+        prompt = base_prompt
+        if data_context := state.get("data_context"):
+            prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         context = build_prompt_messages(state["messages"], state.get("history_summary"))
         response = await llm.ainvoke([SystemMessage(content=prompt), *context])
         return {

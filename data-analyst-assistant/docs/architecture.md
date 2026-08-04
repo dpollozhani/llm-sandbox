@@ -255,7 +255,15 @@ query's `group_by`/`filters`/`measures`/`row_count`, plus `preview`/
 `reused`/`dax_query`) - built by `_run_specialist` straight from that
 tool's own structured result, not the datasource specialist's freeform
 final summary, which has no guarantee of mentioning all of it.
-`.describe()` renders it to the short line threaded into prompts.
+`.describe()` renders it to the short line threaded into prompts - also
+into `build_respond_node`'s own prompt now, the concrete grounding
+`RESPOND_SYSTEM_PROMPT` needs for its "only suggest a follow-up when it's
+scoped to the model actually in play" rule (see "Clarifications are the
+orchestrator's alone to surface" for the parallel problem this was
+avoiding on the clarify side: a prompt with no concrete grounding tends to
+fill the gap with something plausible-sounding but ungrounded - here, a
+generic suggestion pulled from the glossary or "typical" business
+questions instead of what was actually fetched).
 
 ## No mutating actions (by design)
 
