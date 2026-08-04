@@ -2,6 +2,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
+from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.orchestrator.nodes import build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig
@@ -95,6 +96,36 @@ async def test_respond_node_has_no_catalog_section_when_absent():
     await node({"messages": [HumanMessage(content="hi")]})
 
     assert "Available semantic models" not in llm.recorded_messages[0][0].content
+
+
+async def test_respond_node_injects_currently_available_data():
+    """Concrete grounding for RESPOND_SYSTEM_PROMPT's "only suggest a
+    follow-up when it's grounded in the currently available data" rule -
+    without this, the model has no structured signal for what's actually
+    in play this conversation to scope a suggestion to."""
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm)
+    data_context = DataSourceQueryResult(
+        dataset_id="dataset_1", model_name="Sales Analytics", group_by=["Sales.Region"], row_count=5
+    ).model_dump()
+
+    await node({"messages": [HumanMessage(content="what's our revenue by region?")], "data_context": data_context})
+
+    prompt = llm.recorded_messages[0][0].content
+    assert "Currently available data in this session:" in prompt
+    assert "Sales Analytics" in prompt
+
+
+async def test_respond_node_has_no_data_context_section_when_absent():
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm)
+
+    await node({"messages": [HumanMessage(content="hi")]})
+
+    # The prompt's own static text mentions "Currently available data" in
+    # passing (see RESPOND_SYSTEM_PROMPT) - check for the actual injected
+    # line, not that substring, which would be present either way.
+    assert "Currently available data in this session:" not in llm.recorded_messages[0][0].content
 
 
 async def test_supervisor_node_lists_catalog_model_names():

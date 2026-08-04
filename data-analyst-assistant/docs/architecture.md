@@ -96,9 +96,18 @@ the orchestrator ever decides what the user actually sees:
 
 1. **The supervisor asks upfront** (`Route(next="clarify")`,
    `build_clarify_node`/`clarify` node): for when the request is so vague
-   the supervisor can't even tell which specialist should handle it. This
-   costs one supervisor call (`build_clarify_node`'s structured output,
-   producing a `Clarification` - `question` + options) and ends the turn.
+   the supervisor can't even tell which specialist should handle it -
+   routing-level uncertainty only. A data or analysis request's own
+   specifics being unclear (which model/table/columns/filters/measures, or
+   which computation) is never grounds for this path, no matter how vague -
+   that's squarely path 2's job, never the supervisor's to ask about, even
+   indirectly. `SUPERVISOR_SYSTEM_PROMPT`/`CLARIFY_SYSTEM_PROMPT`
+   (`agents/orchestrator/prompts.py`) both say so explicitly, since a
+   vaguer framing here previously let the supervisor's own clarify path
+   drift into asking about data specifics that were properly a
+   specialist's to flag. This costs one supervisor call
+   (`build_clarify_node`'s structured output, producing a `Clarification` -
+   `question` + options) and ends the turn.
 2. **A specialist flags ambiguity mid-task** (`flag_ambiguity` tool,
    `agents/common/tools.py`): for narrower ambiguity only visible once a
    specialist is actually trying to build the query or pick the
@@ -246,7 +255,15 @@ query's `group_by`/`filters`/`measures`/`row_count`, plus `preview`/
 `reused`/`dax_query`) - built by `_run_specialist` straight from that
 tool's own structured result, not the datasource specialist's freeform
 final summary, which has no guarantee of mentioning all of it.
-`.describe()` renders it to the short line threaded into prompts.
+`.describe()` renders it to the short line threaded into prompts - also
+into `build_respond_node`'s own prompt now, the concrete grounding
+`RESPOND_SYSTEM_PROMPT` needs for its "only suggest a follow-up when it's
+scoped to the model actually in play" rule (see "Clarifications are the
+orchestrator's alone to surface" for the parallel problem this was
+avoiding on the clarify side: a prompt with no concrete grounding tends to
+fill the gap with something plausible-sounding but ungrounded - here, a
+generic suggestion pulled from the glossary or "typical" business
+questions instead of what was actually fetched).
 
 ## No mutating actions (by design)
 
