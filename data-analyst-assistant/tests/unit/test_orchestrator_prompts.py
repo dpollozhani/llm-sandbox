@@ -122,7 +122,10 @@ async def test_respond_node_has_no_data_context_section_when_absent():
 
     await node({"messages": [HumanMessage(content="hi")]})
 
-    assert "Currently available data" not in llm.recorded_messages[0][0].content
+    # The prompt's own static text mentions "Currently available data" in
+    # passing (see RESPOND_SYSTEM_PROMPT) - check for the actual injected
+    # line, not that substring, which would be present either way.
+    assert "Currently available data in this session:" not in llm.recorded_messages[0][0].content
 
 
 async def test_supervisor_node_lists_catalog_model_names():
