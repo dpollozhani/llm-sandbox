@@ -19,7 +19,8 @@ from data_analyst.config.settings import Glossary, inject_glossary
 async def python_sandbox_execute(
     code: str, state: Annotated[AnalysisState, InjectedState], dataset_id: str | None = None
 ) -> dict:
-    """Execute Python/pandas code in an isolated sandbox.
+    """Execute Python code in a restricted sandbox - pandas/numpy/scipy.stats/
+    math are already imported as pd/np/stats/math, no other imports work.
 
     If `dataset_id` is given, the staged DataFrame is bound to the local
     variable `df` before running `code`. Assign to a variable named `result`

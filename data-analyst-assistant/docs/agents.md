@@ -91,8 +91,8 @@ capability doesn't exist in the client layer either.
 
 ## Analysis (`agents/analysis/`)
 
-Sandbox specialist, two tools: `python_sandbox_execute`, which runs pandas
-code against a DataFrame staged earlier (by the datasource agent, possibly
+Sandbox specialist, two tools: `python_sandbox_execute`, which runs code
+against a DataFrame staged earlier (by the datasource agent, possibly
 in an earlier turn) via `clients/sandbox/client.py`, reached the same way as
 the datasource agent - `state["session_id"]` injected via `InjectedState`;
 and the same shared `flag_ambiguity` as the datasource agent, for
@@ -100,6 +100,18 @@ when the requested analysis itself is ambiguous. `models.py::ExecutionResult`
 is the tool's result shape - `stdout`/`result`/`error` - also what
 `clients/sandbox/executor.py::execute` returns, imported back from here so
 the client layer doesn't own an agent-facing tool-result shape.
+
+`executor.py`'s restricted namespace (see its own module docstring) gives
+the executed code `pd`/`np`/`math`/`stats` (pandas/numpy/`scipy.stats`)
+pre-imported - no `import` statement works, there's nothing else - plus a
+curated set of ordinary builtins (`print`, `sorted`, `min`/`max`, numeric/
+string/collection constructors, common exception types), deliberately
+excluding anything that reaches outside the process (`open`, `__import__`,
+`exec`/`eval`, `getattr`/`setattr`). `utils/dataframe.py::to_records`
+normalizes whatever ends up in `result` - a DataFrame/Series, a bare numpy
+scalar/array, or either nested inside a plain dict/list - to native Python
+types, since numpy/scipy routinely hand back values `json.dumps` can't
+serialize on its own.
 
 ## Common (`agents/common/`)
 
