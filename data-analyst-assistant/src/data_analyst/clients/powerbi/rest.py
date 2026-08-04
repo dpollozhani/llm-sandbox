@@ -24,6 +24,7 @@ from data_analyst.clients.powerbi.dax import (
 from data_analyst.config.settings import PowerBiCatalog, get_catalog
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
+from data_analyst.utils.retry import retry
 
 _BASE_URL = "https://api.powerbi.com/v1.0/myorg"
 _logger = get_logger("clients.powerbi.rest")
@@ -50,6 +51,7 @@ class PBIRestClient:
             timeout=30.0,
         )
 
+    @retry(attempts=3, backoff_seconds=1.0, exceptions=(httpx.TransportError,))
     async def run_dax_query(self, access_token: str, spec: DaxQuerySpec) -> tuple[str, pd.DataFrame]:
         """Build, validate, and execute a structured DAX query against the
         Power BI dataset resolved from `spec.model_name` via the catalog
@@ -61,7 +63,18 @@ class PBIRestClient:
         `executeQueries` call itself errors (e.g. an unknown column/table -
         this client can't validate those without a live schema lookup, so
         Power BI's own error is what the agent sees and can react to).
-        """
+
+        `@retry` only covers `httpx.TransportError` - a connection drop,
+        DNS hiccup, or timeout reaching Power BI at all - not
+        `httpx.HTTPStatusError`-shaped failures (there are none here; a
+        >=400 response is read and re-raised above as a `ValueError`
+        instead) or the `ValueError`s this method itself raises. Those are
+        real answers from Power BI (bad query, unknown column) that retrying
+        would only repeat identically, not transient conditions retrying
+        could plausibly fix. Bounded at 3 attempts / up to 3s of added
+        backoff (1s, then 2s) - long enough to ride out a brief network
+        blip, short enough that a real outage still surfaces a clear error
+        within the same chat turn instead of leaving the request hanging."""
         with trace_span("pbi_rest.run_dax_query", model_name=spec.model_name):
             model = self._catalog.find_model(spec.model_name)
             if model is None:

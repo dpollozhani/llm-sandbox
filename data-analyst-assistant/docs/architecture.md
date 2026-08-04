@@ -360,3 +360,24 @@ and needs nothing from the call sites beneath it:
 - **Mocked**: only the Python sandbox's data layer - `clients/sandbox/`
   executes code via `exec()`, but against an in-process dict of staged
   DataFrames rather than an isolated execution service.
+
+## Retrying a dropped connection
+
+`PBIRestClient.run_dax_query` and `PBIMcpClient.get_semantic_metadata` are
+each wrapped in `utils/retry.py`'s `@retry` (3 attempts, 1s/2s backoff),
+scoped only to transport-level failures - `httpx.TransportError` for the
+REST client, plus `ExceptionGroup` for the MCP client (its transport runs
+in an anyio task group, so a dropped connection surfaces as one - see
+`_describe()` in `agents/datasource/nodes.py`). A real answer from either
+service - an unknown model, a query Power BI itself rejects, a tool call
+the MCP server errors on - is a plain `ValueError` outside that scope and
+is never retried; retrying an answer that isn't going to change would just
+delay the agent seeing it.
+
+This answers "what happens if the connection drops mid-call": neither an
+indefinite hang nor an instant failure. A few quick attempts (bounded at
+~3s of added backoff total) ride out a brief blip; a real outage still
+surfaces a clear `{"error": ...}` tool result within the same chat turn
+(via each tool's own broad `except Exception`, unchanged by this) rather
+than leaving the request hanging past what the caller would consider
+"still loading."

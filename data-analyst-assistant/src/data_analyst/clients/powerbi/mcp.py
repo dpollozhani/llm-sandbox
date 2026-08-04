@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import Tool
@@ -53,6 +54,7 @@ from mcp.types import Tool
 from data_analyst.config.settings import PowerBiCatalog, get_catalog, get_settings
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
+from data_analyst.utils.retry import retry
 
 _logger = get_logger("clients.powerbi.mcp")
 
@@ -84,11 +86,22 @@ class PBIMcpClient:
         self._catalog = catalog or get_catalog()
         self._server_url = server_url or get_settings().pbi_mcp_server_url
 
+    @retry(attempts=3, backoff_seconds=1.0, exceptions=(httpx.TransportError, ExceptionGroup))
     async def get_semantic_metadata(self, access_token: str, model_name: str) -> dict:
         """Fetch the semantic model schema for `model_name` (resolved to a
         dataset id via the catalog config). Raises ValueError if the model
         is unknown, no matching tool is advertised by the server, or the
-        tool call fails."""
+        tool call fails.
+
+        `@retry` covers `httpx.TransportError` and `ExceptionGroup` (a
+        connection drop surfaces as the latter here - the `mcp` SDK's
+        transport runs in an anyio task group, see `_describe()` in
+        `agents/datasource/nodes.py`) - not the `ValueError`s this method
+        raises itself, which are real answers (unknown model, no matching
+        tool, a failed tool call) that a retry can't change. See
+        `PBIRestClient.run_dax_query` for the same bounded-backoff
+        reasoning: a few quick attempts to ride out a brief blip, not an
+        indefinite hang."""
         with trace_span("pbi_mcp.get_semantic_metadata", model_name=model_name):
             model = self._catalog.find_model(model_name)
             if model is None:
