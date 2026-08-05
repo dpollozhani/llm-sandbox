@@ -117,8 +117,11 @@ def _resolve_allowed_model_names(model_names: list[str] | None) -> list[str] | N
     what's likely a frontend integration bug (a stale link, a typo) rather
     than surfacing it immediately."""
     if model_names is None:
-        return None
-    if not model_names:
+        return None  # not provided at all - no scoping, the full catalog applies
+    if len(model_names) == 0:
+        # Provided, but empty - distinct from omitting the field entirely
+        # (handled above): asking to be scoped to nothing is a caller bug,
+        # not a request for "no scoping."
         raise HTTPException(status_code=400, detail="model_names, if provided, must be non-empty")
     subset = get_catalog().subset(model_names)
     resolved = {m.model_name for m in subset.semantic_models} | {m.dataset_id for m in subset.semantic_models}
