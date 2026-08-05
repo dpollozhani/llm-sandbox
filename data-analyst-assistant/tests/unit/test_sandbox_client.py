@@ -45,6 +45,28 @@ async def test_execute_common_builtins_are_available():
     assert result.result == [1, 2, 3, 1, 2, 5, "1", 2]
 
 
+async def test_execute_helper_function_sees_top_level_variables():
+    """Regression: exec() with two separate globals/locals dicts runs
+    top-level code like a class body - a def (or comprehension, a hidden
+    nested function) created there gets __globals__ set to the globals
+    dict, not locals, so it couldn't see a variable a top-level assignment
+    put in locals. This broke exactly the kind of code a real analysis
+    script writes: a helper function, called later via groupby().apply(),
+    referencing a variable assigned earlier in the very same script."""
+    client = SandboxClient()
+    code = (
+        "threshold = 2\n"
+        "def above(row):\n"
+        "    return row['x'] > threshold\n"
+        "result = df[df.apply(above, axis=1)].to_dict(orient='records')"
+    )
+    df = pd.DataFrame([{"x": 1}, {"x": 3}])
+    result = await client.execute(code, dataset_id=client.stage(df))
+
+    assert result.error is None
+    assert result.result == [{"x": 3}]
+
+
 async def test_execute_cannot_import_additional_modules():
     """The sandbox pre-imports pd/np/math/stats - anything else is
     unreachable, including via the model's own `import` statement."""
