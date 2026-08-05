@@ -100,17 +100,30 @@ class ChatResponse(BaseModel):
     options: list[str] | None = None
     """2-3 clearly distinct options a frontend can render as buttons instead
     of requiring a typed reply - only set when `status` is
-    "clarification_needed" (see agents/common/models.py::Clarification)."""
+    "clarification_needed" (see agents/common/models.py::Clarification).
+    Blocking: `reply` here is not a real answer, just the clarifying
+    question itself - picking one of these (or replying in free text) is
+    the only way to make progress."""
+    suggested_options: list[str] | None = None
+    """2-3 optional next-step suggestions from a specialist alongside a
+    completed answer (see agents/common/tools.py::suggest_followup and
+    OrchestratorState.followup_suggestion) - non-blocking: `reply` is
+    already the real, complete answer, and picking one of these (or
+    ignoring them and asking something else) are equally valid next moves.
+    Only ever set when `status` is "completed" - a blocking clarification
+    always takes priority over a supplementary suggestion."""
 
 
 def _to_chat_response(thread_id: str, final_state: dict) -> ChatResponse:
     pending = final_state.get("pending_clarification")
     status = "clarification_needed" if pending is not None else "completed"
+    followup = final_state.get("followup_suggestion") if pending is None else None
     return ChatResponse(
         thread_id=thread_id,
         status=status,
         reply=final_state["messages"][-1].content,
         options=pending["options"] if pending is not None else None,
+        suggested_options=followup["options"] if followup is not None else None,
     )
 
 

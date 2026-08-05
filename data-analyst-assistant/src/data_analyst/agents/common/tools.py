@@ -40,3 +40,34 @@ async def flag_ambiguity(
     # for why one shape serves both without implying this is already
     # ready-to-send text.
     return Clarification(question=reason, options=options).model_dump()
+
+
+@tool
+async def suggest_followup(
+    reason: str,
+    options: Annotated[
+        list[str],
+        Field(
+            description="2-3 clearly distinct, concrete next steps the user could ask for.",
+            min_length=2,
+            max_length=3,
+        ),
+    ],
+) -> dict:
+    """Offer 2-3 concrete next steps after you've already completed the
+    current task - not instead of guessing, but instead of asking in your
+    own final message's prose.
+
+    Call this only once you have a real, complete answer AND there's a
+    genuine, concretely-grounded fork in what to do next - not a generic
+    "anything else?" catch-all. Unlike `flag_ambiguity`, this never blocks
+    or replaces your final answer: give your actual answer as normal, this
+    is purely a supplementary suggestion alongside it. `reason` should be a
+    short, complete sentence (may be relayed to the user as-is), plus 2-3
+    clearly distinct options. Call this at most once per turn.
+    """
+    # Same shape as flag_ambiguity's Clarification for the same reason -
+    # `_run_specialist` reads this one non-blocking (see
+    # `_specialist_followup`/`followup_suggestion`), never short-circuiting
+    # the turn the way a flagged ambiguity does.
+    return Clarification(question=reason, options=options).model_dump()

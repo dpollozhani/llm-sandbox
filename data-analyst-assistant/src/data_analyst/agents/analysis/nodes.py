@@ -10,7 +10,7 @@ from langgraph.prebuilt import InjectedState, ToolNode
 
 from data_analyst.agents.analysis.prompts import SYSTEM_PROMPT
 from data_analyst.agents.analysis.state import AnalysisState
-from data_analyst.agents.common.tools import flag_ambiguity
+from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
 from data_analyst.clients.sandbox.client import get_sandbox_client
 from data_analyst.config.settings import Glossary, inject_glossary
 
@@ -31,7 +31,7 @@ async def python_sandbox_execute(
     return result.model_dump()
 
 
-TOOLS = [python_sandbox_execute, flag_ambiguity]
+TOOLS = [python_sandbox_execute, flag_ambiguity, suggest_followup]
 
 
 def build_agent_node(llm: BaseChatModel, glossary: Glossary | None = None):

@@ -136,6 +136,63 @@ async def test_specialist_flagged_ambiguity_sets_next_to_clarify():
         "options": ["North", "South"],
     }
     assert "data_context" not in update
+    assert update["followup_suggestion"] is None
+
+
+async def test_specialist_suggests_followup_alongside_completed_answer():
+    """Unlike flag_ambiguity, suggest_followup never blocks or replaces the
+    specialist's own final answer - both reach the orchestrator together."""
+    followup_call = {
+        "name": "suggest_followup",
+        "args": {"reason": "Want this broken down further?", "options": ["By region", "By product"]},
+        "id": "c1",
+    }
+    llm = FakeToolCallingChatModel(
+        responses=[
+            AIMessage(content="", tool_calls=[followup_call]),
+            AIMessage(content="Computed the top 5 accounts."),
+        ]
+    )
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="top 5 accounts")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-10",
+        "data_context": None,
+    }
+    update = await node(state)
+
+    # The real answer is preserved, not discarded the way flag_ambiguity's
+    # deterministic composition discards the specialist's own final message.
+    assert update["messages"][0].content == "[analysis] Computed the top 5 accounts."
+    assert update["pending_clarification"] is None
+    assert update["followup_suggestion"] == {
+        "agent": "analysis",
+        "question": "Want this broken down further?",
+        "options": ["By region", "By product"],
+    }
+
+
+async def test_specialist_success_without_followup_clears_any_stale_suggestion():
+    """followup_suggestion is always explicitly set (to a new value or
+    None), the same convention as pending_clarification, so a suggestion
+    from an earlier turn never lingers once superseded."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Done.")])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="something else")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-11",
+        "data_context": None,
+        "followup_suggestion": {"agent": "analysis", "question": "stale", "options": ["a", "b"]},
+    }
+    update = await node(state)
+
+    assert update["followup_suggestion"] is None
 
 
 async def test_successful_result_clears_pending_clarification_and_records_it_resolved():
@@ -308,4 +365,5 @@ async def test_specialist_hitting_the_recursion_limit_returns_a_clean_failure_no
 
     assert "couldn't complete this" in update["messages"][0].content.lower()
     assert update["pending_clarification"] is None
+    assert update["followup_suggestion"] is None
     assert "data_context" not in update

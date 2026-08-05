@@ -90,9 +90,9 @@ plus a one-line "replying to: X -> Y" note instead of the whole transcript.
 ## Clarifications are the orchestrator's alone to surface
 
 Asking for clarification isn't only a supervisor-level decision. There are
-two distinct paths that can produce one, deliberately kept separate because
-they resolve different kinds of uncertainty at different costs - but only
-the orchestrator ever decides what the user actually sees:
+three distinct paths that can produce one, deliberately kept separate
+because they resolve different kinds of uncertainty at different costs -
+but only the orchestrator ever decides what the user actually sees:
 
 1. **The supervisor asks upfront** (`Route(next="clarify")`,
    `build_clarify_node`/`clarify` node): for when the request is so vague
@@ -124,8 +124,20 @@ the orchestrator ever decides what the user actually sees:
    the specialist would have managed fine) or still delegating and hoping -
    so the specialist is given the tool to bail out itself, exactly when it
    discovers it needs to, at the same cost as its own final answer.
+3. **A specialist suggests a follow-up alongside a completed answer**
+   (`suggest_followup` tool, `agents/common/tools.py`): for when a
+   specialist has *already* produced a real, complete answer, but there's
+   a genuine, concretely-grounded fork in what to do next (e.g. several
+   equally valid further breakdowns) - the case that emerged in practice as
+   specialists writing "which would you like?" straight into their own
+   final message's prose instead of using any tool, which meant it never
+   got `pending_clarification` tracking, never rendered as clickable
+   buttons, and was lost to `resolved_clarifications` bookkeeping. Unlike
+   path 2, this one is non-blocking: it never replaces or short-circuits
+   the specialist's own final answer, both reach the orchestrator together
+   (see `state["followup_suggestion"]` below).
 
-Both paths converge on one field: `state["pending_clarification"]`
+Paths 1 and 2 converge on one field: `state["pending_clarification"]`
 (`agents/orchestrator/state.py`) - `{"agent", "reason", "options"}`,
 identifying who's waiting on a reply and why. This replaced a former
 `awaiting_clarification`/`clarification_options` pair so that fact lives in
@@ -165,6 +177,42 @@ doing anything else: if a specific specialist (not the supervisor itself)
 is the one awaiting a reply, it routes straight back to that specialist -
 skipping the routing decision's LLM call entirely - rather than re-deciding
 from scratch and risking a mis-route.
+
+### The non-blocking case: `followup_suggestion`
+
+Path 3 above gets its own state field, `state["followup_suggestion"]`
+(`agents/orchestrator/state.py`) - `{"agent", "question", "options"}`, same
+shape as `pending_clarification` but a deliberately separate field, because
+its semantics really are different: `pending_clarification` means "nothing
+else happens until this is answered"; `followup_suggestion` means "here's
+a real answer, and optionally, here's a next step if you want it." Mixing
+the two into one field would force every reader of `pending_clarification`
+to also handle a "well, actually, there's already a real answer this time"
+case that doesn't apply to it.
+
+That semantic difference changes how each one resumes:
+- `pending_clarification` bypasses the routing LLM call entirely (see
+  above) - a fair bet, since nothing else could have happened yet.
+- `followup_suggestion` cannot make that same bet - the user's next message
+  might pick up the suggestion, or might be about something else entirely,
+  so `build_supervisor_node` still runs its normal routing call, just with
+  the suggestion rendered into the prompt as extra context
+  (`_render_followup_suggestion`) so the model can route back to the
+  specialist that offered it if the reply actually matches.
+
+Consistently with `pending_clarification`, every `_run_specialist` return
+path sets `followup_suggestion` explicitly (to a new value or `None`) -
+never left out of the update dict - so a stale suggestion from an earlier
+turn can't linger once superseded. `app/api.py`'s `ChatResponse` surfaces
+it as `suggested_options` (kept separate from `options`, which only means
+something when `status` is `"clarification_needed"`) - `status` stays
+`"completed"` and `reply` is the real answer either way; `app/web.py`
+renders `suggested_options` with the same `renderOptions` button UI as a
+blocking clarification's `options`, just styled differently (`.suggestion`)
+since picking one - or ignoring them and asking something else - are
+equally valid. `build_respond_node`'s own prompt is told about a pending
+suggestion too, specifically so it doesn't restate the same options in
+prose once they're already shown as buttons.
 
 ## No schema without a schema lookup
 
