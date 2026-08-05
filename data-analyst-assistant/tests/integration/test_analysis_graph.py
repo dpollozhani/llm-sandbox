@@ -1,5 +1,3 @@
-import json
-
 import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -60,29 +58,8 @@ async def test_sandbox_execute_dataset_id_is_scoped_to_its_own_session():
     assert "unknown dataset_id" in tool_messages[0].content.lower()
 
 
-async def test_can_flag_ambiguity_instead_of_guessing():
-    ambiguity_call = {
-        "name": "flag_ambiguity",
-        "args": {"reason": "Which metric do you want analyzed?", "options": ["Total revenue", "Average revenue"]},
-        "id": "c1",
-    }
-    llm = FakeToolCallingChatModel(
-        responses=[
-            AIMessage(content="", tool_calls=[ambiguity_call]),
-            AIMessage(content="I need to know which metric."),
-        ]
-    )
-    graph = build_analysis_graph(llm)
-
-    result = await graph.ainvoke({"messages": [HumanMessage(content="analyze it")], "session_id": "sess-analysis-clarify"})
-
-    tool_messages = [m for m in result["messages"] if m.type == "tool"]
-    assert tool_messages[0].name == "flag_ambiguity"
-    assert '"error"' not in tool_messages[0].content
-    assert json.loads(tool_messages[0].content) == {
-        # Serialized from the shared Clarification model (see
-        # agents/common/tools.py::flag_ambiguity) - "question" here is
-        # really just the specialist's own reason, not ready-to-send text.
-        "question": "Which metric do you want analyzed?",
-        "options": ["Total revenue", "Average revenue"],
-    }
+# flag_ambiguity's own tool-call wiring is covered once, on the datasource
+# graph (test_datasource_graph.py::test_can_flag_ambiguity_instead_of_guessing)
+# - both graphs wire agent<->tools identically via the same generic
+# tools_condition/ToolNode pattern, so repeating it here would only
+# re-verify that shared wiring, not anything analysis-specific.

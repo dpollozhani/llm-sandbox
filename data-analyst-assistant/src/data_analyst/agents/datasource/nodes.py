@@ -18,7 +18,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool, tool
 from langgraph.prebuilt import InjectedState, ToolNode
 
-from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
+from data_analyst.agents.common.tools import flag_ambiguity
 from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.datasource.prompts import SYSTEM_PROMPT
 from data_analyst.agents.datasource.state import DatasourceState
@@ -163,7 +163,6 @@ def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClie
         pbi_mcp_get_semantic_metadata,
         pbi_rest_run_dax_query,
         flag_ambiguity,
-        suggest_followup,
     ]
 
 

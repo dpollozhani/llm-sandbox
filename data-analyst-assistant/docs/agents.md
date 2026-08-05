@@ -72,7 +72,14 @@ query-building.
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `models.py::DataSourceQueryResult` |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
-| `suggest_followup` | `agents/common/tools.py` | shared with the analysis agent; same shape as `flag_ambiguity` but non-blocking - offered *alongside* an already-complete answer, not instead of one, for a genuine fork in what to do next |
+
+No `suggest_followup` here (unlike the analysis agent, see below) -
+fetching data at the right grain is this agent's whole job, full stop;
+even a request that also implies a ranking/computation over that data
+isn't "a complete answer with an optional next step" once fetched, it's
+still unfinished, and letting the datasource agent offer a follow-up
+suggestion there invited exactly that misuse in practice (see
+`docs/architecture.md`'s "The non-blocking case: followup_suggestion").
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
 to the model's tool schema - see `tool_call_schema` vs. `args_schema`): to
@@ -92,14 +99,15 @@ capability doesn't exist in the client layer either.
 
 ## Analysis (`agents/analysis/`)
 
-Sandbox specialist, two tools: `python_sandbox_execute`, which runs code
+Sandbox specialist, three tools: `python_sandbox_execute`, which runs code
 against a DataFrame staged earlier (by the datasource agent, possibly
 in an earlier turn) via `clients/sandbox/client.py`, reached the same way as
 the datasource agent - `state["session_id"]` injected via `InjectedState`;
-and the same shared `flag_ambiguity`/`suggest_followup` as the datasource
-agent, for when the requested analysis itself is ambiguous, or for
-suggesting a further breakdown alongside a result already computed.
-`models.py::ExecutionResult`
+the shared `flag_ambiguity` (also on the datasource agent), for when the
+requested analysis itself is ambiguous; and `suggest_followup`, which -
+unlike `flag_ambiguity` - only this agent has, for suggesting a further
+breakdown alongside a result already computed (see the datasource section
+above for why that agent doesn't get this one). `models.py::ExecutionResult`
 is the tool's result shape - `stdout`/`result`/`error` - also what
 `clients/sandbox/executor.py::execute` returns, imported back from here so
 the client layer doesn't own an agent-facing tool-result shape.
@@ -129,8 +137,8 @@ serialize on its own.
   is already ready-to-send text; a specialist's `flag_ambiguity` tool
   call, where `question` is really just the specialist's own reason for
   the ambiguity - an internal signal the orchestrator turns into the
-  actual user-facing message, not a ready-to-send question itself; and a
-  specialist's `suggest_followup` tool call, same shape again but
+  actual user-facing message, not a ready-to-send question itself; and the
+  analysis specialist's `suggest_followup` tool call, same shape again but
   non-blocking.
 - `tools.py::flag_ambiguity` - the tool both specialists share for
   flagging that they can't proceed confidently (with 2-3 candidate
@@ -138,7 +146,8 @@ serialize on its own.
 - `tools.py::suggest_followup` - same shape as `flag_ambiguity`, but for
   offering a next step *alongside* an already-complete answer rather than
   instead of one - see `docs/architecture.md`'s "The non-blocking case:
-  followup_suggestion".
+  followup_suggestion". Only the analysis agent has this one - see the
+  Analysis/Datasource sections above.
 
 ## Adding a new specialist
 
@@ -175,4 +184,9 @@ serialize on its own.
    same way if the new specialist can complete a real answer and still
    have a genuine, concretely-grounded next step worth offering - same
    shape, but non-blocking (see "The non-blocking case: followup_suggestion"
-   in `docs/architecture.md`); optional, unlike `flag_ambiguity`.
+   in `docs/architecture.md`); optional, unlike `flag_ambiguity`, and not
+   automatic just because the new specialist can produce *a* result - the
+   datasource agent deliberately doesn't have it (see its section above):
+   if "should this go to another specialist next" is really still an open
+   question rather than a completed task with a bonus idea, that's
+   `flag_ambiguity`'s job (or just routing), not this one's.

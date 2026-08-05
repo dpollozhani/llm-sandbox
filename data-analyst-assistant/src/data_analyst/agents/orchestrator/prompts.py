@@ -36,7 +36,13 @@ Given the conversation so far, decide what should happen next:
   analysis routes to "datasource"/"analysis" no matter how vague its
   details are - "What's our revenue?" is a datasource request even though
   no time period or region was named; delegate it, don't clarify it
-  yourself.
+  yourself. Also never route to "clarify" to re-ask, in your own words, a
+  follow-up a specialist already just offered this turn (see "already
+  completed its answer and suggested a follow-up" below, if present) -
+  that suggestion is intentionally non-blocking; turning it into a
+  clarifying question yourself defeats the point. Route to "respond"
+  instead so the user sees the answer plus that suggestion as an optional
+  next step, not a second question blocking it.
 
 Delegate one step at a time; you'll be asked again after each specialist runs."""
 

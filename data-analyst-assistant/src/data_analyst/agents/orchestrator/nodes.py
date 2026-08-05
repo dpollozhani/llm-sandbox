@@ -75,7 +75,8 @@ def _render_followup_suggestion(followup: dict | None) -> str:
     return (
         f"\n\nThe {followup['agent']} specialist already completed its answer and suggested a "
         f'follow-up: "{followup["question"]}" ({options}). If the user\'s reply picks one of these '
-        f"up, route back to \"{followup['agent']}\" to continue it; otherwise route normally."
+        f"up, route back to \"{followup['agent']}\" to continue it; otherwise route normally. Do not "
+        'route to "clarify" to re-ask this same fork yourself - it is non-blocking by design.'
     )
 
 
@@ -119,7 +120,22 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         context = build_prompt_messages(state["messages"], history_summary)
         route = await router.ainvoke([SystemMessage(content=prompt), *context])
 
-        update: dict = {"next": route.next, "turns": turns + 1}
+        next_step = route.next
+        if next_step == "clarify" and state.get("followup_suggestion") and state["messages"][-1].type != "human":
+            # The prompt above already tells the router not to do this, but
+            # a same-turn re-clarify of a suggestion that was explicitly
+            # meant to be non-blocking is cheap and easy for the model to
+            # get wrong under pressure - worth a deterministic backstop
+            # rather than relying on prompt wording alone. "No new human
+            # message since" is what distinguishes this from a genuinely
+            # fresh routing decision the user actually asked for.
+            _logger.debug(
+                "supervisor picked 'clarify' right after a non-blocking followup_suggestion with no "
+                "new human message in between - overriding to 'respond'"
+            )
+            next_step = "respond"
+
+        update: dict = {"next": next_step, "turns": turns + 1}
         if summary_update:
             update.update(summary_update)
         return update
@@ -243,6 +259,33 @@ def _seed_content(state: OrchestratorState, task_content: str) -> str:
     return "\n\n".join(parts)
 
 
+def _specialist_update(
+    state: OrchestratorState,
+    message: AIMessage,
+    *,
+    next: str | None = None,
+    pending_clarification: dict | None = None,
+    followup_suggestion: dict | None = None,
+) -> dict:
+    """The shape every `_run_specialist` return path shares: the folded-back
+    message plus the same three clarification-bookkeeping fields, always
+    explicitly set rather than left out (see `OrchestratorState`'s
+    `pending_clarification`/`followup_suggestion` docstrings for why a
+    stale value must never linger). Each call site passes only what's
+    different about its own case; `resolved_clarifications` always goes
+    through `_append_resolved` since any path can be resolving whatever was
+    pending before the delegation that triggered it."""
+    update: dict = {
+        "messages": [message],
+        "pending_clarification": pending_clarification,
+        "resolved_clarifications": _append_resolved(state),
+        "followup_suggestion": followup_suggestion,
+    }
+    if next is not None:
+        update["next"] = next
+    return update
+
+
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
     pending = state.get("pending_clarification")
 
@@ -280,17 +323,13 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             # exception that would otherwise crash this whole turn. Fold back a
             # plain failure instead: the supervisor's own MAX_TURNS still bounds
             # how many times this can happen before "respond" takes over.
-            return {
-                "messages": [
-                    AIMessage(
-                        content=f"[{agent_name}] Couldn't complete this after many attempts - "
-                        "try a simpler or narrower request."
-                    )
-                ],
-                "pending_clarification": None,
-                "resolved_clarifications": _append_resolved(state),
-                "followup_suggestion": None,
-            }
+            return _specialist_update(
+                state,
+                AIMessage(
+                    content=f"[{agent_name}] Couldn't complete this after many attempts - "
+                    "try a simpler or narrower request."
+                ),
+            )
         # The specialist's own internal trace (tool calls, intermediate
         # reasoning) is never exposed to the orchestrator's own context - it's
         # folded into one summary below - but is still worth a DEBUG record
@@ -315,25 +354,23 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         # agents/orchestrator/graph.py route straight to END: no extra
         # supervisor round-trip, no separate "clarify" node call, just this
         # specialist's question (and options) as the reply.
-        return {
-            "messages": [AIMessage(content=_compose_ambiguity_message(ambiguity))],
-            "next": "clarify",
-            "pending_clarification": {"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
-            "resolved_clarifications": _append_resolved(state),
-            "followup_suggestion": None,
-        }
+        return _specialist_update(
+            state,
+            AIMessage(content=_compose_ambiguity_message(ambiguity)),
+            next="clarify",
+            pending_clarification={"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
+        )
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
     followup = _specialist_followup(result["messages"])
-    update: dict = {
-        "messages": [AIMessage(content=f"[{agent_name}] {summary}")],
-        "pending_clarification": None,
-        "resolved_clarifications": _append_resolved(state),
-        "followup_suggestion": {"agent": agent_name, "question": followup.question, "options": followup.options}
+    update = _specialist_update(
+        state,
+        AIMessage(content=f"[{agent_name}] {summary}"),
+        followup_suggestion={"agent": agent_name, "question": followup.question, "options": followup.options}
         if followup is not None
         else None,
-    }
+    )
     if agent_name == "datasource":
         fetched = _fetched_dataset(result["messages"])
         if fetched is not None:
@@ -392,11 +429,15 @@ def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, cat
         if followup := state.get("followup_suggestion"):
             # Already shown to the user separately as clickable options
             # (see app/api.py's `suggested_options`) - restating them in
-            # prose here would just duplicate them.
+            # prose here, or asking the user to pick one before you'll
+            # continue, would just duplicate that non-blocking suggestion
+            # as if it were a blocking question.
             prompt += (
                 f"\n\nThe {followup['agent']} specialist already suggested a follow-up this turn - "
                 f"\"{followup['question']}\" ({', '.join(followup['options'])}) - it's already shown to the "
-                "user separately as clickable options, so don't repeat or list them yourself."
+                "user separately as clickable options. Don't repeat or list them yourself, and don't ask "
+                "the user which one they want either - just give the answer; the suggestion is an "
+                "optional next step, not something that needs picking before you can finish."
             )
         context = build_prompt_messages(state["messages"], state.get("history_summary"))
         response = await llm.ainvoke([SystemMessage(content=prompt), *context])

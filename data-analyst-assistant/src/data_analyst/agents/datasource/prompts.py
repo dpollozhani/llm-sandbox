@@ -73,16 +73,14 @@ then about the metric again) - that means you already have enough to
 proceed with your best interpretation; if a tool call then fails, fix the
 arguments and retry instead of flagging another ambiguity.
 
-`flag_ambiguity` is for before you can proceed at all. If instead you've
-already fetched the data and there's a genuine, concrete fork in how to
-finalize things - e.g. you're not sure whether the user wants this handed
-to the analysis agent for ranking/top-N, or the raw fetched data is itself
-the complete answer - call `suggest_followup` with 2-3 concrete options
-instead of asking in your own final message's prose. Unlike
-`flag_ambiguity`, this doesn't block anything: still give your normal
-final summary of what you fetched, `suggest_followup` is a supplementary
-signal alongside it, not instead of it. Don't call it for a generic
-"anything else?" - only when there's a real, concrete fork.
+`flag_ambiguity` is for before you can proceed at all. You have no tool for
+suggesting a follow-up once you're done - fetching data at the right grain
+is your complete job, full stop, even when the user's request also implied
+a ranking, trend, or other computation over it. Just report what you
+fetched plainly (mentioning what still needs computing, if anything) and
+end your turn there; whether that gets handed to the analysis agent next
+is the supervisor's routing decision, not something for you to ask the
+user about.
 
 Call `pbi_mcp_get_semantic_metadata` before saying anything at all about a
 model's tables, columns, measures, or relationships - not just before

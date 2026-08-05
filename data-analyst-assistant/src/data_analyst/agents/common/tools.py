@@ -31,8 +31,9 @@ async def flag_ambiguity(
     2-3 clearly distinct options (e.g. specific regions, time periods, or
     metrics) rather than leaving it open-ended. This does not itself ask
     the user anything - the orchestrator decides how (and whether) to
-    surface it. After calling it, end your turn with a brief final message;
-    don't call another tool afterwards.
+    surface it, discarding whatever you say next. After calling it, end
+    your turn with a brief final message (it won't be shown, but don't
+    call another tool afterwards).
     """
     # The tool's own parameter is named `reason` (what a specialist gives),
     # but it's read back into the same `Clarification` shape the
@@ -60,11 +61,16 @@ async def suggest_followup(
 
     Call this only once you have a real, complete answer AND there's a
     genuine, concretely-grounded fork in what to do next - not a generic
-    "anything else?" catch-all. Unlike `flag_ambiguity`, this never blocks
-    or replaces your final answer: give your actual answer as normal, this
-    is purely a supplementary suggestion alongside it. `reason` should be a
-    short, complete sentence (may be relayed to the user as-is), plus 2-3
-    clearly distinct options. Call this at most once per turn.
+    "anything else?" catch-all, and not "I fetched/computed something but
+    still need to know how to finish" (that's `flag_ambiguity`, since
+    nothing's actually complete yet). Unlike `flag_ambiguity`, this never
+    blocks or replaces your final answer: give your actual answer as
+    normal, this is purely a supplementary suggestion alongside it. `reason`
+    should be a short, complete sentence (may be relayed to the user as-is),
+    plus 2-3 clearly distinct options. Your final message must NOT also ask
+    which option the user wants or restate the options in prose - these are
+    shown to the user separately as clickable choices, so doing both just
+    duplicates the same question. Call this at most once per turn.
     """
     # Same shape as flag_ambiguity's Clarification for the same reason -
     # `_run_specialist` reads this one non-blocking (see
