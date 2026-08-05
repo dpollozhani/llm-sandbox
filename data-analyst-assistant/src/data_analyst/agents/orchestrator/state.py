@@ -50,9 +50,12 @@ class OrchestratorState(ChatState):
     with) so it knows what's already been settled instead of re-deriving -
     or re-asking about - it from scratch."""
     followup_suggestion: dict | None
-    """{"agent": "datasource" | "analysis", "question": str, "options":
-    list[str]} - a specialist's `suggest_followup` tool call this run (see
-    `agents/common/tools.py`), if any. Unlike `pending_clarification`, this
+    """{"agent": "analysis", "question": str, "options": list[str]} - the
+    analysis specialist's `suggest_followup` tool call this run (see
+    `agents/common/tools.py`), if any - only that specialist has this tool;
+    the datasource agent's job is complete once it's fetched data at the
+    right grain, with no genuine fork of its own worth suggesting (see
+    `agents/datasource/prompts.py`). Unlike `pending_clarification`, this
     is non-blocking: the specialist already produced a real, complete
     answer this run - this is purely a supplementary "here's an optional
     next step" alongside it, not something the orchestrator waits on before

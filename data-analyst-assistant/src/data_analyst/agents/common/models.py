@@ -13,9 +13,12 @@ class Clarification(BaseModel):
     output), where `question` is already the ready-to-send text; a
     specialist's `flag_ambiguity` tool call (`agents/common/tools.py`),
     where `question` is really just the specialist's own reason for the
-    ambiguity - not itself user-facing; and a specialist's `suggest_followup`
-    tool call (same module), same shape again but non-blocking - offered
-    *alongside* an already-complete answer rather than instead of one.
+    ambiguity - not itself user-facing; and the analysis specialist's
+    `suggest_followup` tool call (same module), same shape again but
+    non-blocking - offered *alongside* an already-complete answer rather
+    than instead of one. `flag_ambiguity` is shared by every specialist;
+    `suggest_followup` isn't - see agents/datasource/prompts.py for why the
+    datasource agent has no tool for it at all.
     `agents/orchestrator/nodes.py::_run_specialist` is the only place that
     decides how (and whether) to surface either tool's result, composing
     the final message deterministically (`_compose_ambiguity_message`)

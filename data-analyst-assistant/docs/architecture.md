@@ -124,10 +124,10 @@ but only the orchestrator ever decides what the user actually sees:
    the specialist would have managed fine) or still delegating and hoping -
    so the specialist is given the tool to bail out itself, exactly when it
    discovers it needs to, at the same cost as its own final answer.
-3. **A specialist suggests a follow-up alongside a completed answer**
-   (`suggest_followup` tool, `agents/common/tools.py`): for when a
-   specialist has *already* produced a real, complete answer, but there's
-   a genuine, concretely-grounded fork in what to do next (e.g. several
+3. **The analysis specialist suggests a follow-up alongside a completed
+   answer** (`suggest_followup` tool, `agents/common/tools.py`): for when
+   it has *already* produced a real, complete answer, but there's a
+   genuine, concretely-grounded fork in what to compute next (e.g. several
    equally valid further breakdowns) - the case that emerged in practice as
    specialists writing "which would you like?" straight into their own
    final message's prose instead of using any tool, which meant it never
@@ -136,6 +136,19 @@ but only the orchestrator ever decides what the user actually sees:
    path 2, this one is non-blocking: it never replaces or short-circuits
    the specialist's own final answer, both reach the orchestrator together
    (see `state["followup_suggestion"]` below).
+
+   Only the analysis specialist has this tool - the datasource agent
+   doesn't. Fetching data at the right grain is its whole job, full stop;
+   even when the user's request also implies a ranking/trend/computation
+   over that data, that's not "a real, complete answer with an optional
+   next step" the way a computed result is - it's still an open question
+   about how to finish, which is exactly what routing (datasource ->
+   analysis) already exists to resolve, not something worth surfacing to
+   the user as a suggestion. Giving the datasource agent `suggest_followup`
+   turned out to invite exactly that misuse in practice: it would fetch
+   raw data and immediately offer "how should I summarize this?" options
+   before anything was actually computed - a `flag_ambiguity`-shaped
+   situation dressed up as a non-blocking one.
 
 Paths 1 and 2 converge on one field: `state["pending_clarification"]`
 (`agents/orchestrator/state.py`) - `{"agent", "reason", "options"}`,
