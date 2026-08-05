@@ -118,7 +118,7 @@ def _resolve_allowed_model_names(model_names: list[str] | None) -> list[str] | N
     than surfacing it immediately."""
     if model_names is None:
         return None  # not provided at all - no scoping, the full catalog applies
-    if len(model_names) == 0:
+    if not model_names:
         # Provided, but empty - distinct from omitting the field entirely
         # (handled above): asking to be scoped to nothing is a caller bug,
         # not a request for "no scoping."
