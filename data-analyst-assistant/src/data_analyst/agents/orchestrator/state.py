@@ -49,6 +49,23 @@ class OrchestratorState(ChatState):
     the full raw message history a clarification reply used to be seeded
     with) so it knows what's already been settled instead of re-deriving -
     or re-asking about - it from scratch."""
+    followup_suggestion: dict | None
+    """{"agent": "datasource" | "analysis", "question": str, "options":
+    list[str]} - a specialist's `suggest_followup` tool call this run (see
+    `agents/common/tools.py`), if any. Unlike `pending_clarification`, this
+    is non-blocking: the specialist already produced a real, complete
+    answer this run - this is purely a supplementary "here's an optional
+    next step" alongside it, not something the orchestrator waits on before
+    doing anything else. Read by `build_supervisor_node` (as one input to
+    its normal routing decision, not a deterministic bypass the way
+    `pending_clarification` is - the user's next message might pick this
+    up, or might not, so an LLM call still decides) and by `app/api.py`'s
+    `ChatResponse` (`suggested_options`) so a frontend can render buttons
+    alongside the real answer instead of the model restating them in prose.
+    Always explicitly set (to a new value or `None`) on every
+    `_run_specialist` return path, the same convention as
+    `pending_clarification`, so a stale suggestion from an earlier turn
+    never lingers."""
     history_summary: NotRequired[str]
     """A running summary of conversation turns old enough to have been
     folded out of the supervisor/respond/clarify nodes' own prompt context

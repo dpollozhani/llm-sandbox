@@ -72,6 +72,7 @@ query-building.
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `models.py::DataSourceQueryResult` |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
+| `suggest_followup` | `agents/common/tools.py` | shared with the analysis agent; same shape as `flag_ambiguity` but non-blocking - offered *alongside* an already-complete answer, not instead of one, for a genuine fork in what to do next |
 
 Every tool receives `state` via `langgraph.prebuilt.InjectedState` (invisible
 to the model's tool schema - see `tool_call_schema` vs. `args_schema`): to
@@ -95,8 +96,10 @@ Sandbox specialist, two tools: `python_sandbox_execute`, which runs code
 against a DataFrame staged earlier (by the datasource agent, possibly
 in an earlier turn) via `clients/sandbox/client.py`, reached the same way as
 the datasource agent - `state["session_id"]` injected via `InjectedState`;
-and the same shared `flag_ambiguity` as the datasource agent, for
-when the requested analysis itself is ambiguous. `models.py::ExecutionResult`
+and the same shared `flag_ambiguity`/`suggest_followup` as the datasource
+agent, for when the requested analysis itself is ambiguous, or for
+suggesting a further breakdown alongside a result already computed.
+`models.py::ExecutionResult`
 is the tool's result shape - `stdout`/`result`/`error` - also what
 `clients/sandbox/executor.py::execute` returns, imported back from here so
 the client layer doesn't own an agent-facing tool-result shape.
@@ -120,16 +123,22 @@ serialize on its own.
   `clients/sandbox/client.py` and is only ever read via `InjectedState`
   inside a tool, never exposed to the model.
 - `models.py::Clarification` - a `question` plus 2-3 clearly distinct
-  options, shared by both clarification paths (see `docs/architecture.md`'s
-  "Clarifications are the orchestrator's alone to surface"): the
-  supervisor's own upfront `clarify` path, where `question` is already
-  ready-to-send text, and a specialist's `flag_ambiguity` tool call, where
-  `question` is really just the specialist's own reason for the ambiguity -
-  an internal signal the orchestrator turns into the actual user-facing
-  message, not a ready-to-send question itself.
+  options, shared by all three clarification paths (see
+  `docs/architecture.md`'s "Clarifications are the orchestrator's alone to
+  surface"): the supervisor's own upfront `clarify` path, where `question`
+  is already ready-to-send text; a specialist's `flag_ambiguity` tool
+  call, where `question` is really just the specialist's own reason for
+  the ambiguity - an internal signal the orchestrator turns into the
+  actual user-facing message, not a ready-to-send question itself; and a
+  specialist's `suggest_followup` tool call, same shape again but
+  non-blocking.
 - `tools.py::flag_ambiguity` - the tool both specialists share for
   flagging that they can't proceed confidently (with 2-3 candidate
   options) instead of guessing.
+- `tools.py::suggest_followup` - same shape as `flag_ambiguity`, but for
+  offering a next step *alongside* an already-complete answer rather than
+  instead of one - see `docs/architecture.md`'s "The non-blocking case:
+  followup_suggestion".
 
 ## Adding a new specialist
 
@@ -162,4 +171,8 @@ serialize on its own.
    orchestrator's alone to surface") and mention it in the specialist's own
    system prompt, following `agents/datasource/prompts.py` - phrase it as
    *reporting* ambiguity, not asking the user a question; the orchestrator
-   composes and surfaces the actual message.
+   composes and surfaces the actual message. Add `suggest_followup` the
+   same way if the new specialist can complete a real answer and still
+   have a genuine, concretely-grounded next step worth offering - same
+   shape, but non-blocking (see "The non-blocking case: followup_suggestion"
+   in `docs/architecture.md`); optional, unlike `flag_ambiguity`.

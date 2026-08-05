@@ -69,6 +69,8 @@ CHAT_PAGE_HTML = """<!doctype html>
     font: inherit; cursor: pointer;
   }
   .option-btn:hover { background: #fffbeb; }
+  .option-btn.suggestion { border-color: #2563eb; color: #1d4ed8; }
+  .option-btn.suggestion:hover { background: #eff6ff; }
 </style>
 </head>
 <body>
@@ -112,16 +114,19 @@ CHAT_PAGE_HTML = """<!doctype html>
     return el;
   }
 
-  // Renders 2-3 clarifying-question options as buttons; clicking one both
-  // removes the whole set (so only one of them can ever be picked) and
-  // submits it exactly as if the user had typed and sent that option.
-  function renderOptions(options) {
+  // Renders 2-3 options as buttons; clicking one both removes the whole
+  // set (so only one of them can ever be picked) and submits it exactly
+  // as if the user had typed and sent that option. `extraClass` ("suggestion")
+  // distinguishes a non-blocking follow-up suggestion (evt.suggested_options,
+  // alongside a real completed answer) from a blocking clarifying question
+  // (evt.options) - same behavior either way, different styling.
+  function renderOptions(options, extraClass) {
     const box = document.createElement("div");
     box.className = "options";
     for (const option of options) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "option-btn";
+      btn.className = "option-btn" + (extraClass ? " " + extraClass : "");
       btn.textContent = option;
       btn.addEventListener("click", () => {
         box.remove();
@@ -205,6 +210,8 @@ CHAT_PAGE_HTML = """<!doctype html>
           pending.className = "msg assistant" + (evt.status === "clarification_needed" ? " clarifying" : "");
           if (evt.status === "clarification_needed" && evt.options && evt.options.length) {
             renderOptions(evt.options);
+          } else if (evt.suggested_options && evt.suggested_options.length) {
+            renderOptions(evt.suggested_options, "suggestion");
           }
         } else if (evt.type === "error") {
           pending.textContent = "Error: " + evt.message;

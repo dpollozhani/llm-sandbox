@@ -234,6 +234,40 @@ def test_full_flow_delegates_through_both_specialists():
     assert body["reply"] == "You have one semantic model available, and 1 + 1 is 2."
 
 
+def test_specialist_suggested_followup_surfaces_as_non_blocking_suggested_options():
+    """suggest_followup never blocks the turn the way flag_ambiguity does -
+    status stays "completed" and reply is the real answer, with the
+    suggestion surfaced separately as suggested_options."""
+    followup_call = {
+        "name": "suggest_followup",
+        "args": {"reason": "Want this broken down further?", "options": ["By region", "By product"]},
+        "id": "c1",
+    }
+    llm = ScriptedRoutingModel(
+        responses=[
+            AIMessage(content="", tool_calls=[followup_call]),
+            AIMessage(content="Computed the top 5 accounts."),
+            AIMessage(content="Here are the top 5 accounts."),
+        ],
+        routes=[{"next": "analysis"}, {"next": "respond"}],
+    )
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat", json={"message": "top 5 accounts"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["reply"] == "Here are the top 5 accounts."
+    assert body["options"] is None
+    assert body["suggested_options"] == ["By region", "By product"]
+
+
 def test_supervisor_asks_for_clarification_when_uncertain():
     llm = ScriptedRoutingModel(
         responses=[],
@@ -468,3 +502,33 @@ def test_stream_clarify_path_reports_clarification_needed():
     assert done["status"] == "clarification_needed"
     assert done["reply"] == "Which region and time period do you mean?"
     assert done["options"] == ["North, last month", "South, last quarter"]
+
+
+def test_stream_specialist_suggested_followup_surfaces_as_non_blocking_suggested_options():
+    followup_call = {
+        "name": "suggest_followup",
+        "args": {"reason": "Want this broken down further?", "options": ["By region", "By product"]},
+        "id": "c1",
+    }
+    llm = ScriptedRoutingModel(
+        responses=[
+            AIMessage(content="", tool_calls=[followup_call]),
+            AIMessage(content="Computed the top 5 accounts."),
+            AIMessage(content="Here are the top 5 accounts."),
+        ],
+        routes=[{"next": "analysis"}, {"next": "respond"}],
+    )
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            events = _stream_events(client, {"message": "top 5 accounts"})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    done = events[-1]
+    assert done["status"] == "completed"
+    assert done["reply"] == "Here are the top 5 accounts."
+    assert done["options"] is None
+    assert done["suggested_options"] == ["By region", "By product"]

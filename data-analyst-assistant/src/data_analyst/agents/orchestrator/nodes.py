@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
 from data_analyst.agents.common.models import Clarification
-from data_analyst.agents.common.tools import flag_ambiguity
+from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.orchestrator.history import build_prompt_messages, maybe_summarize_history
@@ -63,6 +63,22 @@ def _render_resolved(resolved: list[dict] | None) -> str:
     return f"\n\nAlready clarified earlier in this conversation:\n{lines}"
 
 
+def _render_followup_suggestion(followup: dict | None) -> str:
+    """A compact rendering of a specialist's non-blocking `suggest_followup`
+    suggestion (if any), for the supervisor's routing prompt: unlike
+    `pending_clarification`'s deterministic resume, the next message might
+    pick this up or might not, so the routing LLM call still needs to
+    decide - this is context for that decision, not a bypass of it."""
+    if not followup:
+        return ""
+    options = ", ".join(f'"{o}"' for o in followup["options"])
+    return (
+        f"\n\nThe {followup['agent']} specialist already completed its answer and suggested a "
+        f'follow-up: "{followup["question"]}" ({options}). If the user\'s reply picks one of these '
+        f"up, route back to \"{followup['agent']}\" to continue it; otherwise route normally."
+    )
+
+
 def _describe_catalog(catalog: PowerBiCatalog | None) -> str:
     """The real, config-backed list of semantic model names, appended to a
     prompt so the supervisor/respond nodes can answer "which models are
@@ -99,6 +115,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         prompt += _render_resolved(state.get("resolved_clarifications"))
+        prompt += _render_followup_suggestion(state.get("followup_suggestion"))
         context = build_prompt_messages(state["messages"], history_summary)
         route = await router.ainvoke([SystemMessage(content=prompt), *context])
 
@@ -148,6 +165,18 @@ def _specialist_ambiguity(messages: list[AnyMessage]) -> Clarification | None:
     the ambiguity, not ready-to-send text - see `_compose_ambiguity_message`."""
     for message in messages:
         if message.type == "tool" and message.name == flag_ambiguity.name:
+            return Clarification(**json.loads(message.content))
+    return None
+
+
+def _specialist_followup(messages: list[AnyMessage]) -> Clarification | None:
+    """The `Clarification`-shaped follow-up a specialist suggested this run
+    (see agents/common/tools.py::suggest_followup), if any - same
+    read-from-the-tool-call approach as `_specialist_ambiguity`, but this
+    one is non-blocking: the specialist still produced a real final answer
+    this run, so unlike ambiguity this never short-circuits the turn."""
+    for message in messages:
+        if message.type == "tool" and message.name == suggest_followup.name:
             return Clarification(**json.loads(message.content))
     return None
 
@@ -208,6 +237,8 @@ def _seed_content(state: OrchestratorState, task_content: str) -> str:
     if resolved := state.get("resolved_clarifications"):
         lines = "\n".join(f"- {r['question']} -> {r['answer']}" for r in resolved)
         parts.append(f"(Already clarified earlier in this conversation:\n{lines})")
+    if followup := state.get("followup_suggestion"):
+        parts.append(f"(You previously suggested this follow-up: \"{followup['question']}\" ({', '.join(followup['options'])}))")
     parts.append(task_content)
     return "\n\n".join(parts)
 
@@ -258,6 +289,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
                 ],
                 "pending_clarification": None,
                 "resolved_clarifications": _append_resolved(state),
+                "followup_suggestion": None,
             }
         # The specialist's own internal trace (tool calls, intermediate
         # reasoning) is never exposed to the orchestrator's own context - it's
@@ -288,14 +320,19 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             "next": "clarify",
             "pending_clarification": {"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
             "resolved_clarifications": _append_resolved(state),
+            "followup_suggestion": None,
         }
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
+    followup = _specialist_followup(result["messages"])
     update: dict = {
         "messages": [AIMessage(content=f"[{agent_name}] {summary}")],
         "pending_clarification": None,
         "resolved_clarifications": _append_resolved(state),
+        "followup_suggestion": {"agent": agent_name, "question": followup.question, "options": followup.options}
+        if followup is not None
+        else None,
     }
     if agent_name == "datasource":
         fetched = _fetched_dataset(result["messages"])
@@ -352,6 +389,15 @@ def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, cat
         prompt = base_prompt
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
+        if followup := state.get("followup_suggestion"):
+            # Already shown to the user separately as clickable options
+            # (see app/api.py's `suggested_options`) - restating them in
+            # prose here would just duplicate them.
+            prompt += (
+                f"\n\nThe {followup['agent']} specialist already suggested a follow-up this turn - "
+                f"\"{followup['question']}\" ({', '.join(followup['options'])}) - it's already shown to the "
+                "user separately as clickable options, so don't repeat or list them yourself."
+            )
         context = build_prompt_messages(state["messages"], state.get("history_summary"))
         response = await llm.ainvoke([SystemMessage(content=prompt), *context])
         return {
@@ -379,6 +425,10 @@ def build_clarify_node(llm: BaseChatModel, glossary: Glossary | None = None):
                 "options": clarification.options,
             },
             "resolved_clarifications": _append_resolved(state),
+            # A fresh broad clarification takes priority - a stale
+            # non-blocking suggestion from an earlier specialist run is
+            # now moot.
+            "followup_suggestion": None,
         }
 
     return clarify_node

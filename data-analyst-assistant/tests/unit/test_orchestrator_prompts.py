@@ -140,6 +140,51 @@ async def test_supervisor_node_lists_catalog_model_names():
     assert 'Available semantic models: "Sales Analytics".' in llm.recorded_messages[0][0].content
 
 
+async def test_supervisor_node_mentions_a_pending_followup_suggestion():
+    """Unlike pending_clarification's deterministic resume, a non-blocking
+    followup_suggestion still goes through the normal routing LLM call -
+    this is context for that decision, not a bypass of it."""
+    llm = _RecordingStructuredLLM(responses=[])
+    node = build_supervisor_node(llm)
+
+    await node(
+        {
+            "messages": [HumanMessage(content="the first one")],
+            "turns": 1,
+            "followup_suggestion": {"agent": "analysis", "question": "Break down further?", "options": ["By region", "By product"]},
+        }
+    )
+
+    prompt = llm.recorded_messages[0][0].content
+    assert "Break down further?" in prompt
+    assert '"analysis"' in prompt
+
+
+async def test_supervisor_node_has_no_followup_section_when_absent():
+    llm = _RecordingStructuredLLM(responses=[])
+    node = build_supervisor_node(llm)
+
+    await node({"messages": [HumanMessage(content="hi")], "turns": 0})
+
+    assert "already completed its answer and suggested a follow-up" not in llm.recorded_messages[0][0].content
+
+
+async def test_respond_node_is_told_not_to_restate_an_existing_followup_suggestion():
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm)
+
+    await node(
+        {
+            "messages": [HumanMessage(content="hi")],
+            "followup_suggestion": {"agent": "analysis", "question": "Break down further?", "options": ["By region", "By product"]},
+        }
+    )
+
+    prompt = llm.recorded_messages[0][0].content
+    assert "Break down further?" in prompt
+    assert "don't repeat or list them yourself" in prompt
+
+
 async def test_clarify_node_mentions_already_resolved_clarifications():
     """So the supervisor's own upfront path doesn't re-ask something a
     specialist (or an earlier upfront clarify) already settled."""

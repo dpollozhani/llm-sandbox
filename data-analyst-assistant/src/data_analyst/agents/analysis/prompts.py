@@ -22,4 +22,14 @@ analyzed), call `flag_ambiguity` with a short reason plus 2-3 clearly
 distinct options (e.g. specific metrics or aggregations) instead of
 guessing - then end your turn with a brief final message and stop. Flag
 ambiguity at most once per request - the orchestrator decides how to
-surface it to the user, not you."""
+surface it to the user, not you.
+
+`flag_ambiguity` is for before you can compute anything at all. If instead
+you've already produced a real, complete result and there's a genuine,
+concrete fork in what to compute next (e.g. several equally valid further
+breakdowns of what you just found), call `suggest_followup` with 2-3
+concrete options instead of listing them in your own final message's
+prose. Unlike `flag_ambiguity`, this doesn't block or replace anything -
+still give your normal final summary of what you computed;
+`suggest_followup` is a supplementary signal alongside it. Don't call it
+for a generic "anything else?" - only when there's a real, concrete fork."""

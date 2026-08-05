@@ -215,7 +215,11 @@ def run_streaming(base_url: str, message: str, thread_id: str | None, headers: d
                 label = "assistant (clarifying)" if event["status"] == "clarification_needed" else "assistant"
                 print(f"{label}> {reply}", end="")
             print("\n")
-            _print_options(event.get("options"))
+            if event.get("options"):
+                _print_options(event["options"])
+            elif event.get("suggested_options"):
+                print("  suggested next steps:")
+                _print_options(event["suggested_options"])
         elif kind == "error":
             print(f"\nerror: {event['message']}\n")
     return new_thread_id
@@ -226,7 +230,11 @@ def run_blocking(base_url: str, message: str, thread_id: str | None, headers: di
         result = json.loads(response.read())
     label = "assistant (clarifying)" if result["status"] == "clarification_needed" else "assistant"
     print(f"{label}> {result['reply']}\n")
-    _print_options(result.get("options"))
+    if result.get("options"):
+        _print_options(result["options"])
+    elif result.get("suggested_options"):
+        print("  suggested next steps:")
+        _print_options(result["suggested_options"])
     return result["thread_id"]
 
 
