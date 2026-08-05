@@ -22,7 +22,13 @@ def build_datasource_graph(
     catalog: PowerBiCatalog | None = None,
     glossary: Glossary | None = None,
 ) -> CompiledStateGraph:
-    tools = build_tools(mcp_client=mcp_client, rest_client=rest_client)
+    # The same `catalog` scopes both what the agent's own prompt describes
+    # as available (build_agent_node) and what its tools can actually
+    # resolve a model_name against (build_tools) - one restriction, not two
+    # that could drift apart. `None` (no caller-requested scoping) lets
+    # PBIMcpClient/PBIRestClient's own defaults (the full get_catalog())
+    # apply, same as build_agent_node's `catalog or get_catalog()` below.
+    tools = build_tools(mcp_client=mcp_client, rest_client=rest_client, catalog=catalog)
     graph = StateGraph(DatasourceState)
     graph.add_node("agent", build_agent_node(llm, tools, catalog=catalog or get_catalog(), glossary=glossary or get_glossary()))
     graph.add_node("tools", build_tool_node(tools))

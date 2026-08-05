@@ -97,13 +97,15 @@ def _effective_catalog(catalog: PowerBiCatalog | None, state: OrchestratorState)
     """`catalog` narrowed to `state["allowed_model_names"]` if the caller
     scoped this session to part of the full configured catalog (see
     `app/api.py`'s `ChatRequest.model_names`), `catalog` unchanged otherwise.
-    Purely what gets *described* to the supervisor/respond/datasource-agent
-    prompts as available - the datasource tools' own `model_name` ->
-    `dataset_id` resolution is never narrowed this way (see
-    `clients/powerbi/mcp.py`/`rest.py`, always the full catalog), so a model
-    outside this subset still resolves if asked for by name - overridable,
-    not a hard block. The agent itself has no way to tell the difference
-    between this and a genuinely smaller configured catalog."""
+    Used both for what gets *described* to the supervisor/respond/
+    datasource-agent prompts as available, and - passed into
+    `build_datasource_graph`, see `build_datasource_node` below - for what
+    the datasource tools can actually resolve a `model_name` against: a
+    real restriction, not just a description one. "Overridable" means the
+    caller can change or lift this scoping on a later request (a different
+    `model_names`, or omitting it); it does not mean the agent can reach
+    around it within one. The agent itself has no way to tell the
+    difference between this and a genuinely smaller configured catalog."""
     if catalog is None:
         return None
     if allowed := state.get("allowed_model_names"):
@@ -413,12 +415,16 @@ def build_datasource_node(
 ):
     def build_graph_fn(agent_llm: BaseChatModel, state: OrchestratorState):
         # Rebuilt fresh on every delegation (see _run_specialist) - not a
-        # process-startup-only closure - so the catalog described to the
-        # datasource agent's own prompt (agents/datasource/nodes.py::
-        # build_agent_node) can be narrowed per-request here, with no
-        # changes needed in agents/datasource/ itself. The tools it binds
-        # (mcp_client/rest_client) still resolve model_name -> dataset_id
-        # against the full catalog regardless - see _effective_catalog.
+        # process-startup-only closure - so the catalog can be narrowed
+        # per-request here, with no changes needed in agents/datasource/
+        # itself. build_datasource_graph threads the same narrowed catalog
+        # into both the agent's own prompt (what it's told is available)
+        # and its tools' model_name -> dataset_id resolution (what it can
+        # actually query) - a real restriction, not just a description one:
+        # a model outside it fails to resolve, exactly as if it weren't in
+        # the catalog at all. "Overridable" (see docs/architecture.md) means
+        # the caller can change or lift this scoping on its next request,
+        # not that the agent can reach around it within this one.
         return build_datasource_graph(
             agent_llm,
             mcp_client=mcp_client,

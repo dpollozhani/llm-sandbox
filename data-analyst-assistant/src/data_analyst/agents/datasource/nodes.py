@@ -43,12 +43,22 @@ def _describe(exc: BaseException) -> str:
     return str(exc) or repr(exc)
 
 
-def build_tools(mcp_client: PBIMcpClient | None = None, rest_client: PBIRestClient | None = None) -> list[BaseTool]:
+def build_tools(
+    mcp_client: PBIMcpClient | None = None,
+    rest_client: PBIRestClient | None = None,
+    catalog: PowerBiCatalog | None = None,
+) -> list[BaseTool]:
     """Builds the datasource agent's tools bound to `mcp_client`/`rest_client`
     (real clients by default; tests inject fakes here instead of reaching
-    past the `@tool` decorators)."""
-    mcp = mcp_client or PBIMcpClient()
-    rest = rest_client or PBIRestClient()
+    past the `@tool` decorators). `catalog`, when given, is what the default
+    clients resolve `model_name` -> `dataset_id` against - a hard
+    restriction, not just a prompt-description one: a model outside it
+    fails to resolve exactly as if it didn't exist in the catalog at all
+    (see `PBIMcpClient`/`PBIRestClient`'s own "Unknown semantic model"
+    `ValueError`). Ignored when an explicit `mcp_client`/`rest_client` is
+    passed in instead - that caller owns its own catalog already."""
+    mcp = mcp_client or PBIMcpClient(catalog=catalog)
+    rest = rest_client or PBIRestClient(catalog=catalog)
 
     @tool
     async def pbi_mcp_get_semantic_metadata(model_name: str, state: Annotated[DatasourceState, InjectedState]) -> dict:

@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.clients.powerbi.dax import DaxQuerySpec, build_dax_query, validate_dax_query
+from data_analyst.config.settings import PowerBiCatalog, SemanticModelConfig
 
 _DAX_TOOL_CALL = {
     "name": "pbi_rest_run_dax_query",
@@ -239,3 +240,36 @@ async def test_can_flag_ambiguity_instead_of_guessing():
         "question": "Which time period do you mean?",
         "options": ["Last month", "Last quarter"],
     }
+
+
+async def test_run_dax_query_rejects_a_model_outside_a_scoped_catalog():
+    """`catalog` passed to build_datasource_graph (see agents/orchestrator/
+    nodes.py::_effective_catalog) restricts the tools' own model_name ->
+    dataset_id resolution, not just what the agent's prompt describes as
+    available - a real restriction, not something the agent can reach
+    around by naming a model outside it. No rest_client override needed:
+    PBIRestClient.run_dax_query's own catalog lookup fails before any
+    network call is attempted."""
+    scoped_catalog = PowerBiCatalog(
+        semantic_models=[SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-1")]
+    )
+    out_of_scope_call = {
+        "name": "pbi_rest_run_dax_query",
+        "args": {
+            "model_name": "Marketing Analytics",
+            "group_by": [{"table": "Sales", "column": "Region"}],
+            "filters": [],
+            "measures": [],
+        },
+        "id": "c1",
+    }
+    llm = FakeToolCallingChatModel(
+        responses=[AIMessage(content="", tool_calls=[out_of_scope_call]), AIMessage(content="Couldn't run that.")]
+    )
+    graph = build_datasource_graph(llm, catalog=scoped_catalog)
+
+    result = await graph.ainvoke(_state("sess-scoped-reject", [HumanMessage(content="query some other model")]))
+
+    tool_messages = [m for m in result["messages"] if m.type == "tool"]
+    assert "error" in tool_messages[0].content.lower()
+    assert "Unknown semantic model" in tool_messages[0].content

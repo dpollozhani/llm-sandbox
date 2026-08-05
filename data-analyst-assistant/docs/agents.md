@@ -79,6 +79,13 @@ query-building.
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `models.py::DataSourceQueryResult` |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
 
+`nodes.py::build_tools` takes an optional `catalog` too - both PBI tools'
+`model_name` -> `dataset_id` resolution is scoped to it (defaulting to the
+full `get_catalog()` otherwise), not just what the agent's own prompt above
+describes as available. See "Scoping a session to part of the catalog" in
+`docs/architecture.md` for where that comes from and why it's a real
+restriction, not just a description one.
+
 No `suggest_followup` here (unlike the analysis agent, see below) -
 fetching data at the right grain is this agent's whole job, full stop;
 even a request that also implies a ranking/computation over that data

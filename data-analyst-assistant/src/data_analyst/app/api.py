@@ -100,11 +100,13 @@ class ChatRequest(BaseModel):
     already-resolved result, never an app/caller identifier this API would
     have to look up itself, so a caller with no notion of "app" (a
     standalone portal, the CLI) never pays for or touches that lookup.
-    Purely a restriction on what gets *described* to the assistant as
-    available (see `OrchestratorState.allowed_model_names`) - an explicit
-    request naming a model outside this subset still resolves and works,
-    so this is a default, not a hard block. `None`: no scoping, the full
-    catalog applies, unchanged from before this field existed."""
+    A real restriction for the life of this request - the assistant can
+    neither describe nor actually query a model outside this subset (see
+    `OrchestratorState.allowed_model_names`) - not just a default it can
+    reach around. "Overridable" means the caller can send a different
+    `model_names` (or omit it) on its *next* request, not that the
+    assistant can override it mid-conversation. `None`: no scoping, the
+    full catalog applies, unchanged from before this field existed."""
 
 
 def _resolve_allowed_model_names(model_names: list[str] | None) -> list[str] | None:

@@ -292,22 +292,29 @@ The resolved plain `list[str]` of names goes into
 `OrchestratorState.allowed_model_names` - set once, directly in the initial
 state of the call (the same convention as `pbi_token`), never written by a
 node's own return dict. `agents/orchestrator/nodes.py::_effective_catalog`
-narrows `PowerBiCatalog` to it wherever `_describe_catalog` renders "which
-models are available" into a prompt (supervisor, respond) - and, since the
-datasource specialist's own subgraph is rebuilt fresh on every delegation
-anyway (`_run_specialist`), the same narrowed catalog is threaded into that
-rebuild too, so the datasource agent's own prompt only ever lists the
-allowed subset. From the agent's own side this looks exactly like a smaller
-configured catalog - there's no way for it to tell the difference between
-that and a genuine restriction.
+narrows `PowerBiCatalog` to it, and that narrowed catalog is used for two
+things, not one: what `_describe_catalog` renders as "which models are
+available" into a prompt (supervisor, respond, and - since the datasource
+specialist's own subgraph is rebuilt fresh on every delegation anyway
+(`_run_specialist`) - the datasource agent's own prompt too), *and* what
+`build_datasource_graph` passes into `build_tools`, which is what its
+`PBIMcpClient`/`PBIRestClient` instances actually resolve a `model_name`
+against. A model outside the subset doesn't just go undescribed - asking
+for it fails exactly the same way asking for a model that was never in the
+catalog at all would (`PBIMcpClient`/`PBIRestClient`'s own "Unknown
+semantic model" `ValueError`, before any network call). From the agent's
+own side this looks exactly like a smaller configured catalog - there's no
+way for it to tell the difference between that and a genuine restriction,
+and no way to reach around it from inside the conversation.
 
-This is a description restriction, not a hard block: the datasource tools'
-own `model_name` -> `dataset_id` resolution (`clients/powerbi/mcp.py`/
-`rest.py`, defaulting to `get_catalog()`) is never narrowed this way, so an
-explicit request naming a model outside the subset still resolves and
-works - overridable by design, not an enforced boundary. Row-level security
-already scopes what data a query can actually return per the caller's own
-Power BI identity; this only changes what gets *suggested*.
+This is a real restriction for the life of one request, not a soft
+default: "overridable" (see the earlier design discussion this came out
+of) means the *caller* can change or lift the scoping by sending a
+different `model_names` (or omitting it) on its *next* request - not that
+the agent can override it mid-conversation by naming a different model
+itself. Row-level security separately scopes what data a query can
+actually return, per the caller's own Power BI identity; this is an
+additional, independent restriction on which models are in play at all.
 
 ## Structured, validated DAX queries
 

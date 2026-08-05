@@ -88,10 +88,12 @@ class OrchestratorState(ChatState):
     these models" itself before ever calling this API. Set once, directly in
     the initial state of every `/chat`/`/chat/stream` call (the same
     convention as `pbi_token`), never written by a node's own return dict.
-    Read by `agents/orchestrator/nodes.py::_effective_catalog` to narrow what
-    the supervisor/respond/datasource-agent prompts *describe* as available -
-    purely a description restriction, never plumbed into the datasource
-    tools' own `model_name` -> `dataset_id` resolution (see
-    `clients/powerbi/mcp.py`/`rest.py`, always the full catalog), so an
-    explicit request naming a model outside this subset still resolves and
-    works. `NotRequired`/`None`: the common case, no scoping at all."""
+    Read by `agents/orchestrator/nodes.py::_effective_catalog` to narrow both
+    what the supervisor/respond/datasource-agent prompts *describe* as
+    available and what the datasource tools can actually resolve a
+    `model_name` against (threaded into `build_datasource_graph` - see
+    `build_datasource_node`) - a real restriction for the life of this
+    request, not just a description one. "Overridable" means the caller can
+    change or lift it on a later request (a different `model_names`, or
+    omitting it) - not that the agent can reach around it within this one.
+    `NotRequired`/`None`: the common case, no scoping at all."""
