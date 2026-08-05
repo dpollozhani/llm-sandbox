@@ -93,6 +93,24 @@ def _describe_catalog(catalog: PowerBiCatalog | None) -> str:
     return f"\n\nAvailable semantic models: {names}."
 
 
+def _effective_catalog(catalog: PowerBiCatalog | None, state: OrchestratorState) -> PowerBiCatalog | None:
+    """`catalog` narrowed to `state["allowed_model_names"]` if the caller
+    scoped this session to part of the full configured catalog (see
+    `app/api.py`'s `ChatRequest.model_names`), `catalog` unchanged otherwise.
+    Purely what gets *described* to the supervisor/respond/datasource-agent
+    prompts as available - the datasource tools' own `model_name` ->
+    `dataset_id` resolution is never narrowed this way (see
+    `clients/powerbi/mcp.py`/`rest.py`, always the full catalog), so a model
+    outside this subset still resolves if asked for by name - overridable,
+    not a hard block. The agent itself has no way to tell the difference
+    between this and a genuinely smaller configured catalog."""
+    if catalog is None:
+        return None
+    if allowed := state.get("allowed_model_names"):
+        return catalog.subset(allowed)
+    return catalog
+
+
 def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
     router = llm.with_structured_output(Route)
 
@@ -112,7 +130,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         summary_update = await maybe_summarize_history(llm, state)
         history_summary = (summary_update or {}).get("history_summary", state.get("history_summary"))
 
-        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
+        prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(_effective_catalog(catalog, state))
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         prompt += _render_resolved(state.get("resolved_clarifications"))
@@ -305,7 +323,7 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         task_content = _latest_user_task(state["messages"]).content
     messages = [HumanMessage(content=_seed_content(state, task_content))]
 
-    child_graph = build_graph_fn(llm)
+    child_graph = build_graph_fn(llm, state)
     with trace_span("specialist.run", agent=agent_name):
         try:
             result = await child_graph.ainvoke(
@@ -393,9 +411,20 @@ def build_datasource_node(
     glossary: Glossary | None = None,
     catalog: PowerBiCatalog | None = None,
 ):
-    def build_graph_fn(agent_llm: BaseChatModel):
+    def build_graph_fn(agent_llm: BaseChatModel, state: OrchestratorState):
+        # Rebuilt fresh on every delegation (see _run_specialist) - not a
+        # process-startup-only closure - so the catalog described to the
+        # datasource agent's own prompt (agents/datasource/nodes.py::
+        # build_agent_node) can be narrowed per-request here, with no
+        # changes needed in agents/datasource/ itself. The tools it binds
+        # (mcp_client/rest_client) still resolve model_name -> dataset_id
+        # against the full catalog regardless - see _effective_catalog.
         return build_datasource_graph(
-            agent_llm, mcp_client=mcp_client, rest_client=rest_client, catalog=catalog, glossary=glossary
+            agent_llm,
+            mcp_client=mcp_client,
+            rest_client=rest_client,
+            catalog=_effective_catalog(catalog, state),
+            glossary=glossary,
         )
 
     async def datasource_node(state: OrchestratorState):
@@ -405,7 +434,7 @@ def build_datasource_node(
 
 
 def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
-    def build_graph_fn(agent_llm: BaseChatModel):
+    def build_graph_fn(agent_llm: BaseChatModel, state: OrchestratorState):
         return build_analysis_graph(agent_llm, glossary=glossary)
 
     async def analysis_node(state: OrchestratorState):
@@ -415,15 +444,18 @@ def build_analysis_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
 
 def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
-    base_prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary) + _describe_catalog(catalog)
+    base_prompt = inject_glossary(RESPOND_SYSTEM_PROMPT, glossary)
 
     async def respond_node(state: OrchestratorState):
+        # _describe_catalog is computed per-invocation (not folded into
+        # base_prompt above) so it can be narrowed to this request's own
+        # state["allowed_model_names"] - see _effective_catalog.
+        prompt = base_prompt + _describe_catalog(_effective_catalog(catalog, state))
         # Concrete grounding for RESPOND_SYSTEM_PROMPT's "only suggest a
         # follow-up when it's grounded in the currently available data"
         # rule - without this, the model's only signal for "what's in play
         # right now" is prose buried in the message history, not something
         # to build a scoped suggestion from.
-        prompt = base_prompt
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         if followup := state.get("followup_suggestion"):

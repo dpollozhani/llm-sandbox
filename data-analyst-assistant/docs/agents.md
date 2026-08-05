@@ -16,7 +16,12 @@ no separate chain-building layer, just a closure over the prompt text
 returned as the node function itself. The supervisor and respond prompts
 also get the catalog's model names appended (`nodes.py::_describe_catalog`,
 same `config/semantic_models.yaml`-backed list the datasource agent's own
-prompt gets) - that's the only Power BI knowledge either has. Neither ever
+prompt gets) - that's the only Power BI knowledge either has. A caller can
+narrow that list to part of the full catalog for a session (`nodes.py::
+_effective_catalog`, from `state["allowed_model_names"]` - see "Scoping a
+session to part of the catalog" in `docs/architecture.md`); neither node,
+nor the datasource agent, has any way to tell that apart from a genuinely
+smaller configured catalog. Neither ever
 sees a schema, so `SUPERVISOR_SYSTEM_PROMPT`/`RESPOND_SYSTEM_PROMPT`
 explicitly forbid answering anything about a model's tables/columns/
 measures from assumption - a "which models are available" question can be
@@ -40,8 +45,9 @@ human-readable summary of the most recently fetched dataset),
 `"completed"` one, and where its `options` come from - see "Clarifications
 are the orchestrator's alone to surface" in `docs/architecture.md`), and
 `resolved_clarifications` (every clarification settled so far, so a
-specialist doesn't re-derive or re-ask about one) on top of the shared
-`ChatState`.
+specialist doesn't re-derive or re-ask about one), and `allowed_model_names`
+(a caller's own request to scope this session to part of the full catalog -
+see above) on top of the shared `ChatState`.
 
 ## Datasource (`agents/datasource/`)
 

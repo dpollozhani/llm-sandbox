@@ -9,6 +9,12 @@ from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog
 
 _GLOSSARY = Glossary(terms=[GlossaryEntry(term="BRIC", definition="An item attribute, not BRICS.")])
 _CATALOG = PowerBiCatalog(semantic_models=[SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-1")])
+_MULTI_MODEL_CATALOG = PowerBiCatalog(
+    semantic_models=[
+        SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-1"),
+        SemanticModelConfig(model_name="HQ financial costs", dataset_id="ds-2"),
+    ]
+)
 
 
 class _RecordingLLM(FakeToolCallingChatModel):
@@ -101,6 +107,37 @@ async def test_respond_node_lists_catalog_model_names():
     assert 'Available semantic models: "Sales Analytics".' in llm.recorded_messages[0][0].content
 
 
+async def test_respond_node_describes_only_the_callers_allowed_model_names():
+    """A caller can scope a session to part of the full catalog (see
+    app/api.py's ChatRequest.model_names) - the respond node should
+    describe only that subset, computed fresh per-invocation from state,
+    not the full catalog it was built with."""
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm, catalog=_MULTI_MODEL_CATALOG)
+
+    await node(
+        {
+            "messages": [HumanMessage(content="which models are available?")],
+            "allowed_model_names": ["Sales Analytics"],
+        }
+    )
+
+    prompt = llm.recorded_messages[0][0].content
+    assert 'Available semantic models: "Sales Analytics".' in prompt
+    assert "HQ financial costs" not in prompt
+
+
+async def test_respond_node_describes_full_catalog_when_no_scoping_requested():
+    llm = _RecordingLLM(responses=[AIMessage(content="ok")])
+    node = build_respond_node(llm, catalog=_MULTI_MODEL_CATALOG)
+
+    await node({"messages": [HumanMessage(content="which models are available?")]})
+
+    prompt = llm.recorded_messages[0][0].content
+    assert "Sales Analytics" in prompt
+    assert "HQ financial costs" in prompt
+
+
 async def test_respond_node_has_no_catalog_section_when_absent():
     llm = _RecordingLLM(responses=[AIMessage(content="ok")])
     node = build_respond_node(llm)
@@ -150,6 +187,23 @@ async def test_supervisor_node_lists_catalog_model_names():
     await node({"messages": [HumanMessage(content="which models are available?")], "turns": 0})
 
     assert 'Available semantic models: "Sales Analytics".' in llm.recorded_messages[0][0].content
+
+
+async def test_supervisor_node_describes_only_the_callers_allowed_model_names():
+    llm = _RecordingStructuredLLM(responses=[])
+    node = build_supervisor_node(llm, catalog=_MULTI_MODEL_CATALOG)
+
+    await node(
+        {
+            "messages": [HumanMessage(content="which models are available?")],
+            "turns": 0,
+            "allowed_model_names": ["HQ financial costs"],
+        }
+    )
+
+    prompt = llm.recorded_messages[0][0].content
+    assert 'Available semantic models: "HQ financial costs".' in prompt
+    assert "Sales Analytics" not in prompt
 
 
 async def test_supervisor_node_mentions_a_pending_followup_suggestion():

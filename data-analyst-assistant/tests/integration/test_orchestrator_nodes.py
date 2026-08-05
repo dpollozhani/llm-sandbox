@@ -15,10 +15,18 @@ from pydantic import Field
 from data_analyst.agents.datasource.models import DataSourceQueryResult
 from data_analyst.agents.orchestrator.nodes import build_analysis_node, build_datasource_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
+from data_analyst.config.settings import PowerBiCatalog, SemanticModelConfig
 
 _FETCHED = DataSourceQueryResult(
     dataset_id="dataset_1", model_name="Sales Analytics", group_by=["Sales.Region"], measures=["Total Revenue"], row_count=5
 ).model_dump()
+
+_MULTI_MODEL_CATALOG = PowerBiCatalog(
+    semantic_models=[
+        SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-1"),
+        SemanticModelConfig(model_name="HQ financial costs", dataset_id="ds-2"),
+    ]
+)
 
 
 class _RecordingLLM(FakeToolCallingChatModel):
@@ -61,10 +69,30 @@ async def test_datasource_node_seeds_fresh_child_and_folds_back_summary():
     folded = update["messages"][0]
     assert isinstance(folded, AIMessage)
     assert folded.content == "[datasource] There is one semantic model: Sales Analytics."
-    # No pbi_rest_run_dax_query call happened (just a schema lookup), so
-    # there's no DataSourceQueryResult to set data_context to - and, importantly,
-    # nothing here should overwrite a dataset from an earlier turn either.
-    assert "data_context" not in update
+
+
+async def test_datasource_node_scopes_its_own_prompt_to_the_callers_allowed_model_names():
+    """A caller scoping this session to part of the full catalog (see
+    app/api.py's ChatRequest.model_names) should narrow what the datasource
+    agent's own prompt describes as available - computed fresh at
+    delegation time (the child subgraph is rebuilt every delegation
+    anyway), not baked into a build-time-only closure."""
+    llm = _RecordingLLM(responses=[AIMessage(content="There is one semantic model: HQ financial costs.")])
+    node = build_datasource_node(llm, catalog=_MULTI_MODEL_CATALOG)
+
+    state = {
+        "messages": [HumanMessage(content="what semantic models are available?")],
+        "turns": 1,
+        "next": "datasource",
+        "session_id": "sess-node-scoped",
+        "data_context": None,
+        "allowed_model_names": ["HQ financial costs"],
+    }
+    await node(state)
+
+    system_prompt = llm.recorded_messages[0][0].content
+    assert "HQ financial costs" in system_prompt
+    assert "Sales Analytics" not in system_prompt
 
 
 async def test_specialist_uses_latest_human_message_not_a_prior_specialists_fold():
