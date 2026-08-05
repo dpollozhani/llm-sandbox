@@ -131,6 +131,70 @@ def test_chat_endpoint_answers_using_a_simple_scripted_model():
     assert body["reply"] == "Here's what I can do."
 
 
+def test_chat_accepts_a_valid_model_names_scope():
+    """model_names is resolved against the real configured catalog
+    (config/semantic_models.yaml) - "HQ financial costs" is one of its
+    entries, see that file. The underlying scoping behavior itself (what
+    gets described to the agent) is covered at the node level
+    (test_orchestrator_prompts.py/test_orchestrator_nodes.py) - this just
+    confirms the field is accepted end-to-end and doesn't break an
+    otherwise-ordinary turn."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/chat", json={"message": "hello, what can you do?", "model_names": ["HQ financial costs"]}
+            )
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Here's what I can do."
+
+
+def test_chat_rejects_an_unknown_model_name():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="unused")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat", json={"message": "hi", "model_names": ["Nonexistent Model"]})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 400
+    assert "Nonexistent Model" in response.json()["detail"]
+
+
+def test_chat_rejects_an_empty_model_names_list():
+    with TestClient(app) as client:
+        response = client.post("/chat", json={"message": "hi", "model_names": []})
+
+    assert response.status_code == 400
+
+
+def test_stream_rejects_an_unknown_model_name_before_opening_the_stream():
+    """Validated in chat_stream itself, before _stream_chat_events starts -
+    a bad model_names entry is a real 400, not an "error" SSE event after
+    the stream's already begun."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="unused")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/chat/stream", json={"message": "hi", "model_names": ["Nonexistent Model"]})
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert response.status_code == 400
+    assert "Nonexistent Model" in response.json()["detail"]
+
+
 def test_chat_does_not_log_graph_updates_by_default(caplog):
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="Here's what I can do.")])
     graph = _build_graph(llm)

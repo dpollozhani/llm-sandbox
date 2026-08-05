@@ -32,7 +32,7 @@ from data_analyst.app.auth import router as auth_router
 from data_analyst.app.dependencies import get_graph
 from data_analyst.app.lifespan import lifespan
 from data_analyst.app.web import CHAT_PAGE_HTML
-from data_analyst.config.settings import get_settings
+from data_analyst.config.settings import get_catalog, get_settings
 from data_analyst.telemetry.logging import get_logger
 
 app = FastAPI(title="Data Analyst Assistant", lifespan=lifespan)
@@ -91,6 +91,46 @@ _NODE_STATUS = {
 class ChatRequest(BaseModel):
     message: str
     thread_id: str | None = None
+    model_names: list[str] | None = None
+    """Scopes this session to part of the full configured catalog
+    (`config/semantic_models.yaml`) - each entry is either a `model_name` or
+    a `dataset_id` from that config. Resolving *which* model(s) a given
+    caller should be scoped to (e.g. "this Power BI app maps to these two
+    models") is entirely the caller's own concern - this field takes the
+    already-resolved result, never an app/caller identifier this API would
+    have to look up itself, so a caller with no notion of "app" (a
+    standalone portal, the CLI) never pays for or touches that lookup.
+    A real restriction for the life of this request - the assistant can
+    neither describe nor actually query a model outside this subset (see
+    `OrchestratorState.allowed_model_names`) - not just a default it can
+    reach around. "Overridable" means the caller can send a different
+    `model_names` (or omit it) on its *next* request, not that the
+    assistant can override it mid-conversation. `None`: no scoping, the
+    full catalog applies, unchanged from before this field existed."""
+
+
+def _resolve_allowed_model_names(model_names: list[str] | None) -> list[str] | None:
+    """`body.model_names` (each a `model_name` or `dataset_id`) resolved
+    against the full configured catalog into the plain `model_name` list
+    `OrchestratorState.allowed_model_names` expects - `None` through
+    unchanged (no scoping requested). Raises 400 if an entry doesn't match
+    anything: a caller passing this at all is asserting these are real,
+    resolvable models, so silently dropping an unrecognized one would hide
+    what's likely a frontend integration bug (a stale link, a typo) rather
+    than surfacing it immediately."""
+    if model_names is None:
+        return None  # not provided at all - no scoping, the full catalog applies
+    if not model_names:
+        # Provided, but empty - distinct from omitting the field entirely
+        # (handled above): asking to be scoped to nothing is a caller bug,
+        # not a request for "no scoping."
+        raise HTTPException(status_code=400, detail="model_names, if provided, must be non-empty")
+    subset = get_catalog().subset(model_names)
+    resolved = {m.model_name for m in subset.semantic_models} | {m.dataset_id for m in subset.semantic_models}
+    unknown = [m for m in model_names if m not in resolved]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown semantic model(s): {unknown}")
+    return [m.model_name for m in subset.semantic_models]
 
 
 class ChatResponse(BaseModel):
@@ -164,6 +204,7 @@ async def chat(
         "turns": 0,
         "session_id": thread_id,
         "pbi_token": tokens.token,
+        "allowed_model_names": _resolve_allowed_model_names(body.model_names),
     }
 
     if get_settings().debug_graph_state:
@@ -183,7 +224,7 @@ async def chat(
 
 
 async def _stream_chat_events(
-    body: ChatRequest, graph: CompiledStateGraph, thread_id: str, tokens: PBITokens
+    body: ChatRequest, graph: CompiledStateGraph, thread_id: str, tokens: PBITokens, allowed_model_names: list[str] | None
 ) -> AsyncIterator[str]:
     """Drive one /chat turn via `astream_events` instead of `ainvoke`, emitting
     Server-Sent Events as the orchestrator progresses:
@@ -221,6 +262,7 @@ async def _stream_chat_events(
                 "turns": 0,
                 "session_id": thread_id,
                 "pbi_token": tokens.token,
+                "allowed_model_names": allowed_model_names,
             },
             config=config,
             version="v2",
@@ -268,8 +310,12 @@ async def chat_stream(
     tokens: PBITokens = Depends(get_pbi_tokens),
 ) -> StreamingResponse:
     thread_id = body.thread_id or str(uuid.uuid4())
+    # Resolved before the stream starts (not inside _stream_chat_events'
+    # own try/except) so an invalid model_names entry is a real 400
+    # response, not an "error" SSE event after the stream's already begun.
+    allowed_model_names = _resolve_allowed_model_names(body.model_names)
     return StreamingResponse(
-        _stream_chat_events(body, graph, thread_id, tokens),
+        _stream_chat_events(body, graph, thread_id, tokens, allowed_model_names),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -16,7 +16,12 @@ no separate chain-building layer, just a closure over the prompt text
 returned as the node function itself. The supervisor and respond prompts
 also get the catalog's model names appended (`nodes.py::_describe_catalog`,
 same `config/semantic_models.yaml`-backed list the datasource agent's own
-prompt gets) - that's the only Power BI knowledge either has. Neither ever
+prompt gets) - that's the only Power BI knowledge either has. A caller can
+narrow that list to part of the full catalog for a session (`nodes.py::
+_effective_catalog`, from `state["allowed_model_names"]` - see "Scoping a
+session to part of the catalog" in `docs/architecture.md`); neither node,
+nor the datasource agent, has any way to tell that apart from a genuinely
+smaller configured catalog. Neither ever
 sees a schema, so `SUPERVISOR_SYSTEM_PROMPT`/`RESPOND_SYSTEM_PROMPT`
 explicitly forbid answering anything about a model's tables/columns/
 measures from assumption - a "which models are available" question can be
@@ -40,8 +45,9 @@ human-readable summary of the most recently fetched dataset),
 `"completed"` one, and where its `options` come from - see "Clarifications
 are the orchestrator's alone to surface" in `docs/architecture.md`), and
 `resolved_clarifications` (every clarification settled so far, so a
-specialist doesn't re-derive or re-ask about one) on top of the shared
-`ChatState`.
+specialist doesn't re-derive or re-ask about one), and `allowed_model_names`
+(a caller's own request to scope this session to part of the full catalog -
+see above) on top of the shared `ChatState`.
 
 ## Datasource (`agents/datasource/`)
 
@@ -72,6 +78,13 @@ query-building.
 | `pbi_mcp_get_semantic_metadata` | `clients/powerbi/mcp.py` | resolves `model_name` to a dataset id via `config/semantic_models.yaml`, then calls the MCP server's `GetSemanticMetadata` |
 | `pbi_rest_run_dax_query` | `clients/powerbi/rest.py` + `clients/powerbi/dax.py` | takes structured `group_by`/`filters`/`measures`, never free-form DAX; builds and structurally validates a SUMMARIZECOLUMNS (or, with no `group_by`, a ROW grand-total) query, checks the session's cache before running it, calls the `executeQueries` endpoint, stages the parsed result and returns a `models.py::DataSourceQueryResult` |
 | `flag_ambiguity` | `agents/common/tools.py` | shared with the analysis agent; flags (doesn't itself ask) that the specialist is unsure what's meant - the orchestrator composes and surfaces the actual question, see `docs/architecture.md`'s "Clarifications are the orchestrator's alone to surface" |
+
+`nodes.py::build_tools` takes an optional `catalog` too - both PBI tools'
+`model_name` -> `dataset_id` resolution is scoped to it (defaulting to the
+full `get_catalog()` otherwise), not just what the agent's own prompt above
+describes as available. See "Scoping a session to part of the catalog" in
+`docs/architecture.md` for where that comes from and why it's a real
+restriction, not just a description one.
 
 No `suggest_followup` here (unlike the analysis agent, see below) -
 fetching data at the right grain is this agent's whole job, full stop;

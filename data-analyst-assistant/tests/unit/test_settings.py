@@ -1,4 +1,11 @@
-from data_analyst.config.settings import Glossary, GlossaryEntry, get_glossary
+from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig, get_glossary
+
+_CATALOG = PowerBiCatalog(
+    semantic_models=[
+        SemanticModelConfig(model_name="Sales Analytics", dataset_id="ds-sales"),
+        SemanticModelConfig(model_name="HQ financial costs", dataset_id="ds-hq"),
+    ]
+)
 
 
 def test_glossary_loads_terms_from_yaml(tmp_path):
@@ -46,3 +53,18 @@ def test_glossary_render_is_one_line_per_term():
     )
 
     assert glossary.render() == "- BRIC: An item attribute, a global item code.\n- SKU: Stock keeping unit."
+
+
+def test_catalog_subset_matches_by_model_name():
+    subset = _CATALOG.subset(["Sales Analytics"])
+    assert [m.model_name for m in subset.semantic_models] == ["Sales Analytics"]
+
+
+def test_catalog_subset_matches_by_dataset_id():
+    subset = _CATALOG.subset(["ds-hq"])
+    assert [m.model_name for m in subset.semantic_models] == ["HQ financial costs"]
+
+
+def test_catalog_subset_drops_unmatched_identifiers():
+    subset = _CATALOG.subset(["Sales Analytics", "Nonexistent Model"])
+    assert [m.model_name for m in subset.semantic_models] == ["Sales Analytics"]

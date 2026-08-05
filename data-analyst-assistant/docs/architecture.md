@@ -222,6 +222,10 @@ something when `status` is `"clarification_needed"`) - `status` stays
 `"completed"` and `reply` is the real answer either way; `app/web.py`
 renders `suggested_options` with the same `renderOptions` button UI as a
 blocking clarification's `options`, just styled differently (`.suggestion`)
+since picking one - or ignoring them and asking something else - are
+equally valid. `build_respond_node`'s own prompt is told about a pending
+suggestion too, specifically so it doesn't restate the same options in
+prose once they're already shown as buttons.
 
 Because `followup_suggestion` still goes through a real routing LLM call
 (unlike `pending_clarification`'s bypass), that call can get it wrong: a
@@ -234,10 +238,6 @@ deterministically: if the router still returns `"clarify"` while
 `followup_suggestion` is set and the latest message isn't a fresh human
 one, it's overridden to `"respond"`. The prompt instruction is cheap
 insurance, not the actual guarantee - the code-level check is.
-since picking one - or ignoring them and asking something else - are
-equally valid. `build_respond_node`'s own prompt is told about a pending
-suggestion too, specifically so it doesn't restate the same options in
-prose once they're already shown as buttons.
 
 ## No schema without a schema lookup
 
@@ -268,6 +268,53 @@ validation the MCP server already owns. The mitigation is keeping every
 node's stated capabilities honest about what it can and can't see, so a
 model has no prompt-level cover for guessing instead of looking something
 up.
+
+## Scoping a session to part of the catalog
+
+`ChatRequest.model_names` (`app/api.py`) lets a caller restrict a session to
+part of the full configured catalog (`config/semantic_models.yaml`) - e.g. a
+frontend embedded in a specific Power BI app, where only one or two models
+are actually relevant to that context. Each entry is a `model_name` or
+`dataset_id`; `_resolve_allowed_model_names` resolves them against
+`get_catalog()` and 400s on anything unrecognized (a likely frontend
+integration bug - a stale link, a typo - worth surfacing immediately rather
+than silently dropping).
+
+Deciding *which* model(s) a given caller should see is entirely that
+caller's own concern, deliberately kept out of this service: there's no
+"app name" concept anywhere in this codebase, no lookup table mapping one to
+the other. A caller with no notion of "app" at all (a standalone portal, the
+CLI) never resolves anything and never pays for this feature; `model_names`
+is `None` and every model in the catalog applies, exactly as before this
+existed.
+
+The resolved plain `list[str]` of names goes into
+`OrchestratorState.allowed_model_names` - set once, directly in the initial
+state of the call (the same convention as `pbi_token`), never written by a
+node's own return dict. `agents/orchestrator/nodes.py::_effective_catalog`
+narrows `PowerBiCatalog` to it, and that narrowed catalog is used for two
+things, not one: what `_describe_catalog` renders as "which models are
+available" into a prompt (supervisor, respond, and - since the datasource
+specialist's own subgraph is rebuilt fresh on every delegation anyway
+(`_run_specialist`) - the datasource agent's own prompt too), *and* what
+`build_datasource_graph` passes into `build_tools`, which is what its
+`PBIMcpClient`/`PBIRestClient` instances actually resolve a `model_name`
+against. A model outside the subset doesn't just go undescribed - asking
+for it fails exactly the same way asking for a model that was never in the
+catalog at all would (`PBIMcpClient`/`PBIRestClient`'s own "Unknown
+semantic model" `ValueError`, before any network call). From the agent's
+own side this looks exactly like a smaller configured catalog - there's no
+way for it to tell the difference between that and a genuine restriction,
+and no way to reach around it from inside the conversation.
+
+This is a real restriction for the life of one request, not a soft
+default: "overridable" (see the earlier design discussion this came out
+of) means the *caller* can change or lift the scoping by sending a
+different `model_names` (or omitting it) on its *next* request - not that
+the agent can override it mid-conversation by naming a different model
+itself. Row-level security separately scopes what data a query can
+actually return, per the caller's own Power BI identity; this is an
+additional, independent restriction on which models are in play at all.
 
 ## Structured, validated DAX queries
 

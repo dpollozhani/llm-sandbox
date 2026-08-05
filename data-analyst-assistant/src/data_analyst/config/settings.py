@@ -71,6 +71,18 @@ class PowerBiCatalog(BaseModel):
     def find_model(self, model_name: str) -> SemanticModelConfig | None:
         return next((m for m in self.semantic_models if m.model_name == model_name), None)
 
+    def subset(self, identifiers: list[str]) -> "PowerBiCatalog":
+        """A `PowerBiCatalog` containing only the semantic models whose
+        `model_name` or `dataset_id` is in `identifiers` - a caller's own
+        request (see `app/api.py`'s `ChatRequest.model_names`) to scope a
+        session to part of everything this server is configured for. Purely
+        a filter, not itself validated against anything - an identifier
+        matching nothing here is silently dropped; a caller that needs to
+        reject an unknown identifier (see `app/api.py`) should compare the
+        result back against what was asked for."""
+        matched = [m for m in self.semantic_models if m.model_name in identifiers or m.dataset_id in identifiers]
+        return PowerBiCatalog(semantic_models=matched)
+
 
 class GlossaryEntry(BaseModel):
     term: str

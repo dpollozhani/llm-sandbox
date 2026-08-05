@@ -81,3 +81,19 @@ class OrchestratorState(ChatState):
     `history_summary` - lets `maybe_summarize_history` only ever summarize
     the delta since the last summary, not the whole history again each
     time. `NotRequired` for the same reason as `history_summary`."""
+    allowed_model_names: NotRequired[list[str] | None]
+    """The caller's own request (see `app/api.py`'s `ChatRequest.model_names`)
+    to scope this session to part of the full configured catalog - e.g. a
+    frontend embedded in a specific Power BI app, pre-resolving "this app ->
+    these models" itself before ever calling this API. Set once, directly in
+    the initial state of every `/chat`/`/chat/stream` call (the same
+    convention as `pbi_token`), never written by a node's own return dict.
+    Read by `agents/orchestrator/nodes.py::_effective_catalog` to narrow both
+    what the supervisor/respond/datasource-agent prompts *describe* as
+    available and what the datasource tools can actually resolve a
+    `model_name` against (threaded into `build_datasource_graph` - see
+    `build_datasource_node`) - a real restriction for the life of this
+    request, not just a description one. "Overridable" means the caller can
+    change or lift it on a later request (a different `model_names`, or
+    omitting it) - not that the agent can reach around it within this one.
+    `NotRequired`/`None`: the common case, no scoping at all."""
