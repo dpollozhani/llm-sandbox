@@ -61,16 +61,24 @@ _SAFE_BUILTINS = {
 
 
 def execute(code: str, dataframe: pd.DataFrame | None = None) -> ExecutionResult:
-    local_vars: dict = {}
+    # One namespace used as both globals and locals - not two separate
+    # dicts. `exec(code, globals, locals)` with distinct dicts runs
+    # top-level code like a class body: a `def` (or a comprehension, which
+    # compiles to a hidden nested function) created there gets `__globals__`
+    # set to the globals dict, not locals - so it can't see a name a
+    # top-level assignment put in locals, e.g. a helper function called via
+    # `.groupby().apply()` raising NameError on a variable assigned earlier
+    # in the very same script. A single namespace matches how a real script
+    # actually behaves, where that's just a closure.
+    namespace: dict = {"__builtins__": _SAFE_BUILTINS, "pd": pd, "np": np, "math": math, "stats": stats}
     if dataframe is not None:
-        local_vars["df"] = dataframe.copy()
+        namespace["df"] = dataframe.copy()
 
-    safe_globals = {"__builtins__": _SAFE_BUILTINS, "pd": pd, "np": np, "math": math, "stats": stats}
     stdout = io.StringIO()
     try:
         with contextlib.redirect_stdout(stdout):
-            exec(code, safe_globals, local_vars)  # noqa: S102 - mocked sandbox
+            exec(code, namespace)  # noqa: S102 - mocked sandbox
     except Exception as exc:  # noqa: BLE001 - surfaced to the caller, not raised
         return ExecutionResult(stdout=stdout.getvalue(), error=str(exc))
 
-    return ExecutionResult(stdout=stdout.getvalue(), result=to_records(local_vars.get("result")))
+    return ExecutionResult(stdout=stdout.getvalue(), result=to_records(namespace.get("result")))
