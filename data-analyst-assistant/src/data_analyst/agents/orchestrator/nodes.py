@@ -259,6 +259,33 @@ def _seed_content(state: OrchestratorState, task_content: str) -> str:
     return "\n\n".join(parts)
 
 
+def _specialist_update(
+    state: OrchestratorState,
+    message: AIMessage,
+    *,
+    next: str | None = None,
+    pending_clarification: dict | None = None,
+    followup_suggestion: dict | None = None,
+) -> dict:
+    """The shape every `_run_specialist` return path shares: the folded-back
+    message plus the same three clarification-bookkeeping fields, always
+    explicitly set rather than left out (see `OrchestratorState`'s
+    `pending_clarification`/`followup_suggestion` docstrings for why a
+    stale value must never linger). Each call site passes only what's
+    different about its own case; `resolved_clarifications` always goes
+    through `_append_resolved` since any path can be resolving whatever was
+    pending before the delegation that triggered it."""
+    update: dict = {
+        "messages": [message],
+        "pending_clarification": pending_clarification,
+        "resolved_clarifications": _append_resolved(state),
+        "followup_suggestion": followup_suggestion,
+    }
+    if next is not None:
+        update["next"] = next
+    return update
+
+
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
     pending = state.get("pending_clarification")
 
@@ -296,17 +323,13 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             # exception that would otherwise crash this whole turn. Fold back a
             # plain failure instead: the supervisor's own MAX_TURNS still bounds
             # how many times this can happen before "respond" takes over.
-            return {
-                "messages": [
-                    AIMessage(
-                        content=f"[{agent_name}] Couldn't complete this after many attempts - "
-                        "try a simpler or narrower request."
-                    )
-                ],
-                "pending_clarification": None,
-                "resolved_clarifications": _append_resolved(state),
-                "followup_suggestion": None,
-            }
+            return _specialist_update(
+                state,
+                AIMessage(
+                    content=f"[{agent_name}] Couldn't complete this after many attempts - "
+                    "try a simpler or narrower request."
+                ),
+            )
         # The specialist's own internal trace (tool calls, intermediate
         # reasoning) is never exposed to the orchestrator's own context - it's
         # folded into one summary below - but is still worth a DEBUG record
@@ -331,25 +354,23 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         # agents/orchestrator/graph.py route straight to END: no extra
         # supervisor round-trip, no separate "clarify" node call, just this
         # specialist's question (and options) as the reply.
-        return {
-            "messages": [AIMessage(content=_compose_ambiguity_message(ambiguity))],
-            "next": "clarify",
-            "pending_clarification": {"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
-            "resolved_clarifications": _append_resolved(state),
-            "followup_suggestion": None,
-        }
+        return _specialist_update(
+            state,
+            AIMessage(content=_compose_ambiguity_message(ambiguity)),
+            next="clarify",
+            pending_clarification={"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
+        )
 
     last_message = result["messages"][-1]
     summary = getattr(last_message, "content", str(last_message))
     followup = _specialist_followup(result["messages"])
-    update: dict = {
-        "messages": [AIMessage(content=f"[{agent_name}] {summary}")],
-        "pending_clarification": None,
-        "resolved_clarifications": _append_resolved(state),
-        "followup_suggestion": {"agent": agent_name, "question": followup.question, "options": followup.options}
+    update = _specialist_update(
+        state,
+        AIMessage(content=f"[{agent_name}] {summary}"),
+        followup_suggestion={"agent": agent_name, "question": followup.question, "options": followup.options}
         if followup is not None
         else None,
-    }
+    )
     if agent_name == "datasource":
         fetched = _fetched_dataset(result["messages"])
         if fetched is not None:
