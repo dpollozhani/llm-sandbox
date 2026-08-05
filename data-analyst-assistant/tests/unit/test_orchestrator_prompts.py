@@ -3,7 +3,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
 from data_analyst.agents.datasource.models import DataSourceQueryResult
-from data_analyst.agents.orchestrator.nodes import build_clarify_node, build_respond_node, build_supervisor_node
+from data_analyst.agents.orchestrator.nodes import Route, build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig
 
@@ -36,6 +36,18 @@ class _RecordingStructuredLLM(FakeToolCallingChatModel):
             return schema()
 
         return RunnableLambda(_invoke)
+
+
+class _ScriptedRouteLLM(FakeToolCallingChatModel):
+    """Like `_RecordingStructuredLLM`, but returns a specific `Route`
+    instead of the schema's bare default - needed to script the router into
+    picking "clarify" itself, to check `build_supervisor_node`'s
+    deterministic override of that choice."""
+
+    route: Route = Route()
+
+    def with_structured_output(self, schema, **kwargs):
+        return RunnableLambda(lambda *_args, **_kwargs: self.route)
 
 
 async def test_respond_node_injects_glossary():
@@ -160,6 +172,47 @@ async def test_supervisor_node_mentions_a_pending_followup_suggestion():
     assert '"analysis"' in prompt
 
 
+async def test_supervisor_node_overrides_a_same_turn_reclarify_of_a_followup_suggestion():
+    """A production trace caught the routing LLM picking "clarify" right
+    after a specialist's own non-blocking suggest_followup, with no new
+    human message in between - turning it into a blocking question and
+    defeating the whole point of the non-blocking mechanism. The prompt
+    tells the router not to do this, but this is the deterministic
+    backstop: even if the router still says "clarify" in that exact
+    situation, it's overridden to "respond"."""
+    llm = _ScriptedRouteLLM(responses=[], route=Route(next="clarify"))
+    node = build_supervisor_node(llm)
+
+    result = await node(
+        {
+            "messages": [AIMessage(content="[analysis] here's your answer")],
+            "turns": 1,
+            "followup_suggestion": {"agent": "analysis", "question": "Break down further?", "options": ["By region", "By product"]},
+        }
+    )
+
+    assert result["next"] == "respond"
+
+
+async def test_supervisor_node_allows_clarify_after_a_fresh_human_message_despite_a_stale_followup():
+    """The override above is scoped to the same-turn case only - once the
+    user has actually sent a new message, "clarify" is a legitimate routing
+    decision again (e.g. a genuinely new, unrelated ambiguity), even if a
+    followup_suggestion from earlier hasn't been superseded yet."""
+    llm = _ScriptedRouteLLM(responses=[], route=Route(next="clarify"))
+    node = build_supervisor_node(llm)
+
+    result = await node(
+        {
+            "messages": [HumanMessage(content="something unrelated")],
+            "turns": 1,
+            "followup_suggestion": {"agent": "analysis", "question": "Break down further?", "options": ["By region", "By product"]},
+        }
+    )
+
+    assert result["next"] == "clarify"
+
+
 async def test_supervisor_node_has_no_followup_section_when_absent():
     llm = _RecordingStructuredLLM(responses=[])
     node = build_supervisor_node(llm)
@@ -182,7 +235,8 @@ async def test_respond_node_is_told_not_to_restate_an_existing_followup_suggesti
 
     prompt = llm.recorded_messages[0][0].content
     assert "Break down further?" in prompt
-    assert "don't repeat or list them yourself" in prompt
+    assert "Don't repeat or list them yourself" in prompt
+    assert "don't ask the user which one they want either" in prompt
 
 
 async def test_clarify_node_mentions_already_resolved_clarifications():

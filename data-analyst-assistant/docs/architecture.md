@@ -209,6 +209,18 @@ something when `status` is `"clarification_needed"`) - `status` stays
 `"completed"` and `reply` is the real answer either way; `app/web.py`
 renders `suggested_options` with the same `renderOptions` button UI as a
 blocking clarification's `options`, just styled differently (`.suggestion`)
+
+Because `followup_suggestion` still goes through a real routing LLM call
+(unlike `pending_clarification`'s bypass), that call can get it wrong: a
+production trace caught the router picking `"clarify"` immediately after a
+specialist's own non-blocking suggestion, with no new human message in
+between - reasking, as a *blocking* question, the exact fork the specialist
+had just offered non-blockingly. `SUPERVISOR_SYSTEM_PROMPT` tells the model
+not to do this, and `build_supervisor_node` also backstops it
+deterministically: if the router still returns `"clarify"` while
+`followup_suggestion` is set and the latest message isn't a fresh human
+one, it's overridden to `"respond"`. The prompt instruction is cheap
+insurance, not the actual guarantee - the code-level check is.
 since picking one - or ignoring them and asking something else - are
 equally valid. `build_respond_node`'s own prompt is told about a pending
 suggestion too, specifically so it doesn't restate the same options in

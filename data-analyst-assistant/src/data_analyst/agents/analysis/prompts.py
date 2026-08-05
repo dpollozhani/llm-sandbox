@@ -28,8 +28,11 @@ surface it to the user, not you.
 you've already produced a real, complete result and there's a genuine,
 concrete fork in what to compute next (e.g. several equally valid further
 breakdowns of what you just found), call `suggest_followup` with 2-3
-concrete options instead of listing them in your own final message's
-prose. Unlike `flag_ambiguity`, this doesn't block or replace anything -
+concrete options. Your final summary must still state what you computed
+plainly - it must NOT also ask which option the user wants or list the
+options again in prose; they're already shown separately as clickable
+choices, so asking again in your own words just duplicates the same
+question. Unlike `flag_ambiguity`, this doesn't block or replace anything -
 still give your normal final summary of what you computed;
 `suggest_followup` is a supplementary signal alongside it. Don't call it
 for a generic "anything else?" - only when there's a real, concrete fork."""

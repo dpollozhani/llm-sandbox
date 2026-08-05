@@ -75,7 +75,8 @@ def _render_followup_suggestion(followup: dict | None) -> str:
     return (
         f"\n\nThe {followup['agent']} specialist already completed its answer and suggested a "
         f'follow-up: "{followup["question"]}" ({options}). If the user\'s reply picks one of these '
-        f"up, route back to \"{followup['agent']}\" to continue it; otherwise route normally."
+        f"up, route back to \"{followup['agent']}\" to continue it; otherwise route normally. Do not "
+        'route to "clarify" to re-ask this same fork yourself - it is non-blocking by design.'
     )
 
 
@@ -119,7 +120,22 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         context = build_prompt_messages(state["messages"], history_summary)
         route = await router.ainvoke([SystemMessage(content=prompt), *context])
 
-        update: dict = {"next": route.next, "turns": turns + 1}
+        next_step = route.next
+        if next_step == "clarify" and state.get("followup_suggestion") and state["messages"][-1].type != "human":
+            # The prompt above already tells the router not to do this, but
+            # a same-turn re-clarify of a suggestion that was explicitly
+            # meant to be non-blocking is cheap and easy for the model to
+            # get wrong under pressure - worth a deterministic backstop
+            # rather than relying on prompt wording alone. "No new human
+            # message since" is what distinguishes this from a genuinely
+            # fresh routing decision the user actually asked for.
+            _logger.debug(
+                "supervisor picked 'clarify' right after a non-blocking followup_suggestion with no "
+                "new human message in between - overriding to 'respond'"
+            )
+            next_step = "respond"
+
+        update: dict = {"next": next_step, "turns": turns + 1}
         if summary_update:
             update.update(summary_update)
         return update
@@ -392,11 +408,15 @@ def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, cat
         if followup := state.get("followup_suggestion"):
             # Already shown to the user separately as clickable options
             # (see app/api.py's `suggested_options`) - restating them in
-            # prose here would just duplicate them.
+            # prose here, or asking the user to pick one before you'll
+            # continue, would just duplicate that non-blocking suggestion
+            # as if it were a blocking question.
             prompt += (
                 f"\n\nThe {followup['agent']} specialist already suggested a follow-up this turn - "
                 f"\"{followup['question']}\" ({', '.join(followup['options'])}) - it's already shown to the "
-                "user separately as clickable options, so don't repeat or list them yourself."
+                "user separately as clickable options. Don't repeat or list them yourself, and don't ask "
+                "the user which one they want either - just give the answer; the suggestion is an "
+                "optional next step, not something that needs picking before you can finish."
             )
         context = build_prompt_messages(state["messages"], state.get("history_summary"))
         response = await llm.ainvoke([SystemMessage(content=prompt), *context])
