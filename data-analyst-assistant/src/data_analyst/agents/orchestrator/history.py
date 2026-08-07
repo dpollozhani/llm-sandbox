@@ -54,14 +54,19 @@ async def maybe_summarize_history(llm: BaseChatModel, state: OrchestratorState) 
     input would grow right along with the thing it's meant to bound.
     """
     messages = state["messages"]
-    cutoff = len(messages) - RECENT_MESSAGE_COUNT
-    if len(messages) <= SUMMARIZE_THRESHOLD or cutoff <= state.get("history_summarized_through", 0):
-        return None
-    new_messages = messages[state.get("history_summarized_through", 0) : cutoff]
-    if not new_messages:
-        return None
+    already_summarized_through = state.get("history_summarized_through", 0)
+    # Everything from here on stays outside the summary, in
+    # build_prompt_messages's always-verbatim recent window - only messages
+    # before this index are ever eligible to be folded in.
+    foldable_up_to = len(messages) - RECENT_MESSAGE_COUNT
 
-    previous = state.get("history_summary")
-    lead_in = [HumanMessage(content=f"Previous summary: {previous}")] if previous else []
+    if len(messages) <= SUMMARIZE_THRESHOLD:
+        return None  # not enough of a backlog yet to bother summarizing at all
+    if foldable_up_to <= already_summarized_through:
+        return None  # everything foldable was already folded in last time
+
+    new_messages = messages[already_summarized_through:foldable_up_to]
+    previous_summary = state.get("history_summary")
+    lead_in = [HumanMessage(content=f"Previous summary: {previous_summary}")] if previous_summary else []
     response = await llm.ainvoke([SystemMessage(content=_SUMMARIZE_PROMPT), *lead_in, *new_messages])
-    return {"history_summary": response.content, "history_summarized_through": cutoff}
+    return {"history_summary": response.content, "history_summarized_through": foldable_up_to}
