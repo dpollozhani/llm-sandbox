@@ -16,7 +16,7 @@ from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.datasource.models import DataSourceQueryResult
-from data_analyst.agents.orchestrator.history import build_prompt_messages, summarize_history
+from data_analyst.agents.orchestrator.history import build_prompt_messages, pending_backlog, summarize_backlog
 from data_analyst.agents.orchestrator.prompts import (
     CLARIFY_SYSTEM_PROMPT,
     RESPOND_SYSTEM_PROMPT,
@@ -129,7 +129,11 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         if turns >= MAX_TURNS:
             return {"next": "respond", "turns": turns}
 
-        summary_update = await summarize_history(llm, state)
+        summary_update = None
+        if pending_summary := pending_backlog(state):
+            new_messages, foldable_up_to = pending_summary
+            summary_text = await summarize_backlog(llm, new_messages, state.get("history_summary"))
+            summary_update = {"history_summary": summary_text, "history_summarized_through": foldable_up_to}
         history_summary = (summary_update or {}).get("history_summary", state.get("history_summary"))
 
         prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(_effective_catalog(catalog, state))

@@ -4,7 +4,8 @@ from pydantic import Field
 from data_analyst.agents.orchestrator.history import (
     RECENT_MESSAGE_COUNT,
     build_prompt_messages,
-    summarize_history,
+    pending_backlog,
+    summarize_backlog,
 )
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
@@ -16,7 +17,7 @@ _BIG_CONTENT = "x" * 4000
 
 class _RecordingLLM(FakeToolCallingChatModel):
     """Records the message list of every `_generate` call, so a test can
-    check exactly what `summarize_history` fed the model."""
+    check exactly what `summarize_backlog` fed the model."""
 
     recorded_messages: list = Field(default_factory=list)
 
@@ -48,68 +49,65 @@ def test_build_prompt_messages_prepends_the_summary():
     assert context[1:] == messages[-RECENT_MESSAGE_COUNT:]
 
 
-async def test_summarize_history_does_nothing_below_token_threshold():
+def test_pending_backlog_is_none_below_token_threshold():
     """A handful of small foldable messages - nowhere near
-    SUMMARIZE_TOKEN_THRESHOLD - shouldn't trigger a summarization call at
-    all, however many of them there are."""
-    llm = _RecordingLLM(responses=[AIMessage(content="summary")])
-    state = {"messages": _messages(RECENT_MESSAGE_COUNT + 5)}
-
-    result = await summarize_history(llm, state)
-
-    assert result is None
-    assert llm.recorded_messages == []
+    SUMMARIZE_TOKEN_THRESHOLD - isn't worth folding in, however many of
+    them there are. Purely synchronous: no LLM involved in this decision
+    at all."""
+    messages = _messages(RECENT_MESSAGE_COUNT + 5)
+    assert pending_backlog({"messages": messages}) is None
 
 
-async def test_summarize_history_folds_only_the_older_messages():
-    llm = _RecordingLLM(responses=[AIMessage(content="folded summary")])
-    messages = _messages(RECENT_MESSAGE_COUNT + 3, big=True)
-    state = {"messages": messages}
-
-    result = await summarize_history(llm, state)
-
-    foldable_up_to = len(messages) - RECENT_MESSAGE_COUNT
-    assert result == {"history_summary": "folded summary", "history_summarized_through": foldable_up_to}
-    fed = llm.recorded_messages[0][1:]  # drop the summarizer's own SystemMessage
-    assert [m.content for m in fed] == [m.content for m in messages[:foldable_up_to]]
-
-
-async def test_summarize_history_skips_when_nothing_new_since_last_summary():
-    """The "nothing new to fold in" check fires before any token counting -
-    a backlog well past SUMMARIZE_TOKEN_THRESHOLD still shouldn't trigger a
-    second summarization call if it was already folded in last time."""
-    llm = _RecordingLLM(responses=[AIMessage(content="should not be called")])
+def test_pending_backlog_is_none_when_nothing_new_since_last_summary():
+    """Fires before any token counting - a backlog well past
+    SUMMARIZE_TOKEN_THRESHOLD still isn't "pending" if it was already
+    folded in last time."""
     messages = _messages(RECENT_MESSAGE_COUNT + 3, big=True)
     foldable_up_to = len(messages) - RECENT_MESSAGE_COUNT
     state = {"messages": messages, "history_summary": "already summarized", "history_summarized_through": foldable_up_to}
 
-    result = await summarize_history(llm, state)
-
-    assert result is None
-    assert llm.recorded_messages == []
+    assert pending_backlog(state) is None
 
 
-async def test_summarize_history_only_feeds_the_new_delta_next_time():
-    """Only the messages added since the last summary are ever re-measured
-    against the threshold or fed to the model - not the whole foldable
-    range again, and not anything already folded in."""
-    llm = _RecordingLLM(responses=[AIMessage(content="updated summary")])
+def test_pending_backlog_returns_only_the_new_delta():
+    """Only the messages added since the last summary are ever considered
+    - not the whole foldable range again, and not anything already folded
+    in."""
     already_summarized = _messages(2)  # small - already folded in, irrelevant to this call
     new_backlog = _messages(4, big=True)  # crosses SUMMARIZE_TOKEN_THRESHOLD on its own
-    recent = _messages(RECENT_MESSAGE_COUNT)  # never token-counted at all
+    recent = _messages(RECENT_MESSAGE_COUNT)  # never considered at all
     messages = already_summarized + new_backlog + recent
-    state = {
-        "messages": messages,
-        "history_summary": "earlier summary",
-        "history_summarized_through": len(already_summarized),
-    }
+    state = {"messages": messages, "history_summarized_through": len(already_summarized)}
 
-    result = await summarize_history(llm, state)
+    pending = pending_backlog(state)
 
-    foldable_up_to = len(messages) - RECENT_MESSAGE_COUNT
-    assert result["history_summarized_through"] == foldable_up_to
+    assert pending is not None
+    new_messages, foldable_up_to = pending
+    assert [m.content for m in new_messages] == [m.content for m in new_backlog]
+    assert foldable_up_to == len(messages) - RECENT_MESSAGE_COUNT
+
+
+async def test_summarize_backlog_folds_the_given_messages_unconditionally():
+    """No threshold, no bookkeeping - summarize_backlog always calls the
+    model for whatever it's handed; that decision lives in pending_backlog
+    instead."""
+    llm = _RecordingLLM(responses=[AIMessage(content="folded summary")])
+    new_messages = _messages(2)
+
+    result = await summarize_backlog(llm, new_messages, previous_summary=None)
+
+    assert result == "folded summary"
+    fed = llm.recorded_messages[0][1:]  # drop the summarizer's own SystemMessage
+    assert [m.content for m in fed] == [m.content for m in new_messages]
+
+
+async def test_summarize_backlog_includes_the_previous_summary_as_lead_in():
+    llm = _RecordingLLM(responses=[AIMessage(content="updated summary")])
+    new_messages = _messages(2)
+
+    result = await summarize_backlog(llm, new_messages, previous_summary="earlier summary")
+
+    assert result == "updated summary"
     fed = llm.recorded_messages[0][1:]
-    # Only the new backlog, plus the "previous summary" lead-in - not the
-    # already-summarized messages, and not the recent window either.
     assert "earlier summary" in fed[0].content
-    assert [m.content for m in fed[1:]] == [m.content for m in new_backlog]
+    assert [m.content for m in fed[1:]] == [m.content for m in new_messages]

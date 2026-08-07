@@ -3,6 +3,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
 from data_analyst.agents.datasource.models import DataSourceQueryResult
+from data_analyst.agents.orchestrator.history import RECENT_MESSAGE_COUNT
 from data_analyst.agents.orchestrator.nodes import Route, build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig
@@ -204,6 +205,33 @@ async def test_supervisor_node_describes_only_the_callers_allowed_model_names():
     prompt = llm.recorded_messages[0][0].content
     assert 'Available semantic models: "HQ financial costs".' in prompt
     assert "Sales Analytics" not in prompt
+
+
+async def test_supervisor_node_summarizes_a_pending_backlog():
+    """build_supervisor_node is the procedural code that decides whether to
+    call summarize_backlog at all (via history.py's pending_backlog) and
+    folds the result into its own state update - neither of history.py's
+    own functions makes that decision itself."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="folded summary")])
+    node = build_supervisor_node(llm)
+    big = "x" * 4000  # comfortably crosses SUMMARIZE_TOKEN_THRESHOLD on its own
+    old = [HumanMessage(content=f"old {i} {big}") for i in range(4)]
+    recent = [HumanMessage(content=f"recent {i}") for i in range(RECENT_MESSAGE_COUNT)]
+
+    result = await node({"messages": old + recent, "turns": 0})
+
+    assert result["history_summary"] == "folded summary"
+    assert result["history_summarized_through"] == len(old)
+
+
+async def test_supervisor_node_leaves_history_summary_untouched_below_threshold():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="should not be called")])
+    node = build_supervisor_node(llm)
+
+    result = await node({"messages": [HumanMessage(content="hi")], "turns": 0})
+
+    assert "history_summary" not in result
+    assert "history_summarized_through" not in result
 
 
 async def test_supervisor_node_mentions_a_pending_followup_suggestion():

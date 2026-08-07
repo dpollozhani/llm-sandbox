@@ -4,6 +4,13 @@ audit/resume - never trimmed), but the supervisor/respond/clarify nodes
 get a bounded prompt context instead - a running summary of older turns
 plus the most recent messages verbatim - so per-turn token cost stops
 growing linearly with conversation length.
+
+`pending_backlog` (sync, no LLM call) decides *whether* there's anything
+worth folding in; `summarize_backlog` (async) unconditionally *does* the
+folding for whatever backlog it's given. `agents/orchestrator/nodes.py`'s
+`build_supervisor_node` is the procedural code that ties the two together -
+neither function here contains an "and if it's not worth it, do nothing"
+branch of its own.
 """
 from __future__ import annotations
 
@@ -27,12 +34,13 @@ SUMMARIZE_TOKEN_THRESHOLD = 2000
 not yet folded into `history_summary`) holds more than this many tokens -
 approximated via `count_tokens_approximately`, the same rough
 characters-per-token metric LangChain's/LangMem's own summarization
-utilities default to - `summarize_history` folds it in. Token count, not
-message count: token count is what actually drives per-turn cost, and a
-handful of large tool-result-laden messages can cost as much as dozens of
-short ones. 2000 is an order-of-magnitude estimate - comfortably above what
-one ordinary turn's own exchange would use, far below typical model context
-windows - not a value tuned against real usage."""
+utilities default to - `pending_backlog` reports it as worth folding in.
+Token count, not message count: token count is what actually drives
+per-turn cost, and a handful of large tool-result-laden messages can cost
+as much as dozens of short ones. 2000 is an order-of-magnitude estimate -
+comfortably above what one ordinary turn's own exchange would use, far
+below typical model context windows - not a value tuned against real
+usage."""
 
 _SUMMARIZE_PROMPT = """Summarize this part of a data-analyst conversation in
 a few sentences, preserving anything a later turn would need: what the user
@@ -51,16 +59,19 @@ def build_prompt_messages(messages: list[AnyMessage], history_summary: str | Non
     return [HumanMessage(content=f"Summary of earlier turns: {history_summary}"), *recent]
 
 
-async def summarize_history(llm: BaseChatModel, state: OrchestratorState) -> dict | None:
-    """A `{"history_summary": ..., "history_summarized_through": ...}` state
-    update if the foldable backlog has grown past `SUMMARIZE_TOKEN_THRESHOLD`
-    since the last summary - `None` if there's nothing worth folding in yet
-    (the common case), so `build_supervisor_node` can skip touching either
-    field at all most turns.
+def pending_backlog(state: OrchestratorState) -> tuple[list[AnyMessage], int] | None:
+    """The new backlog of messages worth folding into `history_summary`
+    since `history_summarized_through`, and the index doing so would
+    advance it to - or `None` if there's nothing new, or what's new isn't
+    yet past `SUMMARIZE_TOKEN_THRESHOLD`. Synchronous and side-effect-free
+    (no LLM call) on purpose: `build_supervisor_node` can decide whether
+    summarizing is warranted - and skip touching `history_summary`/
+    `history_summarized_through` at all when it isn't, the common case -
+    without paying for a call just to find that out.
 
-    Only ever summarizes the *delta* since `history_summarized_through`
-    (not the whole history again each time) - otherwise this call's own
-    input would grow right along with the thing it's meant to bound.
+    Only ever considers the *delta* since `history_summarized_through`
+    (not the whole foldable range again each time) - otherwise checking
+    this would itself grow right along with the thing it's meant to bound.
     """
     messages = state["messages"]
     already_summarized_through = state.get("history_summarized_through", 0)
@@ -74,8 +85,15 @@ async def summarize_history(llm: BaseChatModel, state: OrchestratorState) -> dic
     new_messages = messages[already_summarized_through:foldable_up_to]
     if count_tokens_approximately(new_messages) <= SUMMARIZE_TOKEN_THRESHOLD:
         return None  # not enough of a backlog yet to bother summarizing at all
+    return new_messages, foldable_up_to
 
-    previous_summary = state.get("history_summary")
+
+async def summarize_backlog(llm: BaseChatModel, new_messages: list[AnyMessage], previous_summary: str | None) -> str:
+    """Folds `new_messages` into a fresh summary, continuing from
+    `previous_summary` if there is one. Unconditional - makes the LLM call
+    for whatever it's given, no threshold or bookkeeping of its own; see
+    `pending_backlog` for the decision of whether (and with what) to call
+    this at all."""
     lead_in = [HumanMessage(content=f"Previous summary: {previous_summary}")] if previous_summary else []
     response = await llm.ainvoke([SystemMessage(content=_SUMMARIZE_PROMPT), *lead_in, *new_messages])
-    return {"history_summary": response.content, "history_summarized_through": foldable_up_to}
+    return response.content
