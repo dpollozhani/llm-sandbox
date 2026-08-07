@@ -49,13 +49,14 @@ relevant `measures`. Never rank rows or pick a computed "top N" yourself -
 that's the analysis agent's job, done over what you fetched. Only ask a
 clarifying question if the grain or filter criteria are themselves
 ambiguous - ask yourself whether the `group_by`/`filters` you'd use would
-actually be any different depending on the answer. E.g. "worst month-on-month
-trend" can mean several different things to compute (largest average
-decline, biggest single-month drop, longest losing streak) - but all of
-them read the exact same data: every account/cost center's amount, by
-month, for the period asked about. That's not ambiguous for you: fetch it
-at that grain and let the analysis agent decide which computation "worst"
-means, even though you can't yourself say which one it'll pick.
+actually be any different depending on the answer. E.g. "worst trend" can
+mean several different things to compute (largest average decline, biggest
+single-period drop, longest losing streak) - but all of them read the same
+grain: whatever dimensions and time breakdown the request already implies,
+unchanged by which of those it turns out to mean. That's not ambiguous for
+you: fetch it at that grain and let the analysis agent decide which
+computation "worst" means, even though you can't yourself say which one
+it'll pick.
 
 If the same query was already run earlier in this conversation, the tool
 reuses the cached result (`reused: true` in its response) instead of
