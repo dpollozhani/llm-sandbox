@@ -113,6 +113,19 @@ def _effective_catalog(catalog: PowerBiCatalog | None, state: OrchestratorState)
     return catalog
 
 
+async def _refresh_history_summary(llm: BaseChatModel, state: OrchestratorState) -> tuple[str | None, dict]:
+    """The `history_summary` to use in this turn's prompt, paired with the
+    state update needed to persist it - an empty dict if nothing changed,
+    so callers can merge it into their own return dict unconditionally
+    (`**` spreading an empty dict is a no-op) rather than tracking "what to
+    use now" and "what to write back" as two separately-threaded values."""
+    if pending := pending_backlog(state):
+        new_messages, foldable_up_to = pending
+        summary_text = await summarize_backlog(llm, new_messages, state.get("history_summary"))
+        return summary_text, {"history_summary": summary_text, "history_summarized_through": foldable_up_to}
+    return state.get("history_summary"), {}
+
+
 def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
     router = llm.with_structured_output(Route)
 
@@ -129,12 +142,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         if turns >= MAX_TURNS:
             return {"next": "respond", "turns": turns}
 
-        summary_update = None
-        if pending_summary := pending_backlog(state):
-            new_messages, foldable_up_to = pending_summary
-            summary_text = await summarize_backlog(llm, new_messages, state.get("history_summary"))
-            summary_update = {"history_summary": summary_text, "history_summarized_through": foldable_up_to}
-        history_summary = (summary_update or {}).get("history_summary", state.get("history_summary"))
+        history_summary, summary_update = await _refresh_history_summary(llm, state)
 
         prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(_effective_catalog(catalog, state))
         if data_context := state.get("data_context"):
@@ -159,10 +167,7 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
             )
             next_step = "respond"
 
-        update: dict = {"next": next_step, "turns": turns + 1}
-        if summary_update:
-            update.update(summary_update)
-        return update
+        return {"next": next_step, "turns": turns + 1, **summary_update}
 
     return supervisor_node
 
