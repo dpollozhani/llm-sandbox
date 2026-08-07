@@ -18,7 +18,7 @@ class _RecordingLLM(FakeToolCallingChatModel):
 
 def _messages(n: int, *, chars: int = 0) -> list:
     """`chars` pads each message's content so its approximate token count is
-    predictable - see the fold test below for why 800 chars each, 10 of
+    predictable - see the fold test below for why 3200 chars each, 10 of
     them, is the size used to exercise a fold."""
     suffix = f" {'x' * chars}" if chars else ""
     return [HumanMessage(content=f"m{i}{suffix}") for i in range(n)]
@@ -56,14 +56,14 @@ async def test_refresh_context_leaves_history_untouched_below_token_threshold():
 
 
 async def test_refresh_context_folds_the_older_part_keeping_a_raw_recent_window():
-    """10 messages of 800 filler chars each total ~2050 approximate tokens -
-    just over MAX_RECENT_TOKENS (2000), triggering a fold. With
-    RECENT_WINDOW_TOKENS at 1000, the last 4 of them (~820 tokens) fit raw
-    (the last 5, ~1025 tokens, don't) - so the fold should only feed the
+    """10 messages of 3200 filler chars each total ~8050 approximate tokens -
+    just over MAX_RECENT_TOKENS (8000), triggering a fold. With
+    RECENT_WINDOW_TOKENS at 4000, the last 4 of them (~3220 tokens) fit raw
+    (the last 5, ~4025 tokens, don't) - so the fold should only feed the
     first 6 to the summarizer, and this turn's context should carry the
     fresh summary plus those last 4 raw, not just the summary alone."""
     llm = _RecordingLLM(responses=[AIMessage(content="folded summary")])
-    messages = _messages(10, chars=800)
+    messages = _messages(10, chars=3200)
     old, recent = messages[:6], messages[6:]
 
     context, update = await refresh_context(llm, {"messages": messages})
@@ -81,7 +81,7 @@ async def test_refresh_context_only_measures_messages_since_the_last_summary():
     history_summarized_through."""
     llm = _RecordingLLM(responses=[AIMessage(content="updated summary")])
     already_summarized = _messages(2)  # small - already folded in, irrelevant to this call
-    new_backlog = _messages(10, chars=800)  # ~2050 tokens, crosses MAX_RECENT_TOKENS on its own
+    new_backlog = _messages(10, chars=3200)  # ~8050 tokens, crosses MAX_RECENT_TOKENS on its own
     old, recent = new_backlog[:6], new_backlog[6:]
     messages = already_summarized + new_backlog
     state = {

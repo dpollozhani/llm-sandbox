@@ -209,13 +209,13 @@ async def test_supervisor_node_describes_only_the_callers_allowed_model_names():
 async def test_supervisor_node_summarizes_a_pending_backlog():
     """build_supervisor_node folds history.py's refresh_context (which
     decides whether there's enough of a backlog to fold in, and does the
-    folding if so) into its own state update. 10 messages of 800 filler
+    folding if so) into its own state update. 10 messages of 3200 filler
     chars each cross MAX_RECENT_TOKENS, so the fold covers the first 6 of
     them, keeping the last 4 raw - see test_orchestrator_history.py for the
     token-count derivation."""
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="folded summary")])
     node = build_supervisor_node(llm)
-    big = "x" * 800
+    big = "x" * 3200
     messages = [HumanMessage(content=f"m{i} {big}") for i in range(10)]
 
     result = await node({"messages": messages, "turns": 0})

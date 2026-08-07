@@ -25,19 +25,21 @@ from langchain_core.messages.utils import count_tokens_approximately
 
 from data_analyst.agents.orchestrator.state import OrchestratorState
 
-MAX_RECENT_TOKENS = 2000
+MAX_RECENT_TOKENS = 8000
 """Once the messages since the last summary hold more than this many
 tokens - approximated via `count_tokens_approximately`, the same rough
 characters-per-token metric LangChain's/LangMem's own summarization
 utilities default to - `refresh_context` folds the older part of them in.
 Token count, not message count: token count is what actually drives
 per-turn cost, and a handful of large tool-result-laden messages can cost
-as much as dozens of short ones. 2000 is an order-of-magnitude estimate -
-comfortably above what one ordinary turn's own exchange would use, far
-below typical model context windows - not a value tuned against real
+as much as dozens of short ones. Kept comfortably large (not, say, 2000)
+because the fold itself isn't free - it's a whole extra LLM call, with its
+own prompt/output overhead - so triggering it too eagerly relative to the
+conversation size spends a large share of the very tokens it's meant to
+save. Still an order-of-magnitude estimate, not a value tuned against real
 usage."""
 
-RECENT_WINDOW_TOKENS = 1000
+RECENT_WINDOW_TOKENS = 4000
 """How much of the backlog (by approximate token count) a fold always
 leaves raw, on top of the fresh summary - guarantees the current exchange
 never collapses to "just the summary" the instant a fold happens.
