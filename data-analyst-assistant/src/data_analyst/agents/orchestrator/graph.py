@@ -38,15 +38,16 @@ from data_analyst.config.settings import Glossary, PowerBiCatalog, get_catalog, 
 
 
 def _after_specialist(state: OrchestratorState) -> str:
-    # A specialist normally leaves `next` as whatever the supervisor set it
-    # to ("datasource"/"analysis") and loops back for the next routing
-    # decision. It's only ever "clarify" here if `_run_specialist` just set
-    # it because the specialist itself asked a clarifying question (see
-    # nodes.py) - in which case there's nothing left for the supervisor to
-    # decide this turn, so skip straight to END instead of paying for an
-    # extra supervisor call (and the separate "clarify" node, which only
-    # handles the supervisor's *own* upfront clarify decision).
-    return "end" if state.get("next") == "clarify" else "supervisor"
+    # A specialist run leaves pending_clarification set only when it just
+    # flagged its own ambiguity (see _run_specialist) - in which case
+    # there's nothing left for the supervisor to decide this turn, so skip
+    # straight to END instead of paying for an extra supervisor call (and
+    # the separate "clarify" node, which only handles the supervisor's
+    # *own* upfront clarify decision, never a specialist's). Checking
+    # pending_clarification directly, not a "next" value also named
+    # "clarify" - that string meant something different to the supervisor's
+    # own routing edge and invited exactly that confusion.
+    return "end" if state.get("pending_clarification") else "supervisor"
 
 
 def build_orchestrator_graph(

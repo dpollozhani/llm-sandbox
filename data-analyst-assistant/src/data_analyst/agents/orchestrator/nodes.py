@@ -283,7 +283,6 @@ def _specialist_update(
     state: OrchestratorState,
     message: AIMessage,
     *,
-    next: str | None = None,
     pending_clarification: dict | None = None,
     followup_suggestion: dict | None = None,
 ) -> dict:
@@ -294,16 +293,17 @@ def _specialist_update(
     stale value must never linger). Each call site passes only what's
     different about its own case; `resolved_clarifications` always goes
     through `_append_resolved` since any path can be resolving whatever was
-    pending before the delegation that triggered it."""
-    update: dict = {
+    pending before the delegation that triggered it. Never touches `next` -
+    `agents/orchestrator/graph.py::_after_specialist` decides whether to
+    loop back to the supervisor or skip to END from `pending_clarification`
+    alone, not a "next" value that would otherwise collide with the
+    supervisor's own unrelated use of the same field."""
+    return {
         "messages": [message],
         "pending_clarification": pending_clarification,
         "resolved_clarifications": _append_resolved(state),
         "followup_suggestion": followup_suggestion,
     }
-    if next is not None:
-        update["next"] = next
-    return update
 
 
 async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, state: OrchestratorState) -> dict:
@@ -369,15 +369,18 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
         # composes the user-facing message and owns whatever was pending
         # before this delegation is now folded into `resolved_clarifications`
         # (the reply that triggered this run did resolve *that* much, even
-        # though a new, narrower ambiguity has now come up). Setting `next`
-        # here (rather than going back to "supervisor") is what lets
-        # agents/orchestrator/graph.py route straight to END: no extra
-        # supervisor round-trip, no separate "clarify" node call, just this
-        # specialist's question (and options) as the reply.
+        # though a new, narrower ambiguity has now come up). Setting
+        # `pending_clarification` here (rather than going back to
+        # "supervisor") is what lets agents/orchestrator/graph.py's
+        # `_after_specialist` route straight to END: no extra supervisor
+        # round-trip, no separate "clarify" node call, just this
+        # specialist's question (and options) as the reply. No `next` value
+        # needed for this - `_after_specialist` reads `pending_clarification`
+        # directly, not a "next" string that would otherwise collide with
+        # the supervisor's own unrelated use of the same value.
         return _specialist_update(
             state,
             AIMessage(content=_compose_ambiguity_message(ambiguity)),
-            next="clarify",
             pending_clarification={"agent": agent_name, "reason": ambiguity.question, "options": ambiguity.options},
         )
 

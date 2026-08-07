@@ -166,15 +166,20 @@ had been typed and sent.
 own case by looking for a `flag_ambiguity` tool call in the specialist's run
 and parsing its own structured result (`_specialist_ambiguity`) - rather
 than trusting the specialist's own final freeform message to faithfully
-restate the reason and options - and if found sets `next="clarify"` and
-`pending_clarification` directly.  `agents/orchestrator/graph.py`'s
-conditional edges out of `datasource`/`analysis` check that: normally they
-loop back to `supervisor`, but if `next` is now `"clarify"`, they go
-straight to `END` instead. This is the cheaper path precisely because it
-skips the extra supervisor call *and* the separate `clarify` node entirely -
-one specialist invocation, one reply, zero extra LLM calls - rather than
-always paying for a full supervisor round-trip (or an extra rephrasing call)
-regardless of where the ambiguity was actually discovered.
+restate the reason and options - and if found sets `pending_clarification`
+directly (no `next` value involved).  `agents/orchestrator/graph.py`'s
+`_after_specialist` conditional edge out of `datasource`/`analysis` checks
+`pending_clarification` itself: normally it loops back to `supervisor`, but
+if a specialist just set one, it goes straight to `END` instead. This is
+the cheaper path precisely because it skips the extra supervisor call *and*
+the separate `clarify` node entirely - one specialist invocation, one
+reply, zero extra LLM calls - rather than always paying for a full
+supervisor round-trip (or an extra rephrasing call) regardless of where the
+ambiguity was actually discovered. Earlier versions of this signaled the
+same thing via `next="clarify"` - a value that meant something entirely
+different to the supervisor's own routing edge (see `Route(next="clarify")`
+above) and invited exactly that confusion; `_after_specialist` now reads
+`pending_clarification` directly instead.
 
 Once a `pending_clarification` is resolved (or superseded by a new one),
 `_append_resolved` folds it into `state["resolved_clarifications"]` - a
