@@ -1,29 +1,51 @@
-"""Rolling history summarization: `OrchestratorState["messages"]` stays
-unbounded (it's the checkpointed conversation record, needed for
-audit/resume - never trimmed), but the supervisor/respond/clarify nodes
-get a bounded prompt context instead - a running summary of older turns
-plus the most recent messages verbatim - so per-turn token cost stops
-growing linearly with conversation length.
+"""Rolling history summarization, four steps, repeated every supervisor turn:
+
+1. Context for any model call is `[summary-message?, *messages since the
+   last summary]` - `build_prompt_messages`.
+2. Check whether that backlog since the last summary has grown past
+   `MAX_RECENT_TOKENS`.
+3. If it has, fold the *older* part of it into a fresh summary, keeping
+   the most recent `RECENT_WINDOW_TOKENS` worth of it raw - so a fold
+   never collapses this turn's context down to just the summary with
+   nothing raw left. `refresh_context` does 2 and 3, then returns the
+   step 1 context built from whichever summary is now current (fresh or
+   unchanged).
+4. Repeat next turn.
+
+`OrchestratorState["messages"]` itself is canon and stays unbounded (it's
+the checkpointed record, needed for audit/resume - never trimmed); only
+the prompt context handed to a model is bounded this way, so per-turn
+token cost stops growing linearly with conversation length.
 """
 from __future__ import annotations
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
 
 from data_analyst.agents.orchestrator.state import OrchestratorState
 
-RECENT_MESSAGE_COUNT = 8
-"""How many of the most recent raw messages are always included verbatim in
-prompt context, on top of `history_summary` - small enough to bound
-per-turn token cost, generous enough to cover the current exchange (a task,
-any specialist fold-backs, a clarification round trip) without relying
-solely on the summary for it."""
+MAX_RECENT_TOKENS = 8000
+"""Once the messages since the last summary hold more than this many
+tokens - approximated via `count_tokens_approximately`, the same rough
+characters-per-token metric LangChain's/LangMem's own summarization
+utilities default to - `refresh_context` folds the older part of them in.
+Token count, not message count: token count is what actually drives
+per-turn cost, and a handful of large tool-result-laden messages can cost
+as much as dozens of short ones. Kept comfortably large (not, say, 2000)
+because the fold itself isn't free - it's a whole extra LLM call, with its
+own prompt/output overhead - so triggering it too eagerly relative to the
+conversation size spends a large share of the very tokens it's meant to
+save. Still an order-of-magnitude estimate, not a value tuned against real
+usage."""
 
-SUMMARIZE_THRESHOLD = 16
-"""Once `messages` grows past this many entries, `maybe_summarize_history`
-folds the messages older than `RECENT_MESSAGE_COUNT` into `history_summary`
-- comfortably above `MAX_TURNS * 2` (agents/orchestrator/nodes.py) so this
-doesn't trigger inside a single supervisor turn's own back-and-forth."""
+RECENT_WINDOW_TOKENS = 4000
+"""How much of the backlog (by approximate token count) a fold always
+leaves raw, on top of the fresh summary - guarantees the current exchange
+never collapses to "just the summary" the instant a fold happens.
+Meaningfully smaller than `MAX_RECENT_TOKENS` so a fold actually folds a
+real amount in, rather than leaving a backlog that immediately re-crosses
+the threshold next turn."""
 
 _SUMMARIZE_PROMPT = """Summarize this part of a data-analyst conversation in
 a few sentences, preserving anything a later turn would need: what the user
@@ -32,36 +54,59 @@ metrics), and any open threads or unresolved questions. Be concise - this
 replaces, not supplements, the messages it covers."""
 
 
-def build_prompt_messages(messages: list[AnyMessage], history_summary: str | None) -> list[AnyMessage]:
-    """`[summary-as-message?, *recent raw messages]` instead of the full,
-    ever-growing `messages` list - what the supervisor/respond/clarify node
-    builders (`agents/orchestrator/nodes.py`) actually send to the model."""
-    recent = messages[-RECENT_MESSAGE_COUNT:]
+def build_prompt_messages(
+    messages: list[AnyMessage], history_summary: str | None, summarized_through: int
+) -> list[AnyMessage]:
+    """`[summary-as-message?, *messages since the last summary]` - the
+    context every model-calling node (supervisor/respond/clarify) actually
+    sends, whether or not this particular call is the one that just
+    refreshed the summary (only the supervisor's own `refresh_context`
+    ever does that; the other two just use whatever's current)."""
+    since_last_summary = messages[summarized_through:]
     if not history_summary:
-        return recent
-    return [HumanMessage(content=f"Summary of earlier turns: {history_summary}"), *recent]
+        return since_last_summary
+    return [HumanMessage(content=f"Summary of earlier turns: {history_summary}"), *since_last_summary]
 
 
-async def maybe_summarize_history(llm: BaseChatModel, state: OrchestratorState) -> dict | None:
-    """A `{"history_summary": ..., "history_summarized_through": ...}` state
-    update if `state["messages"]` has grown enough since the last summary to
-    warrant folding more of it in - `None` if nothing needs to change yet
-    (the common case), so `build_supervisor_node` can skip touching either
-    field at all most turns.
+def _split_by_token_budget(
+    messages: list[AnyMessage], keep_recent_tokens: int
+) -> tuple[list[AnyMessage], list[AnyMessage]]:
+    """`(old, recent)` - `recent` is the longest trailing slice of
+    `messages` whose own approximate token count still fits within
+    `keep_recent_tokens`; `old` is everything before that. Walks backward
+    from the newest message so the guaranteed-raw window is always the
+    most recent one, never an arbitrary one."""
+    split_at = len(messages)
+    running_tokens = 0
+    for i in reversed(range(len(messages))):
+        running_tokens += count_tokens_approximately([messages[i]])
+        if running_tokens > keep_recent_tokens:
+            break
+        split_at = i
+    return messages[:split_at], messages[split_at:]
 
-    Only ever summarizes the *delta* since `history_summarized_through`
-    (not the whole history again each time) - otherwise this call's own
-    input would grow right along with the thing it's meant to bound.
+
+async def refresh_context(llm: BaseChatModel, state: OrchestratorState) -> tuple[list[AnyMessage], dict]:
+    """Steps 2-3-1 above, in order: measure the backlog since the last
+    summary; if it's grown past `MAX_RECENT_TOKENS`, fold its older part
+    into a fresh summary while keeping `RECENT_WINDOW_TOKENS` worth of it
+    raw; return the context to use this turn (built from whichever summary
+    is now current) alongside the state update needed to persist a fresh
+    one - empty if nothing changed, safe to merge into a larger return
+    dict unconditionally.
     """
     messages = state["messages"]
-    cutoff = len(messages) - RECENT_MESSAGE_COUNT
-    if len(messages) <= SUMMARIZE_THRESHOLD or cutoff <= state.get("history_summarized_through", 0):
-        return None
-    new_messages = messages[state.get("history_summarized_through", 0) : cutoff]
-    if not new_messages:
-        return None
+    summarized_through = state.get("history_summarized_through", 0)
+    history_summary = state.get("history_summary")
+    since_last_summary = messages[summarized_through:]
+    update: dict = {}
 
-    previous = state.get("history_summary")
-    lead_in = [HumanMessage(content=f"Previous summary: {previous}")] if previous else []
-    response = await llm.ainvoke([SystemMessage(content=_SUMMARIZE_PROMPT), *lead_in, *new_messages])
-    return {"history_summary": response.content, "history_summarized_through": cutoff}
+    if count_tokens_approximately(since_last_summary) > MAX_RECENT_TOKENS:
+        old, _recent = _split_by_token_budget(since_last_summary, RECENT_WINDOW_TOKENS)
+        lead_in = [HumanMessage(content=f"Previous summary: {history_summary}")] if history_summary else []
+        response = await llm.ainvoke([SystemMessage(content=_SUMMARIZE_PROMPT), *lead_in, *old])
+        history_summary = response.content
+        summarized_through += len(old)
+        update = {"history_summary": history_summary, "history_summarized_through": summarized_through}
+
+    return build_prompt_messages(messages, history_summary, summarized_through), update

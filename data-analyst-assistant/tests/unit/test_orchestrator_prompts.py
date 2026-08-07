@@ -206,6 +206,34 @@ async def test_supervisor_node_describes_only_the_callers_allowed_model_names():
     assert "Sales Analytics" not in prompt
 
 
+async def test_supervisor_node_summarizes_a_pending_backlog():
+    """build_supervisor_node folds history.py's refresh_context (which
+    decides whether there's enough of a backlog to fold in, and does the
+    folding if so) into its own state update. 10 messages of 3200 filler
+    chars each cross MAX_RECENT_TOKENS, so the fold covers the first 6 of
+    them, keeping the last 4 raw - see test_orchestrator_history.py for the
+    token-count derivation."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="folded summary")])
+    node = build_supervisor_node(llm)
+    big = "x" * 3200
+    messages = [HumanMessage(content=f"m{i} {big}") for i in range(10)]
+
+    result = await node({"messages": messages, "turns": 0})
+
+    assert result["history_summary"] == "folded summary"
+    assert result["history_summarized_through"] == 6
+
+
+async def test_supervisor_node_leaves_history_summary_untouched_below_threshold():
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="should not be called")])
+    node = build_supervisor_node(llm)
+
+    result = await node({"messages": [HumanMessage(content="hi")], "turns": 0})
+
+    assert "history_summary" not in result
+    assert "history_summarized_through" not in result
+
+
 async def test_supervisor_node_mentions_a_pending_followup_suggestion():
     """Unlike pending_clarification's deterministic resume, a non-blocking
     followup_suggestion still goes through the normal routing LLM call -

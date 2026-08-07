@@ -78,8 +78,8 @@ class OrchestratorState(ChatState):
     enough to need one."""
     history_summarized_through: NotRequired[int]
     """How many of `messages` (by index) are already folded into
-    `history_summary` - lets `maybe_summarize_history` only ever summarize
-    the delta since the last summary, not the whole history again each
+    `history_summary` - lets `refresh_context` only ever consider the
+    messages since the last summary, not the whole history again each
     time. `NotRequired` for the same reason as `history_summary`."""
     allowed_model_names: NotRequired[list[str] | None]
     """The caller's own request (see `app/api.py`'s `ChatRequest.model_names`)
