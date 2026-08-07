@@ -4,11 +4,6 @@ from pydantic import Field
 from data_analyst.agents.orchestrator.history import build_prompt_messages, refresh_context
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 
-# ~1000+ tokens at count_tokens_approximately's default chars_per_token=4.0 -
-# a handful of these comfortably crosses SUMMARIZE_TOKEN_THRESHOLD without
-# the test needing to hand-derive the exact token/character formula.
-_BIG_CONTENT = "x" * 4000
-
 
 class _RecordingLLM(FakeToolCallingChatModel):
     """Records the message list of every `_generate` call, so a test can
@@ -21,8 +16,11 @@ class _RecordingLLM(FakeToolCallingChatModel):
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
-def _messages(n: int, *, big: bool = False) -> list:
-    suffix = f" {_BIG_CONTENT}" if big else ""
+def _messages(n: int, *, chars: int = 0) -> list:
+    """`chars` pads each message's content so its approximate token count is
+    predictable - see the fold test below for why 800 chars each, 10 of
+    them, is the size used to exercise a fold."""
+    suffix = f" {'x' * chars}" if chars else ""
     return [HumanMessage(content=f"m{i}{suffix}") for i in range(n)]
 
 
@@ -45,8 +43,8 @@ def test_build_prompt_messages_prepends_the_summary():
 
 async def test_refresh_context_leaves_history_untouched_below_token_threshold():
     """A handful of small messages since the last summary - nowhere near
-    SUMMARIZE_TOKEN_THRESHOLD - shouldn't trigger a summarization call at
-    all, however many of them there are."""
+    MAX_RECENT_TOKENS - shouldn't trigger a summarization call at all,
+    however many of them there are."""
     llm = _RecordingLLM(responses=[AIMessage(content="should not be called")])
     messages = _messages(5)
 
@@ -57,28 +55,34 @@ async def test_refresh_context_leaves_history_untouched_below_token_threshold():
     assert llm.recorded_messages == []
 
 
-async def test_refresh_context_folds_messages_since_the_last_summary():
+async def test_refresh_context_folds_the_older_part_keeping_a_raw_recent_window():
+    """10 messages of 800 filler chars each total ~2050 approximate tokens -
+    just over MAX_RECENT_TOKENS (2000), triggering a fold. With
+    RECENT_WINDOW_TOKENS at 1000, the last 4 of them (~820 tokens) fit raw
+    (the last 5, ~1025 tokens, don't) - so the fold should only feed the
+    first 6 to the summarizer, and this turn's context should carry the
+    fresh summary plus those last 4 raw, not just the summary alone."""
     llm = _RecordingLLM(responses=[AIMessage(content="folded summary")])
-    messages = _messages(4, big=True)
+    messages = _messages(10, chars=800)
+    old, recent = messages[:6], messages[6:]
 
     context, update = await refresh_context(llm, {"messages": messages})
 
-    assert update == {"history_summary": "folded summary", "history_summarized_through": len(messages)}
-    # Everything just got folded in, so this turn's context is the fresh
-    # summary alone - nothing left unfolded yet.
-    assert len(context) == 1
+    assert update == {"history_summary": "folded summary", "history_summarized_through": len(old)}
     assert "folded summary" in context[0].content
+    assert [m.content for m in context[1:]] == [m.content for m in recent]
     fed = llm.recorded_messages[0][1:]  # drop the summarizer's own SystemMessage
-    assert [m.content for m in fed] == [m.content for m in messages]
+    assert [m.content for m in fed] == [m.content for m in old]
 
 
-async def test_refresh_context_only_folds_messages_since_the_last_summary():
+async def test_refresh_context_only_measures_messages_since_the_last_summary():
     """Already-summarized messages are never re-measured against the
     threshold or re-fed to the model - only the delta since
     history_summarized_through."""
     llm = _RecordingLLM(responses=[AIMessage(content="updated summary")])
     already_summarized = _messages(2)  # small - already folded in, irrelevant to this call
-    new_backlog = _messages(4, big=True)  # crosses SUMMARIZE_TOKEN_THRESHOLD on its own
+    new_backlog = _messages(10, chars=800)  # ~2050 tokens, crosses MAX_RECENT_TOKENS on its own
+    old, recent = new_backlog[:6], new_backlog[6:]
     messages = already_summarized + new_backlog
     state = {
         "messages": messages,
@@ -88,11 +92,13 @@ async def test_refresh_context_only_folds_messages_since_the_last_summary():
 
     context, update = await refresh_context(llm, state)
 
-    assert update == {"history_summary": "updated summary", "history_summarized_through": len(messages)}
-    assert len(context) == 1
-    assert "updated summary" in context[0].content
+    assert update == {
+        "history_summary": "updated summary",
+        "history_summarized_through": len(already_summarized) + len(old),
+    }
+    assert [m.content for m in context[1:]] == [m.content for m in recent]
     fed = llm.recorded_messages[0][1:]
-    # Only the new backlog, plus the "previous summary" lead-in - not the
-    # already-summarized messages.
+    # Only the new backlog's older part, plus the "previous summary"
+    # lead-in - not the already-summarized messages, not the raw recent tail.
     assert "earlier summary" in fed[0].content
-    assert [m.content for m in fed[1:]] == [m.content for m in new_backlog]
+    assert [m.content for m in fed[1:]] == [m.content for m in old]
