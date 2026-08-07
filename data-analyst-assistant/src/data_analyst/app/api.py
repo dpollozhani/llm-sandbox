@@ -14,6 +14,7 @@ holds from its own sign-in flow.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -49,6 +50,21 @@ _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI 
 # clarify visit, and specialist subgraphs are bounded separately (see
 # agents/orchestrator/nodes.py::SPECIALIST_RECURSION_LIMIT).
 ORCHESTRATOR_RECURSION_LIMIT = MAX_TURNS * 4
+
+_HEARTBEAT_INTERVAL_SECONDS = 10
+"""How often /chat/stream emits a bare SSE comment while no real event has
+fired - a specialist's own tool call (e.g. the analysis agent's sandbox)
+can legitimately run silent for tens of seconds with nothing to report yet.
+Without something on the wire, an idle-timing-out proxy or gateway between
+here and the client can - and in practice does - drop that "silent"
+connection outright, which the client only ever sees as a raw network
+failure (Safari's fetch() surfaces this as "Load failed", not as a caught
+error this app produced - see app/web.py's fetch catch block). Kept well
+under the shortest idle timeout commonly seen on hosting proxies/gateways
+(some default as low as 15-30s) rather than tuned to any specific one,
+since a heartbeat this cheap costs nothing to send more often. Needs no
+client-side change to tolerate - a comment line is invisible to any
+spec-compliant SSE parser."""
 
 
 @dataclass
@@ -245,6 +261,12 @@ async def _stream_chat_events(
       returns - the authoritative result, regardless of which/how many
       token events arrived before it.
     - "error": something raised before a result was produced.
+
+    Also emits a bare SSE comment line (`_HEARTBEAT_INTERVAL_SECONDS`'s
+    docstring explains why) whenever nothing else has been emitted in a
+    while - invisible to a spec-compliant SSE parser and to this app's own
+    manual reader (app/web.py's `readEvents` only ever looks for "data: "
+    lines), so no client change is needed to tolerate it.
     """
 
     def sse(payload: dict) -> str:
@@ -255,18 +277,50 @@ async def _stream_chat_events(
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": ORCHESTRATOR_RECURSION_LIMIT}
     debug_graph_state = get_settings().debug_graph_state
     final_state: dict | None = None
+
+    # astream_events itself is consumed by a background task, feeding a
+    # queue this generator reads with a timeout - so a long silent stretch
+    # between events (e.g. the analysis agent's sandbox tool actually
+    # running) still lets the loop below wake up on the timeout and emit a
+    # heartbeat, instead of blocking on the next real event for however
+    # long that takes.
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    async def _produce() -> None:
+        try:
+            async for event in graph.astream_events(
+                {
+                    "messages": [HumanMessage(content=body.message)],
+                    "turns": 0,
+                    "session_id": thread_id,
+                    "pbi_token": tokens.token,
+                    "allowed_model_names": allowed_model_names,
+                },
+                config=config,
+                version="v2",
+            ):
+                await queue.put(event)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the client, not raised
+            await queue.put(exc)
+        finally:
+            await queue.put(_DONE)
+
+    producer = asyncio.create_task(_produce())
     try:
-        async for event in graph.astream_events(
-            {
-                "messages": [HumanMessage(content=body.message)],
-                "turns": 0,
-                "session_id": thread_id,
-                "pbi_token": tokens.token,
-                "allowed_model_names": allowed_model_names,
-            },
-            config=config,
-            version="v2",
-        ):
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+                continue
+            if item is _DONE:
+                break
+            if isinstance(item, Exception):
+                yield sse({"type": "error", "message": str(item)})
+                return
+
+            event = item
             kind = event["event"]
             node = event.get("metadata", {}).get("langgraph_node")
 
@@ -296,9 +350,9 @@ async def _stream_chat_events(
                     yield sse({"type": "token", "content": content})
             elif kind == "on_chain_end" and event.get("name") == "LangGraph" and node is None:
                 final_state = event["data"]["output"]
-    except Exception as exc:  # noqa: BLE001 - surfaced to the client, not raised
-        yield sse({"type": "error", "message": str(exc)})
-        return
+    finally:
+        if not producer.done():
+            producer.cancel()
 
     yield sse({"type": "done", **_to_chat_response(thread_id, final_state).model_dump()})
 

@@ -10,6 +10,7 @@ in this module by the `_fake_pbi_tokens` fixture below."""
 from __future__ import annotations
 
 import json
+import time
 
 import pandas as pd
 import pytest
@@ -20,6 +21,7 @@ from pydantic import Field
 
 from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.orchestrator.graph import build_orchestrator_graph
+from data_analyst.app import api
 from data_analyst.app.api import PBITokens, app, get_pbi_tokens
 from data_analyst.app.dependencies import get_graph
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
@@ -596,3 +598,35 @@ def test_stream_specialist_suggested_followup_surfaces_as_non_blocking_suggested
     assert done["reply"] == "Here are the top 5 accounts."
     assert done["options"] is None
     assert done["suggested_options"] == ["By region", "By product"]
+
+
+def test_stream_emits_heartbeats_while_a_node_is_slow(monkeypatch):
+    """A node that takes a while to produce its first event (e.g. a
+    specialist's own tool call) shouldn't leave the stream fully silent -
+    see api.py's `_HEARTBEAT_INTERVAL_SECONDS` docstring for why silence
+    itself is the failure this guards against. The comment lines this
+    emits don't start with "data: ", so they're invisible to `_stream_events`
+    (mirroring app/web.py's own reader) - read the raw response text here
+    instead to see them."""
+    monkeypatch.setattr(api, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+
+    class _SlowRoutingModel(FakeToolCallingChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            def _invoke(*_args, **_kwargs):
+                time.sleep(0.3)
+                return schema()
+
+            return RunnableLambda(_invoke)
+
+    llm = _SlowRoutingModel(responses=[AIMessage(content="Here's what I can do.")])
+    graph = _build_graph(llm)
+    app.dependency_overrides[get_graph] = lambda: graph
+
+    try:
+        with TestClient(app) as client, client.stream("POST", "/chat/stream", json={"message": "hi"}) as response:
+            body = response.read().decode()
+    finally:
+        app.dependency_overrides.pop(get_graph, None)
+
+    assert body.count(": keep-alive\n\n") >= 2
+    assert '"type": "done"' in body
