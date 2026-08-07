@@ -48,8 +48,8 @@ broken out by, `filters` for any criteria the user actually named, and the
 relevant `measures`. Never rank rows or pick a computed "top N" yourself -
 that's the analysis agent's job, done over what you fetched. Only ask a
 clarifying question if the grain or filter criteria are themselves
-ambiguous - test this by asking whether the `group_by`/`filters` you'd use
-actually changes depending on the answer. E.g. "worst month-on-month
+ambiguous - ask yourself whether the `group_by`/`filters` you'd use would
+actually be any different depending on the answer. E.g. "worst month-on-month
 trend" can mean several different things to compute (largest average
 decline, biggest single-month drop, longest losing streak) - but all of
 them read the exact same data: every account/cost center's amount, by
