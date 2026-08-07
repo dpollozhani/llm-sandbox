@@ -16,7 +16,7 @@ from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
 from data_analyst.agents.datasource.graph import build_datasource_graph
 from data_analyst.agents.datasource.models import DataSourceQueryResult
-from data_analyst.agents.orchestrator.history import build_prompt_messages, pending_backlog, summarize_backlog
+from data_analyst.agents.orchestrator.history import build_prompt_messages, refresh_context
 from data_analyst.agents.orchestrator.prompts import (
     CLARIFY_SYSTEM_PROMPT,
     RESPOND_SYSTEM_PROMPT,
@@ -113,19 +113,6 @@ def _effective_catalog(catalog: PowerBiCatalog | None, state: OrchestratorState)
     return catalog
 
 
-async def _refresh_history_summary(llm: BaseChatModel, state: OrchestratorState) -> tuple[str | None, dict]:
-    """The `history_summary` to use in this turn's prompt, paired with the
-    state update needed to persist it - an empty dict if nothing changed,
-    so callers can merge it into their own return dict unconditionally
-    (`**` spreading an empty dict is a no-op) rather than tracking "what to
-    use now" and "what to write back" as two separately-threaded values."""
-    if pending := pending_backlog(state):
-        new_messages, foldable_up_to = pending
-        summary_text = await summarize_backlog(llm, new_messages, state.get("history_summary"))
-        return summary_text, {"history_summary": summary_text, "history_summarized_through": foldable_up_to}
-    return state.get("history_summary"), {}
-
-
 def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, catalog: PowerBiCatalog | None = None):
     router = llm.with_structured_output(Route)
 
@@ -142,14 +129,13 @@ def build_supervisor_node(llm: BaseChatModel, glossary: Glossary | None = None, 
         if turns >= MAX_TURNS:
             return {"next": "respond", "turns": turns}
 
-        history_summary, summary_update = await _refresh_history_summary(llm, state)
+        context, summary_update = await refresh_context(llm, state)
 
         prompt = inject_glossary(SUPERVISOR_SYSTEM_PROMPT, glossary) + _describe_catalog(_effective_catalog(catalog, state))
         if data_context := state.get("data_context"):
             prompt += f"\n\nCurrently available data in this session: {DataSourceQueryResult(**data_context).describe()}"
         prompt += _render_resolved(state.get("resolved_clarifications"))
         prompt += _render_followup_suggestion(state.get("followup_suggestion"))
-        context = build_prompt_messages(state["messages"], history_summary)
         route = await router.ainvoke([SystemMessage(content=prompt), *context])
 
         next_step = route.next
@@ -489,7 +475,9 @@ def build_respond_node(llm: BaseChatModel, glossary: Glossary | None = None, cat
                 "the user which one they want either - just give the answer; the suggestion is an "
                 "optional next step, not something that needs picking before you can finish."
             )
-        context = build_prompt_messages(state["messages"], state.get("history_summary"))
+        context = build_prompt_messages(
+            state["messages"], state.get("history_summary"), state.get("history_summarized_through", 0)
+        )
         response = await llm.ainvoke([SystemMessage(content=prompt), *context])
         return {
             "messages": [response],
@@ -506,7 +494,9 @@ def build_clarify_node(llm: BaseChatModel, glossary: Glossary | None = None):
 
     async def clarify_node(state: OrchestratorState):
         prompt = base_prompt + _render_resolved(state.get("resolved_clarifications"))
-        context = build_prompt_messages(state["messages"], state.get("history_summary"))
+        context = build_prompt_messages(
+            state["messages"], state.get("history_summary"), state.get("history_summarized_through", 0)
+        )
         clarification = await router.ainvoke([SystemMessage(content=prompt), *context])
         return {
             "messages": [AIMessage(content=clarification.question)],

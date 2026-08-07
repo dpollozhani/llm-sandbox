@@ -3,7 +3,6 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
 from data_analyst.agents.datasource.models import DataSourceQueryResult
-from data_analyst.agents.orchestrator.history import RECENT_MESSAGE_COUNT
 from data_analyst.agents.orchestrator.nodes import Route, build_clarify_node, build_respond_node, build_supervisor_node
 from data_analyst.clients.llm.factory import FakeToolCallingChatModel
 from data_analyst.config.settings import Glossary, GlossaryEntry, PowerBiCatalog, SemanticModelConfig
@@ -208,20 +207,18 @@ async def test_supervisor_node_describes_only_the_callers_allowed_model_names():
 
 
 async def test_supervisor_node_summarizes_a_pending_backlog():
-    """build_supervisor_node is the procedural code that decides whether to
-    call summarize_backlog at all (via history.py's pending_backlog) and
-    folds the result into its own state update - neither of history.py's
-    own functions makes that decision itself."""
+    """build_supervisor_node folds history.py's refresh_context (which
+    decides whether there's enough of a backlog to fold in, and does the
+    folding if so) into its own state update."""
     llm = FakeToolCallingChatModel(responses=[AIMessage(content="folded summary")])
     node = build_supervisor_node(llm)
     big = "x" * 4000  # comfortably crosses SUMMARIZE_TOKEN_THRESHOLD on its own
-    old = [HumanMessage(content=f"old {i} {big}") for i in range(4)]
-    recent = [HumanMessage(content=f"recent {i}") for i in range(RECENT_MESSAGE_COUNT)]
+    messages = [HumanMessage(content=f"m{i} {big}") for i in range(4)]
 
-    result = await node({"messages": old + recent, "turns": 0})
+    result = await node({"messages": messages, "turns": 0})
 
     assert result["history_summary"] == "folded summary"
-    assert result["history_summarized_through"] == len(old)
+    assert result["history_summarized_through"] == len(messages)
 
 
 async def test_supervisor_node_leaves_history_summary_untouched_below_threshold():
