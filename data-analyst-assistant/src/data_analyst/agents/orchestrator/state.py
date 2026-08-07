@@ -78,7 +78,7 @@ class OrchestratorState(ChatState):
     enough to need one."""
     history_summarized_through: NotRequired[int]
     """How many of `messages` (by index) are already folded into
-    `history_summary` - lets `maybe_summarize_history` only ever summarize
+    `history_summary` - lets `summarize_history` only ever summarize
     the delta since the last summary, not the whole history again each
     time. `NotRequired` for the same reason as `history_summary`."""
     allowed_model_names: NotRequired[list[str] | None]
