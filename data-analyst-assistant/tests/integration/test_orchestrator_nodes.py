@@ -134,7 +134,7 @@ async def test_analysis_node_does_not_overwrite_data_context():
     assert "data_context" not in update
 
 
-async def test_specialist_flagged_ambiguity_sets_next_to_clarify():
+async def test_specialist_flagged_ambiguity_sets_pending_clarification():
     ambiguity_call = {
         "name": "flag_ambiguity",
         "args": {"reason": "Which region do you mean?", "options": ["North", "South"]},
@@ -154,7 +154,10 @@ async def test_specialist_flagged_ambiguity_sets_next_to_clarify():
     }
     update = await node(state)
 
-    assert update["next"] == "clarify"
+    # No "next" key at all - agents/orchestrator/graph.py's
+    # _after_specialist decides whether to skip to END from
+    # pending_clarification alone, not a "next" value.
+    assert "next" not in update
     # Composed deterministically from the tool call's own reason/options -
     # not the specialist's own final freeform message ("I need more detail.")
     assert update["messages"][0].content == "Which region do you mean? (North / South)"
