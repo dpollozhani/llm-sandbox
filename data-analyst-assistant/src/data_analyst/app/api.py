@@ -51,7 +51,7 @@ _NOT_SIGNED_IN = {"login_url": "/auth/login", "message": "Sign in with Power BI 
 # agents/orchestrator/nodes.py::SPECIALIST_RECURSION_LIMIT).
 ORCHESTRATOR_RECURSION_LIMIT = MAX_TURNS * 4
 
-_HEARTBEAT_INTERVAL_SECONDS = 15
+_HEARTBEAT_INTERVAL_SECONDS = 10
 """How often /chat/stream emits a bare SSE comment while no real event has
 fired - a specialist's own tool call (e.g. the analysis agent's sandbox)
 can legitimately run silent for tens of seconds with nothing to report yet.
@@ -59,8 +59,13 @@ Without something on the wire, an idle-timing-out proxy or gateway between
 here and the client can - and in practice does - drop that "silent"
 connection outright, which the client only ever sees as a raw network
 failure (Safari's fetch() surfaces this as "Load failed", not as a caught
-error this app produced - see app/web.py's fetch catch block). A short
-comment line costs nothing and needs no client-side change to tolerate."""
+error this app produced - see app/web.py's fetch catch block). This app is
+deployed behind Render, whose own docs on the exact idle-timeout value
+aren't reachable from here to confirm, and community reports of it being
+as low as ~15s; kept comfortably under that rather than exactly at it,
+since a heartbeat this cheap costs nothing to send more often. Needs no
+client-side change to tolerate - a comment line is invisible to any
+spec-compliant SSE parser."""
 
 
 @dataclass

@@ -520,11 +520,13 @@ and needs nothing from the call sites beneath it:
 - **A long silent stretch gets a heartbeat, not nothing.** A specialist's
   own tool call (e.g. the analysis agent's sandbox) can legitimately run
   for tens of seconds between events. Left silent, some intermediate proxy
-  or gateway between the client and this server can treat that as an idle
-  connection and drop it - the client only ever sees this as a raw network
-  failure (Safari's `fetch()` surfaces it as `TypeError: Load failed`, not
-  as this app's own `"error"` event), so it looks like a bug in the
-  assistant rather than in the transport. `chat_stream` consumes
+  or gateway between the client and this server (this app is deployed
+  behind Render, whose exact idle-timeout value isn't confirmed - community
+  reports put it as low as ~15s) can treat that as an idle connection and
+  drop it - the client only ever sees this as a raw network failure
+  (Safari's `fetch()` surfaces it as `TypeError: Load failed`, not as this
+  app's own `"error"` event), so it looks like a bug in the assistant
+  rather than in the transport. `chat_stream` consumes
   `astream_events` from a background task over a queue instead of directly,
   so the main generator loop can fall back to `asyncio.wait_for`'s timeout
   and emit a bare `: keep-alive` comment line every
