@@ -40,7 +40,9 @@ supervisor round-trip.
 `state.py`'s `OrchestratorState` adds `turns` (loop guard, `MAX_TURNS = 6` in
 `nodes.py`), `next` (the last routing decision), `data_context` (a
 human-readable summary of the most recently fetched dataset),
-`pending_clarification` (who's awaiting a reply and why - what
+`last_analysis_result` (the analysis agent's own most recent conclusion -
+same role as `data_context`, but for what was *computed* rather than
+*fetched*), `pending_clarification` (who's awaiting a reply and why - what
 `app/api.py` reads to tell a `"clarification_needed"` response from a
 `"completed"` one, and where its `options` come from - see "Clarifications
 are the orchestrator's alone to surface" in `docs/architecture.md`), and

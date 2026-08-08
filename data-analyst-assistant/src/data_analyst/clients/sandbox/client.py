@@ -74,6 +74,20 @@ class SandboxClient:
                 _logger.info("sandbox execute failed: code=%s error=%s", code, result.error)
             return result
 
+    # TODO: `execute()`'s own `result` (a derived computation - e.g. a
+    # ranking or breakdown table `code` just built from a staged dataset)
+    # is never itself staged here, so a *later* `python_sandbox_execute`
+    # call has no `dataset_id` to bind and chain further computation off of
+    # - only an originally-fetched dataset can be re-bound as `df`. Staging
+    # a dataframe-shaped `result` the same way a fetched dataset already is
+    # (via `stage()` above) would let the analysis agent build on its own
+    # prior computation directly instead of recomputing from the raw
+    # dataset every time. Distinct from `agents/orchestrator/nodes.py`'s
+    # `last_analysis_result` (a compact, bounded pointer so a *different*
+    # specialist type can see what was concluded) - this would be about
+    # letting the *same* agent type chain derived computations across
+    # delegations.
+
 
 _sessions: dict[str, SandboxClient] = {}
 

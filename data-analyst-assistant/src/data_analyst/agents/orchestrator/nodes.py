@@ -12,6 +12,8 @@ from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 from data_analyst.agents.analysis.graph import build_analysis_graph
+from data_analyst.agents.analysis.models import AnalysisResult
+from data_analyst.agents.analysis.nodes import python_sandbox_execute
 from data_analyst.agents.common.models import Clarification
 from data_analyst.agents.common.tools import flag_ambiguity, suggest_followup
 from data_analyst.agents.datasource.graph import build_datasource_graph
@@ -28,6 +30,7 @@ from data_analyst.clients.powerbi.rest import PBIRestClient
 from data_analyst.config.settings import Glossary, PowerBiCatalog, inject_glossary
 from data_analyst.telemetry.logging import get_logger
 from data_analyst.telemetry.tracing import trace_span
+from data_analyst.utils.dataframe import to_preview_records
 
 _logger = get_logger("agents.orchestrator.nodes")
 
@@ -229,6 +232,23 @@ def _fetched_dataset(messages: list[AnyMessage]) -> DataSourceQueryResult | None
     return None
 
 
+def _analysis_result(messages: list[AnyMessage], summary: str) -> AnalysisResult | None:
+    """The `AnalysisResult` behind the most recent successful
+    `python_sandbox_execute` call during this run, if any - same
+    newest-first, read-from-the-tool's-own-result approach as
+    `_fetched_dataset`, paired with the specialist's own final summary text
+    since (unlike a DAX query) there's no way to deterministically describe
+    arbitrary code's own result - see `AnalysisResult.summary`'s docstring."""
+    for message in reversed(messages):
+        if message.type != "tool" or message.name != python_sandbox_execute.name:
+            continue
+        payload = json.loads(message.content)
+        if payload.get("error"):
+            continue  # a failed attempt, not a successful computation
+        return AnalysisResult(summary=summary, preview=to_preview_records(payload.get("result")))
+    return None
+
+
 def _compose_ambiguity_message(ambiguity: Clarification) -> str:
     """The user-facing text for a specialist's flagged ambiguity, composed
     deterministically - no extra LLM call. The whole point of a specialist
@@ -258,13 +278,15 @@ def _append_resolved(state: OrchestratorState) -> list[dict]:
 
 def _seed_content(state: OrchestratorState, task_content: str) -> str:
     """The full seed message body for a specialist delegation: what data is
-    already available, plus a compact rendering of what's already been
-    clarified this conversation (never the raw messages that established
-    it) so a specialist doesn't re-derive - or re-ask - either from
-    scratch, plus the task itself."""
+    already available, what's already been concluded, plus a compact
+    rendering of what's already been clarified this conversation (never the
+    raw messages that established any of it) so a specialist doesn't
+    re-derive - or re-ask - either from scratch, plus the task itself."""
     parts = []
     if data_context := state.get("data_context"):
         parts.append(f"(Available data in this session: {DataSourceQueryResult(**data_context).describe()})")
+    if last_analysis := state.get("last_analysis_result"):
+        parts.append(f"(Most recent analysis conclusion this session: {AnalysisResult(**last_analysis).describe()})")
     if resolved := state.get("resolved_clarifications"):
         lines = "\n".join(f"- {r['question']} -> {r['answer']}" for r in resolved)
         parts.append(f"(Already clarified earlier in this conversation:\n{lines})")
@@ -401,6 +423,15 @@ async def _run_specialist(agent_name: str, build_graph_fn, llm: BaseChatModel, s
             # plain dict, not the DataSourceQueryResult itself - see
             # OrchestratorState.data_context's docstring for why.
             update["data_context"] = fetched.model_dump()
+    elif agent_name == "analysis":
+        analyzed = _analysis_result(result["messages"], summary)
+        if analyzed is not None:
+            # Same "leave out rather than overwrite with None" convention as
+            # data_context above - a conclusion from an earlier turn stays
+            # available until a fresh one supersedes it. Stored as a plain
+            # dict for the same checkpointing reason - see
+            # OrchestratorState.last_analysis_result's docstring.
+            update["last_analysis_result"] = analyzed.model_dump()
     return update
 
 

@@ -73,8 +73,13 @@ has already run within the same supervisor turn (e.g. datasource, then
 analysis), the last message is that specialist's own folded-back summary, not
 the user's question. `_latest_user_task` walks backward to find the most
 recent human message instead. Alongside it, `_run_specialist` threads
-`state["data_context"]` (see below) into the seed message, so a specialist
-with no memory of earlier turns still knows what data is already available.
+`state["data_context"]` and `state["last_analysis_result"]` (see below) into
+the seed message, so a specialist with no memory of earlier turns still
+knows what data is already available and what's already been concluded -
+without either, a conclusion the analysis agent reached in prose (e.g. "the
+top account is 654000") would only ever live in `state["messages"]`, which
+specialist seeding never forwards; a later datasource delegation asked to
+filter on "that account" would have no way to know what it refers to.
 
 For a **reply to a clarifying question**, though, a single isolated message
 isn't enough - a specialist subgraph is rebuilt from scratch on every

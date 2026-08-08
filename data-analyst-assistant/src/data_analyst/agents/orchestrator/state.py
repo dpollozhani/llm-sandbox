@@ -29,6 +29,21 @@ class OrchestratorState(ChatState):
     supervisor's routing prompt and into the analysis specialist's seed
     message, so a follow-up question can reuse already-fetched data instead
     of triggering a new datasource delegation."""
+    last_analysis_result: NotRequired[dict | None]
+    """The analysis agent's own most recent successful conclusion (set by
+    `_run_specialist` from the `python_sandbox_execute` tool's own
+    structured result plus the specialist's final summary, not re-derived
+    from raw messages later), as a plain dict -
+    `AnalysisResult(**last_analysis_result)` (`agents/analysis/models.py`)
+    to work with it. Kept as a dict for the same checkpointing reason as
+    `data_context`. Plays the same role for the analysis agent that
+    `data_context` plays for the datasource agent: threaded into a later
+    specialist's seed message (`_seed_content`) so a concrete conclusion
+    (e.g. "the top account is 654000") survives a fresh delegation, which
+    otherwise has no way to see it - specialist seeding never forwards the
+    raw orchestrator message history that conclusion would otherwise only
+    ever live in as prose. `NotRequired`/`None`: no analysis has produced a
+    preview-worthy conclusion yet this conversation."""
     pending_clarification: dict | None
     """{"agent": "datasource" | "analysis" | "supervisor", "reason": str,
     "options": list[str]} - who is waiting on a reply and why, whether from

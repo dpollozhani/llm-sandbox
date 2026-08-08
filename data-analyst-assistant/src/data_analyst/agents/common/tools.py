@@ -34,6 +34,15 @@ async def flag_ambiguity(
     surface it, discarding whatever you say next. After calling it, end
     your turn with a brief final message (it won't be shown, but don't
     call another tool afterwards).
+
+    Every option must be a complete answer you could act on immediately if
+    the user picked it - never a stand-in for "let me type the real answer
+    myself" (e.g. "You provide the exact account code"). A user can always
+    reply with free text instead of picking an option, so that fallback
+    doesn't need - and shouldn't be - an option of its own; phrase it as
+    part of `reason`'s question instead (e.g. "...or tell me the exact
+    account code") and only list options that are themselves genuinely
+    one-click answers.
     """
     # The tool's own parameter is named `reason` (what a specialist gives),
     # but it's read back into the same `Clarification` shape the
