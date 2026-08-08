@@ -134,6 +134,89 @@ async def test_analysis_node_does_not_overwrite_data_context():
     assert "data_context" not in update
 
 
+async def test_analysis_node_sets_last_analysis_result_from_the_tool_result():
+    """A production trace caught the gap this closes: the analysis agent
+    concluded a specific account, but a later specialist delegation had no
+    way to see it - only prose in `messages`, which specialist seeding
+    never forwards (see `_seed_content`). `last_analysis_result` comes from
+    `python_sandbox_execute`'s own structured result (paired with the
+    specialist's final summary, since unlike a DAX query there's no fixed
+    schema to describe an arbitrary computation from), not just the
+    summary alone."""
+    compute_call = {
+        "name": "python_sandbox_execute",
+        "args": {"code": "result = {'mainaccount': '654000', 'mainaccountname': 'IT services'}"},
+        "id": "c1",
+    }
+    llm = FakeToolCallingChatModel(
+        responses=[
+            AIMessage(content="", tool_calls=[compute_call]),
+            AIMessage(content="The top account is 654000 (IT services)."),
+        ]
+    )
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="which account drives the most cost?")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-12",
+        "data_context": None,
+    }
+    update = await node(state)
+
+    analyzed = update["last_analysis_result"]
+    assert isinstance(analyzed, dict)  # checkpoint-safe - see OrchestratorState.last_analysis_result
+    assert analyzed["summary"] == "The top account is 654000 (IT services)."
+    assert analyzed["preview"] == [{"mainaccount": "654000", "mainaccountname": "IT services"}]
+
+
+async def test_analysis_node_does_not_overwrite_last_analysis_result_when_nothing_new_computed():
+    """Same "leave out rather than overwrite with None" convention as
+    data_context - a conclusion from an earlier turn stays available until
+    a fresh one supersedes it."""
+    llm = FakeToolCallingChatModel(responses=[AIMessage(content="Just chatting, nothing computed.")])
+    node = build_analysis_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="thanks, that's all")],
+        "turns": 1,
+        "next": "analysis",
+        "session_id": "sess-node-13",
+        "data_context": None,
+        "last_analysis_result": {"summary": "earlier conclusion", "preview": []},
+    }
+    update = await node(state)
+
+    assert "last_analysis_result" not in update
+
+
+async def test_datasource_node_is_seeded_with_the_last_analysis_conclusion():
+    """The exact fix for the traced bug: a later datasource delegation now
+    sees what the analysis agent already concluded, including the concrete
+    value (not just prose it would otherwise have to guess at or ask the
+    user to repeat)."""
+    llm = _RecordingLLM(responses=[AIMessage(content="Filtered to that account.")])
+    node = build_datasource_node(llm)
+
+    state = {
+        "messages": [HumanMessage(content="break down IT costs by supplier for that account")],
+        "turns": 1,
+        "next": "datasource",
+        "session_id": "sess-node-14",
+        "data_context": None,
+        "last_analysis_result": {
+            "summary": "The top account is 654000 (IT services).",
+            "preview": [{"mainaccount": "654000", "mainaccountname": "IT services"}],
+        },
+    }
+    await node(state)
+
+    seeded_content = llm.recorded_messages[0][1].content
+    assert "654000" in seeded_content
+    assert "IT services" in seeded_content
+
+
 async def test_specialist_flagged_ambiguity_sets_pending_clarification():
     ambiguity_call = {
         "name": "flag_ambiguity",

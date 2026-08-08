@@ -30,3 +30,18 @@ def to_records(value: object) -> object:
     if isinstance(value, (list, tuple)):
         return [to_records(v) for v in value]
     return value
+
+
+def to_preview_records(value: object, limit: int = 5) -> list[dict]:
+    """`value` (already `to_records`-normalized, so JSON-safe) coerced to a
+    bounded list of dict rows if it's already shaped that way (a list of
+    dicts) or trivially could be (a single dict, wrapped as one row) - `[]`
+    for anything else (a scalar, a string, `None`), since there's no
+    meaningful "row" to make of those. Same cap as `preview_records`, for
+    the same reason: a concrete value should survive as structured data
+    without risking an unbounded payload."""
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        return value[:limit]
+    return []
